@@ -86,7 +86,9 @@ export function createTerrain(scene) {
     vertexColors: true, roughness: 0.94, metalness: 0.0,
     normalMap: makeDetailNormal(),
   });
-  mat.normalScale.set(0.85, 0.85);
+  // At full strength the tiling ripple normal reads as corduroy: perfectly parallel waves with no
+  // height change behind them. Half strength keeps the close-up grain without the fabric look.
+  mat.normalScale.set(0.46, 0.46);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;
   mesh.name = 'terrain';

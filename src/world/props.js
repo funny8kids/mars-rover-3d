@@ -33,6 +33,11 @@ export async function buildBase(scene, quality) {
   await Promise.all(entries.map(async (n) => { models[n.split('/').pop()] = await loadModel(n); }));
   // glTF emissives arrive at full strength; under the sun + bloom band they blow out into
   // white discs. One art-direction pass over the shared hero materials fixes every instance.
+  // GlTF says a material with no metallic-roughness texture and factors left at 1/1 is a perfectly
+  // rough pure conductor — which is to say, a black hole that reflects nothing. That is what every
+  // Kenney material exported as, and it silently overrode their painted albedo: 411 of the base's
+  // 1279 meshes (railings, platforms, rocks, the entire mid-ground) drew as black cut-outs.
+  // loadModel() repairs the stubs now, so nothing here has to.
   const padGlow = [], heroLights = [];
   for (const root of Object.values(models)) {
     root?.traverse(o => {
@@ -45,6 +50,10 @@ export async function buildBase(scene, quality) {
         else if (n === 'pad_glow') { mt.emissiveIntensity = 0.12; padGlow.push(mt); }   // daylight: a read-able disc, not a bloom hole
         else if (/^light_/.test(n)) { mt.emissiveIntensity = 1.45; heroLights.push(mt); }
         else if (n === 'plant' || n === 'crystal_mat') mt.emissiveIntensity = 0.7;
+        // The packs ship a near-black 'dark_panel' family for panel shadows. Outdoors, under a
+        // 3.4 sun and an ochre sky, that is not shadow — it is missing geometry, so it becomes
+        // graphite instead. Real shading comes from the light pass, not from the albedo.
+        else if (/^(dark_|hull_dark|rover_dark)/.test(n)) { mt.color.setHex(0x6e6860); mt.roughness = 0.66; mt.metalness = 0.34; }
       }
     });
   }
@@ -84,8 +93,11 @@ export async function buildBase(scene, quality) {
   };
 
   const M = {
-    dark: new THREE.MeshStandardMaterial({ color: 0x33302c, roughness: 0.7, metalness: 0.4 }),
-    struct: new THREE.MeshStandardMaterial({ color: 0x6b655c, roughness: 0.55, metalness: 0.7 }),
+    // Frames, girders and housings used to sit at 0x33302c — linear 0.03, i.e. a hole in the
+    // picture. Against a bright ochre sky every one of them became a black cut-out, which is most
+    // of what "the modelling looks cheap" actually was. They are painted steel now.
+    dark: new THREE.MeshStandardMaterial({ color: 0x767068, roughness: 0.62, metalness: 0.38 }),
+    struct: new THREE.MeshStandardMaterial({ color: 0x8d867a, roughness: 0.5, metalness: 0.72 }),
     white: new THREE.MeshStandardMaterial({ color: 0xe8e2d6, roughness: 0.5, metalness: 0.15 }),
     orange: new THREE.MeshStandardMaterial({ color: 0xe07a2a, roughness: 0.5, metalness: 0.3 }),
     hazard: new THREE.MeshStandardMaterial({ color: 0xd94f35, roughness: 0.55, metalness: 0.25 }),
@@ -93,7 +105,7 @@ export async function buildBase(scene, quality) {
     beacon: new THREE.MeshStandardMaterial({ color: 0xff3020, emissive: 0xff2010, emissiveIntensity: 4 }),
     goldLight: new THREE.MeshStandardMaterial({ color: 0xffcf80, emissive: 0xffb040, emissiveIntensity: 1.4 }),
     cyanLight: new THREE.MeshStandardMaterial({ color: 0x9ff0ff, emissive: 0x35c8e8, emissiveIntensity: 1.0 }),
-    archStone: new THREE.MeshStandardMaterial({ color: 0x5c5148, roughness: 0.85, metalness: 0.1 }),
+    archStone: new THREE.MeshStandardMaterial({ color: 0x8d8378, roughness: 0.8, metalness: 0.12 }),
     shipLightRing: new THREE.MeshStandardMaterial({ color: 0x66ccff, emissive: 0x3399ff, emissiveIntensity: 2.5, transparent: true, opacity: 0.9 }),
     crystal: new THREE.MeshStandardMaterial({ color: 0xbaf5ee, emissive: 0x3fd9c4, emissiveIntensity: 1.25, roughness: 0.12, metalness: 0.35 }),
   };
@@ -135,7 +147,21 @@ export async function buildBase(scene, quality) {
     // flag mast
     const my = zoneY(ZONES.hub);
     cyl(0.12, 0.16, 7, M.white, hx + 5.5, my + 3.5, hz + 4, 8);
-    box(2.2, 1.3, 0.06, M.hazard, hx + 6.7, my + 6.3, hz + 4);
+    {
+      // A flat quad on a pole is the one prop that guarantees the whole plaza looks like a
+      // placeholder. Cloth hanging off a mast has a catenary droop and a wind ripple in it.
+      const fg = new THREE.PlaneGeometry(2.3, 1.35, 14, 6);
+      const fp = fg.attributes.position;
+      for (let i = 0; i < fp.count; i++) {
+        const u = (fp.getX(i) + 1.15) / 2.3, v = (fp.getY(i) + 0.675) / 1.35;
+        fp.setZ(i, Math.sin(u * 7.4 - 0.5) * 0.11 * u + Math.pow(u, 2.4) * 0.20);
+        fp.setY(i, fp.getY(i) - Math.pow(u, 2.2) * 0.26);
+      }
+      fg.computeVertexNormals();
+      const flag = new THREE.Mesh(fg, new THREE.MeshStandardMaterial({ color: 0xd94f35, roughness: 0.62, metalness: 0.05, side: THREE.DoubleSide }));
+      flag.position.set(hx + 6.7, my + 6.35, hz + 4); flag.castShadow = true; flag.receiveShadow = true;
+      G.add(flag);
+    }
     k('barrel', hx - 6, hz + 6, 0.4); k('barrel', hx + 7, hz - 5, 1.2);
     putDeck('teleport_pad', hx - 8.5, hz + 11, 1.25, 0, -0.08);
     teleports.push({ key: 'hub', name: ZONES.hub.name, x: hx - 8.5, z: hz + 11 });

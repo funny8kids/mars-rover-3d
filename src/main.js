@@ -259,6 +259,23 @@ function applyQuality() {
   post = createPost(renderer, scene, camera, quality, innerWidth, innerHeight);
   // bind live cube env map for real-time reflections
   for (const m of base.shipMats) { m.envMap = env.cubeRT.texture; m.needsUpdate = true; }
+  // Everything else was excluded from that. A metal hull with no environment to reflect renders as
+  // flat matte grey plastic no matter how many parts it has, which is most of the "the modelling
+  // looks cheap" complaint. One scene.environment makes every standard material reflect the Mars
+  // sky; the intensity is split so dielectrics get a whisper of sky fill and metals get a mirror.
+  scene.environment = env.cubeRT.texture;
+  {
+    const seen = new Set();
+    scene.traverse(o => {
+      if (!o.isMesh) return;
+      for (const mt of (Array.isArray(o.material) ? o.material : [o.material])) {
+        if (!mt || seen.has(mt.uuid) || mt.envMap) continue;
+        seen.add(mt.uuid);
+        mt.envMapIntensity = (mt.metalness ?? 0) > 0.25 ? 0.9 : 0.22;
+        mt.needsUpdate = true;
+      }
+    });
+  }
   audio.leakPos = base.leakPoint;
   UI.setTop(env.state.clock, '晴朗', quality.label, 60);
   $('touch-ui').classList.toggle('hidden', !input.isTouch);

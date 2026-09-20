@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import { smoothstep } from '../utils/noise.js';
 
+// Every fill source used to be warm ochre, so the whole frame collapsed onto one hue and read as a
+// sepia filter. Martian light is a contrast, not a tint: a butterscotch key through the dust and a
+// cool slate bounce off shadowed regolith. Splitting the fill side cool is what makes the sunlit
+// faces look sunlit and gives the settlement's geometry its read.
+const COOL_FILL = new THREE.Color(0.14, 0.18, 0.28);
+const COOL_GROUND = new THREE.Color(0.10, 0.12, 0.19);
+
 // Sun path, ambient/fog moods, weather state machine, real-time env cube camera.
 export class Environment {
   constructor(scene, sky, quality) {
@@ -24,6 +31,7 @@ export class Environment {
     scene.add(this.sun, this.sun.target);
 
     this.hemi = new THREE.HemisphereLight(0xc98a5a, 0x40251a, 0.30);
+    this.hemi.groundColor.copy(COOL_GROUND);   // bounce off shadowed regolith, not a warm mud pit
     scene.add(this.hemi);
     this.amb = new THREE.AmbientLight(0x554433, 0.10);
     scene.add(this.amb);
@@ -87,7 +95,7 @@ export class Environment {
     // The day value had to come up too: a 3.4 sun against 0.58 hemi put shadowed stone at 1/6 of
     // the lit side, so the settlement's unlit faces read as flat black cut-outs.
     this.hemi.intensity = THREE.MathUtils.lerp(0.42, 0.62, dayF) * (1 + stormMix * 1.5) + nightF * 0.34;
-    this._c.sky.setRGB(0.55, 0.33, 0.2).lerp(new THREE.Color(0.75, 0.55, 0.4), dayF);
+    this._c.sky.setRGB(0.46, 0.33, 0.27).lerp(new THREE.Color(0.74, 0.57, 0.46), dayF);
     this._c.sky.lerp(new THREE.Color(0.10, 0.13, 0.26), nightF);
     this.amb.intensity = 0.13 + dayF * 0.09 + nightF * 0.12 + stormMix * 0.30;
 
@@ -98,7 +106,7 @@ export class Environment {
     this.fog.color.copy(fogC);
     // shadow-side fill tinted by the actual haze colour, so dark scarp reads as dust-lit rock
     this.hemi.color.copy(this._c.sky).lerp(fogC, stormMix * 0.85);
-    this.amb.color.copy(fogC);
+    this.amb.color.copy(fogC).lerp(COOL_FILL, 0.55 * dayF);
     // densities sized for a 300 m island: the far rim should always sit in soft haze
     this.fog.density = THREE.MathUtils.lerp(0.0026, 0.0014, dayF) + nightF * 0.0016 + stormMix * 0.0095;
     renderer.setClearColor(fogC, 1);

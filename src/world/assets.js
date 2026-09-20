@@ -7,14 +7,35 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 const loader = new GLTFLoader();
 const cache = new Map();
 
+// glTF's fallback material is metallicFactor 1 / roughnessFactor 1 with no maps, which the spec
+// resolves to a perfectly-rough pure conductor — in practice a black hole that swallows the albedo.
+// Every CC0 pack vendored here exports exactly that, because it was authored for a non-PBR engine.
+// They are painted alloy, stone and foliage, so give the stub a dielectric BRDF on the way in.
+const BRDF = {
+  metal: [0.08, 0.36], metalRed: [0.08, 0.44], metalDark: [0.14, 0.46], dark: [0.04, 0.74],
+  rock: [0, 0.93], rockDark: [0, 0.93], rockTrack: [0, 0.9], dirt: [0, 0.96], grass: [0, 0.92],
+  skin: [0, 0.66], crystal: [0.2, 0.12], leaf: [0, 0.85], wood: [0, 0.8], _defaultMat: [0.05, 0.55],
+};
+
+function unstub(root) {
+  root.traverse((o) => {
+    const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+    for (const mt of mats) {
+      if (!mt || mt.metalness < 0.99 || mt.roughness < 0.99 || mt.metalnessMap || mt.roughnessMap) continue;
+      const b = BRDF[mt.name] || [0.06, 0.6];
+      mt.metalness = b[0];
+      mt.roughness = b[1];
+    }
+    if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
+  });
+}
+
 // name may carry a subfolder prefix, e.g. 'kenney/space/hangar_largeA'
 export function loadModel(name) {
   if (!cache.has(name)) {
     cache.set(name, loader.loadAsync(`./assets/${name}.glb`).then((gltf) => {
       const root = gltf.scenes[0];
-      root.traverse((o) => {
-        if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
-      });
+      unstub(root);
       return root;
     }));
   }

@@ -3,6 +3,7 @@ import { surfaceAt } from './height.js';
 import { ZONES, SHIP_POS, LEAK_POS, SAMPLE_COUNT } from '../config.js';
 import { mulberry32 } from '../utils/noise.js';
 import { loadModel, cloneModel, cloneMaterials } from './assets.js';
+import { mergeInto, noMerge } from './merge.js';
 
 // ─── RED STARBASE · compact diorama ───
 // One ~110 m island, six readable landmarks, everything hand-placed.
@@ -47,8 +48,18 @@ export async function buildBase(scene, quality) {
       }
     });
   }
+  // A pack's parts are separate objects only because a modelling tool made them so. Baking each
+  // template down to one mesh per material fixes every clone placed from it afterwards, and the
+  // merged buffers stay shared instead of being duplicated per instance.
+  // `crystal` is the exception: the sample pickup spins its own mesh, so it keeps its parts.
+  for (const [name, root] of Object.entries(models)) {
+    if (root && name !== 'crystal') mergeInto(root);
+  }
+  // Cloned packs are already collapsed above; hand-built groups still need their own pass.
+  const templateRoots = new Set();
   const put = (name, x, z, s, ry, dy = -0.05) => {
     const o = cloneModel(models[name]);
+    templateRoots.add(o);
     o.scale.setScalar(s);
     o.position.set(x, surfaceAt(x, z) + dy, z);
     o.rotation.y = ry || 0;
@@ -167,7 +178,7 @@ export async function buildBase(scene, quality) {
     for (const [i, f] of [0.06, 0.16, 0.3, 0.46, 0.64, 0.85].entries()) {
       const tr = new THREE.Mesh(new THREE.TorusGeometry(2.45, 0.1, 6, 32), M.shipLightRing.clone());
       tr.material.color.setHex(RING_HUES[i]); tr.material.emissive.setHex(RING_HUES[i]);
-      tr.rotation.x = Math.PI / 2; tr.position.y = f * 31; tr.visible = false; ship.add(tr);
+      tr.rotation.x = Math.PI / 2; tr.position.y = f * 31; tr.visible = false; noMerge(tr); ship.add(tr);
       lightStrips.push(tr.material); lightRings.push(tr);
     }
     for (const mm of shipMatMap.values()) {
@@ -210,7 +221,7 @@ export async function buildBase(scene, quality) {
     // pad wash ring for the light show — guaranteed in-frame from the trigger distance
     const wash = new THREE.Mesh(new THREE.TorusGeometry(13.5, 0.22, 8, 56), M.shipLightRing.clone());
     wash.material.color.setHex(0x9ff0ff); wash.material.emissive.setHex(0x2fbfe0);
-    wash.rotation.x = Math.PI / 2; wash.position.set(px, py + 0.5, pz); wash.visible = false; G.add(wash);
+    wash.rotation.x = Math.PI / 2; wash.position.set(px, py + 0.5, pz); wash.visible = false; noMerge(wash); G.add(wash);
     lightStrips.push(wash.material); lightRings.push(wash);
 
     // light-show searchlights: five narrow, near-vertical shafts ringing the pad
@@ -531,7 +542,7 @@ export async function buildBase(scene, quality) {
       c.scale.setScalar(0.6 + rand() * 0.35);
       c.position.y = 0.24 * c.scale.x;
       c.traverse(o => { if (o.isMesh) o.material = M.crystal; });
-      g4.add(c);
+      noMerge(c); g4.add(c);
       // thin beam + soft ground ring: legible at speed, not a video-game pillar
       const halo = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.9, 3.6, 12, 1, true),
         new THREE.MeshBasicMaterial({ color: 0xa8ece0, transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false }));
@@ -679,7 +690,7 @@ export async function buildBase(scene, quality) {
 
       const coreMat = new THREE.MeshStandardMaterial({ color: 0x101a1f, emissive: 0x4fe2ff, emissiveIntensity: 0, roughness: 0.2, metalness: 0.1 });
       const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.62, 0), coreMat);
-      core.position.y = 5.85; core.castShadow = true; rig.add(core);
+      core.position.y = 5.85; core.castShadow = true; noMerge(core); rig.add(core);
       const yoke = new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.055, 6, 20), iron);
       yoke.position.y = 5.85; yoke.rotation.x = Math.PI / 2; yoke.castShadow = true; rig.add(yoke);
       for (let i = 0; i < 4; i++) {                            // cage bars over the core
@@ -702,6 +713,14 @@ export async function buildBase(scene, quality) {
       colliders.push({ x: rx, z: rz, r: 2.2 });
     }
   }
+
+  // Collapse the hand-built groups and the several hundred loose struts, tiles and crates placed
+  // straight onto the island. Packs placed with `put` are skipped: their template was already
+  // baked, and re-merging a clone would duplicate a shared buffer for no gain.
+  for (const child of G.children) {
+    if (child.isGroup && !templateRoots.has(child)) mergeInto(child);
+  }
+  mergeInto(G, true);
 
   scene.add(G);
   const flamePoint = new THREE.Vector3(SHIP_POS[0], 1.6, SHIP_POS[1]);

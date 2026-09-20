@@ -324,7 +324,11 @@ export async function buildBase(scene, quality) {
     crystalRubble: new THREE.MeshStandardMaterial({ color: 0x3d2a20, roughness: 0.9, metalness: 0.16, flatShading: true }),
   };
   // Deck furniture lamps join the hero lamps so the day/night cycle drives them instead of leaving
-  // them at full emissive under a noon sun.
+  // them at full emissive under a noon sun. The saturated cyan is the exception: even at the shared
+  // 0.26 day drive its emissive dominated the dark albedo and the plaza studs still drew as bright
+  // candy discs at noon, so it gets its own lower daytime floor; the loop compensates the night
+  // term so after-dark output is unchanged.
+  M.cyanLight.userData.dimDay = 0.10;
   heroLights.push(M.goldLight, M.cyanLight);
   // A crystal meeting the deck along a clean line looks pasted on. Its own scree gives it geology:
   // mineral fractures into angular chips, and the pile buries the base of the growth. One wide flat
@@ -439,7 +443,10 @@ export async function buildBase(scene, quality) {
       }
       for (let i = 0; i < 12; i++) {
         const a = i / 12 * Math.PI * 2 + 0.26;
-        cyl(0.17, 0.17, 0.11, M.cyanLight, hx + Math.cos(a) * (cw * 2.7), top + 0.06,
+        // Flush markers, not pucks: a 6 cm proud cylinder threw its own shadow at noon and, with
+        // the cyan emissive, every stud read as a candy disc dropped on the plaza. Real apron
+        // lighting is a lens set level with the deck.
+        cyl(0.15, 0.15, 0.05, M.cyanLight, hx + Math.cos(a) * (cw * 2.7), top + 0.026,
           hz + Math.sin(a) * (cd * 2.7), 10);
       }
     }

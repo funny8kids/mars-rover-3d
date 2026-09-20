@@ -788,7 +788,12 @@ function update(dt) {
   // 0.42 by day still tripped the bloom threshold on the cyan fittings — a vertical flare off every
   // deck lamp in the noon frames — so the daytime drive comes down to a glow that reads as lit
   // glass without feeding the bloom; the night term rises to keep the after-dark levels identical.
-  for (const m of base.heroLights) m.emissiveIntensity = 0.26 + night * 1.66;
+  // A material may ask for a lower daytime floor via userData.dimDay (the saturated cyan studs);
+  // the night end stays at the same 1.92 either way.
+  for (const m of base.heroLights) {
+    const d = m.userData?.dimDay ?? 0.26;
+    m.emissiveIntensity = d + night * (1.92 - d);
+  }
   for (const c of cones) c.material.opacity = st.nightF * 0.045 * (1 - st.stormF);
   // pad discs: a flat read-able ring by day, an armed portal at night. The whole base is dimmer
   // until the rover re-links the districts, so progress is legible from anywhere on the map.

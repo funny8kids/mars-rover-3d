@@ -10,6 +10,28 @@ export async function createRover(scene) {
   const inner = cloneModel(model);
   inner.scale.setScalar(0.85);
   cloneMaterials(inner, (o, mats) => mats.some((m) => m && m.name === 'light_amber'));
+  // Raycast forensics on a noon hub frame: the antenna dish drew as a bloom star because its
+  // material was a second, props-pass-missed instance of `rover_alu` still at the exported
+  // metalness 1.0 — a bare mirror facing the sun. Re-apply the authored rover shell values to this
+  // clone (idempotent where the props pass already landed) and take the dish's mirror away for
+  // good: a high-gain antenna is painted substrate over a dielectric reflector, not chrome.
+  const SHELL = {
+    metalRed:   [[0.52, 0.135, 0.055], 0.52, 0.1],
+    metal:      [[0.44, 0.435, 0.43], 0.44, 0.72],
+    metalDark:  [[0.135, 0.13, 0.135], 0.62, 0.6],
+    rover_white:[[0.40, 0.385, 0.355], 0.56, 0.08],
+    rover_alu:  [[0.395, 0.4, 0.415], 0.42, 0.85],
+    solar_cell: [[0.019, 0.031, 0.072], 0.34, 0.3],
+  };
+  inner.traverse(o => {
+    for (const mt of (Array.isArray(o.material) ? o.material : o.material ? [o.material] : [])) {
+      const v = SHELL[mt.name];
+      if (v) { mt.color.setRGB(v[0][0], v[0][1], v[0][2]); mt.roughness = v[1]; mt.metalness = v[2]; }
+      if (o.name === 'dish' || o.name === 'dishfeed') {
+        mt.color.setRGB(0.40, 0.40, 0.42); mt.roughness = 0.55; mt.metalness = 0.12;
+      }
+    }
+  });
   g.add(inner);
 
   const wheels = [];

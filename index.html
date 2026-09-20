@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>RED STARBASE · 火星星舰基地 — 漫游车交互艺术体验</title>
+<meta name="description" content="驾驶火星漫游车穿越火星版 Starbase 的电影级实时 3D 交互艺术体验">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%232a120a'/%3E%3Cpath d='M16 4c4 5 5 10 5 15l-5 9-5-9c0-5 1-10 5-15z' fill='%23e0762a'/%3E%3Ccircle cx='16' cy='15' r='3' fill='%23ffd9a8'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<!-- 加载动画 -->
+<div id="loader" class="overlay">
+  <div class="loader-inner">
+    <div class="logo-glyph">⟁</div>
+    <h1 class="title">RED&nbsp;STARBASE</h1>
+    <div class="subtitle">火 星 · 星 舰 基 地 &nbsp;/&nbsp; MARS ROVER ART EXPERIENCE</div>
+    <div class="load-track"><div id="load-bar" class="load-bar"></div></div>
+    <div id="load-text" class="load-text">正在建立下行链路…</div>
+  </div>
+</div>
+
+<!-- 画质选择 -->
+<div id="menu" class="overlay hidden">
+  <div class="menu-inner">
+    <h2 class="menu-title">选择渲染画质</h2>
+    <div class="quality-grid" id="quality-grid">
+      <button class="q-card" data-q="low"><b>低</b><span>流畅 · 移动设备</span><i>简化光照与粒子</i></button>
+      <button class="q-card" data-q="med"><b>中</b><span>均衡 · 核显笔记本</span><i>Bloom + 阴影 + 光晕</i></button>
+      <button class="q-card" data-q="high"><b>高</b><span>桌面独显</span><i>+SSAO +景深 高粒子</i></button>
+      <button class="q-card" data-q="ultra"><b>极致</b><span>高端显卡</span><i>全特效 · 4K 超采样</i></button>
+    </div>
+    <div id="auto-tip" class="auto-tip"></div>
+    <button id="start-btn" class="start-btn" disabled>启 动 漫 游 车</button>
+    <div class="controls-hint">
+      <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 驾驶（低重力漂移）</span>
+      <span><kbd>空格</kbd> 手刹</span><span><kbd>E</kbd> 交互 / 修复</span>
+      <span><kbd>P</kbd> 拍照模式</span><span><kbd>T</kbd> 切换天气</span><span><kbd>N</kbd> 快进至深夜</span>
+      <span><kbd>R</kbd> 计时赛</span><span><kbd>Esc</kbd> 菜单</span>
+    </div>
+  </div>
+</div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="mission-panel">
+    <div class="mp-title">任务日志</div>
+    <ul id="mission-list"></ul>
+  </div>
+  <div id="info-card" class="hidden">
+    <div id="info-tag"></div>
+    <div id="info-name"></div>
+    <div id="info-params"></div>
+    <div id="info-fact"></div>
+    <div id="info-action"></div>
+  </div>
+  <div id="speedo"><div id="speed-val">0</div><div id="speed-unit">KM/H</div></div>
+  <div id="topbar">
+    <span id="tb-time"></span><span id="tb-weather"></span><span id="tb-quality"></span><span id="tb-fps"></span>
+  </div>
+  <div id="toast"></div>
+  <div id="countdown"></div>
+  <div id="objective-arrow"><svg viewBox="0 0 24 24"><path d="M12 2l7 18-7-5-7 5z"/></svg></div>
+  <div id="race-hud" class="hidden">
+    <div id="race-timer">00:00.0</div>
+    <div id="race-check">检查点 0/5</div>
+    <button id="race-board-btn">排行榜</button>
+  </div>
+  <div id="board-pop" class="hidden">
+    <h3>环基地计时赛 · 排行榜</h3>
+    <ol id="board-list"></ol>
+    <button id="board-close">关闭</button>
+  </div>
+</div>
+
+<!-- 拍照模式 -->
+<div id="photo-ui" class="hidden">
+  <div class="photo-tip">拍照模式 — 拖动旋转视角 · 滚轮变焦 · <kbd>C</kbd> 快门 · <kbd>P</kbd> 退出</div>
+  <button id="photo-share">分享截图</button>
+</div>
+
+<!-- 移动端触摸 -->
+<div id="touch-ui" class="hidden">
+  <div class="t-pad" id="t-left"><div class="t-stick"></div></div>
+  <div class="t-btns">
+    <button id="t-gas">加速</button>
+    <button id="t-brake">刹车</button>
+    <button id="t-drift">漂移</button>
+    <button id="t-inter">交互</button>
+  </div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

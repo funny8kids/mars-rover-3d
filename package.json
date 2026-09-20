@@ -1,0 +1,18 @@
+{
+  "name": "mars-starbase-drive",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "RED STARBASE - a cinematic 3D Mars rover driving art experience through a Martian Starbase",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host"
+  },
+  "dependencies": {
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.8"
+  }
+}

@@ -80,10 +80,10 @@ async function boot() {
   createTerrain(scene);
   setBar(44, '撞击坑与岩石风化场…'); await raf();
   createRocks(scene);
-  setBar(56, '建设星舰基地 · 7 大区…'); await raf();
-  base = buildBase(scene, { particles: 1 });
+  setBar(56, '载入 Blender 建模的星舰基地资产…'); await raf();
+  base = await buildBase(scene, { particles: 1 });
   setBar(74, '装配漫游车 RD-6 …'); await raf();
-  rover = createRover(scene);
+  rover = await createRover(scene);
   setBar(82, '启动火星大气模拟…'); await raf();
   phys = new RoverPhysics(START.pos[0], START.pos[1], START.heading);
   chase = new ChaseCamera(camera);

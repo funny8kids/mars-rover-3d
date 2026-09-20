@@ -57,10 +57,10 @@ void main(){
     }
     col += rays * 0.045 * uGodRay * vec3(1.0, 0.62, 0.32);
   }
-  // color grade: teal shadows / amber highlights (Blade Runner 2049 mood)
+  // color grade: violet shadows / amber highlights (Outer Wilds dusk mood)
   float lum = dot(col, vec3(0.299, 0.587, 0.114));
-  vec3 shadows = vec3(0.030, 0.062, 0.088);
-  vec3 highs = vec3(1.10, 0.84, 0.56);
+  vec3 shadows = vec3(0.052, 0.030, 0.085);
+  vec3 highs = vec3(1.12, 0.80, 0.48);
   col = mix(col * highs * 0.94, mix(col, col * highs, 0.55) + shadows * (1.0 - clamp(lum * 2.6, 0.0, 1.0)) * 1.15, uGrade);
   // excess fill light flattens the image into pale pink — crush blacks and re-saturate
   col = max(col - 0.022, vec3(0.0)) * 1.10;

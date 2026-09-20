@@ -27,11 +27,11 @@ void main(){
   float y = clamp(d.y, -1.0, 1.0);
   float horizon = pow(1.0 - max(y, 0.0), 3.2);
 
-  // mars palettes
-  vec3 dayZen  = vec3(0.16, 0.13, 0.16);
-  vec3 dayHor  = vec3(0.72, 0.42, 0.22);
-  vec3 duskZen = vec3(0.05, 0.05, 0.11);
-  vec3 duskHor = vec3(0.85, 0.30, 0.10);
+  // mars palettes — Outer Wilds dusk: violet zenith melting into a burnt-pink horizon
+  vec3 dayZen  = vec3(0.20, 0.13, 0.27);
+  vec3 dayHor  = vec3(0.86, 0.44, 0.26);
+  vec3 duskZen = vec3(0.07, 0.05, 0.14);
+  vec3 duskHor = vec3(0.92, 0.30, 0.16);
   vec3 nightZen= vec3(0.006, 0.008, 0.020);
   vec3 nightHor= vec3(0.028, 0.030, 0.046);
 

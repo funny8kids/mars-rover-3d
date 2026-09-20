@@ -3,14 +3,28 @@
 > 一个纯浏览器运行的 3D 交互艺术体验：驾驶六轮火星漫游车穿越「火星版 Starbase」，
 > 在电影级实时渲染中完成巡检、抢修、采样任务，最后在观礼台见证星舰升空。
 
-**零外部资源**——地形、天空、材质、粒子、音效 100% 程序化生成，仓库里没有一张贴图、一个模型、一段音频文件。
-首屏总下载量 = HTML + CSS + 一个 JS chunk + 一份 CSS：**632 kB / gzip 174 kB**。
+**Blender 建模 + 程序化环境**——基地地标（生活穹顶、温室、发射塔、星舰、漫游车、储罐、太阳能阵、通信碟、路灯、外星晶体、着陆器残骸、计时赛拱门）
+全部用 `tools/blender/build_assets.py` 以 Blender Python 无头建模、导出为 `public/assets/*.glb`（共 13 个风格化资产，约 550 kB），
+运行时用 `GLTFLoader` 载入；地形、天空、材质、粒子、音效仍 100% 程序化生成。
+three.js 本体已 vendor 到 `vendor/three/`，仓库自带 import map，**没有 npm 也能直接跑**。
 
-![发射区：轨道发射台、LC-39-M 倒计时牌与生活区穹顶](docs/screenshots/01-launch-pad.png)
+![永恒黄昏下的轨道发射台：星舰与 Mechazilla 桁架塔](docs/screenshots/01-launch-pad.png)
 
 ---
 
 ## 快速开始
+
+### 方式 A · 零依赖直跑（推荐，无需 npm / node_modules）
+
+```bash
+python3 tools/serve.py 5173      # 起一个静态服务器，仓库根为站点根，public/ 挂到 /
+# 浏览器打开 http://localhost:5173
+```
+
+`index.html` 里的 import map 把 `three` 指向 `vendor/three/build/three.module.js`，
+`three/addons/` 指向 `vendor/three/examples/jsm/`，浏览器原生 ES Module 直接解析，无需打包。
+
+### 方式 B · Vite（有 npm 环境时）
 
 ```bash
 npm install
@@ -18,6 +32,15 @@ npm run dev        # http://localhost:5173
 npm run build      # 产物在 dist/
 npm run preview    # 本地起一个静态服务器验证构建产物
 ```
+
+### 重建 3D 资产（改模型后）
+
+```bash
+npm run assets     # = blender --background --python tools/blender/build_assets.py
+```
+
+脚本会重新生成 `public/assets/` 下全部 `.glb`。想调造型就改脚本里对应的 `build_*()` 函数
+（每个地标一个函数，参数是米制、Z-up，导出时转成 three.js 的 Y-up）。
 
 `vite.config.js` 里 `base: './'`，所以 `dist/` 是**可移植的**：直接丢到 Vercel / Netlify / GitHub Pages / 任意静态托管都能跑
 （注意别用 `file://` 双击打开，ES Module 会被 CORS 拦）。
@@ -94,14 +117,15 @@ npm run preview    # 本地起一个静态服务器验证构建产物
 ![深夜区：银河、车灯与地平线暖光](docs/screenshots/03-night-lightshow.png)
 ![沙尘暴区：体积雾 + 沙尘粒子 + 屏幕脏污](docs/screenshots/04-storm.png)
 
-> 关于配图：这些帧全部来自 `dist/` 构建产物在真实浏览器里的实拍，用的是体验自带的拍照模式（`P` 键，隐藏 HUD、可拖拽环视）。
+> 关于配图：这些帧全部来自真实浏览器实拍（`python3 tools/serve.py` 直跑仓库根，或 `npm run dev`），用的是体验自带的拍照模式（`P` 键，隐藏 HUD、可拖拽环视）。
 > 也就是说画面里看不到任务日志与帧率条，不是后期擦掉的，是体验本身的一种状态。
 
 ---
 
 ## 技术要点
 
-**栈**：Vite 5 + Three.js 0.169（WebGL2）。无框架、无资源文件、无运行时第三方依赖。
+**栈**：Three.js 0.169（WebGL2，vendor 于 `vendor/three/`）。无框架、无贴图/音频文件、无运行时第三方依赖；
+全部 3D 资产为 Blender 脚本自产的 13 个 `.glb`（约 550 kB），随仓库分发。
 
 ```
 src/
@@ -134,6 +158,9 @@ tools/               无头验证脚本（CDP），见 docs/VERIFICATION.md
 
 `tools/` 里是一套 CDP 无头脚本，用真实按键事件驱动页面、逐步断言并抓帧，跑的是**构建产物**而不是 dev server：
 
+> 注：下表为 Blender 资产改造**之前**的整链审计结果。改造后已在真实浏览器中复验：60 FPS、控制台零报错、
+> 驾驶/转向/轮子枢轴、发射序列、灯光秀、风暴与夜间状态均正常。CDP 脚本待接入 `.glb` 加载后重跑。
+
 | 项目 | 结果 |
 | --- | --- |
 | 完整交互链审计（巡检 → 修漏 → 采样 → 集齐奖励 → 彩蛋 ×2 → 拍照 → 分享 → 计时赛 → 排行榜 → 风暴音频 → 发射链） | 退出码 0，**0 条未捕获异常** |
@@ -151,8 +178,8 @@ tools/               无头验证脚本（CDP），见 docs/VERIFICATION.md
 
 1. **桌面独显 60 FPS 未验证**——本机只有 AMD Radeon 610M 核显：`高` 档实测 22–27 FPS 并触发自动降档（降级链路可用），
    但「高端设备 60 FPS」需要你在本地跑 `npm run dev` 后用右上角状态条自查。
-2. **线上部署未执行**——`dist/` 已构建并在构建产物上通过整链验证，但发布需要仓库所有者确认。
-3. **KTX2 / DRACO 不适用**——零贴图、零模型文件，没有可压缩的外部资产；**Web Worker 未使用**——地形与设施几何在加载阶段一次性构建，运行期靠 InstancedMesh、按档位预算与视锥剔除，没有多级 LOD 网格。
+2. **线上部署未执行**——发布需要仓库所有者确认后执行；`dist/` 需在改造后用 `npm run build` 重新生成再验证。
+3. **KTX2 / DRACO 不适用**——零贴图；Blender 资产为未压缩 `.glb`，总量约 550 kB，引入压缩的收益小于复杂度；**Web Worker 未使用**——地形与设施几何在加载阶段一次性构建，运行期靠 InstancedMesh、按档位预算与视锥剔除，没有多级 LOD 网格。
 4. **WebGPU 路径未实现**——当前为 WebGL2，优先保证可部署与可降级。
 
 ---
@@ -164,7 +191,40 @@ tools/               无头验证脚本（CDP），见 docs/VERIFICATION.md
 | [bruno-simon.com](https://bruno-simon.com/) | 驾驶探索框架、车辆物理、加载与社区感、计时排行 | 低多边形卡通美术 |
 | [wind-waker-threejs.com](https://wind-waker-threejs.com/) | 画质/模式选择、收集物、截图分享的体验组织方式 | 塞尔达题材与着色风格 |
 | [threejs.org/examples](https://threejs.org/examples) | `webgl_postprocessing_unreal_bloom`、GPGPU 粒子、程序化地形/海洋、车辆控制器示例的模块划分 | 只做技术 demo、无叙事 |
+| 《星际拓荒 Outer Wilds》 | 永恒黄昏的紫橙天空、紫色阴影 + 琥珀高光分级、孤零零基地灯火的叙事感 | 太空题材与关卡结构 |
 
-美术方向：《银翼杀手 2049》的橙红雾霾 + 《星际穿越》的冷峻工业感，目标是每一帧都值得截图。
+美术方向：**《星际拓荒》的永恒黄昏**——紫罗兰天顶熔进橘粉地平线，暮色里基地的暖窗与霓虹灯带逐一点亮，
+叠加《银翼杀手 2049》的橙红雾霾与《星际穿越》的冷峻工业感，目标是每一帧都值得截图。
+
+## 资源调研记录（先找资源，避免重复建设）
+
+改造前对可复用资源做了调研，结论与取舍：
+
+| 渠道 | 内容 | 决策 |
+| --- | --- | --- |
+| [three.js 官方仓库](https://github.com/mrdoob/three.js)（npm `three@0.169.0`） | 渲染器 + GLTFLoader + 全套 postprocessing | ✅ 直接 vendor 进 `vendor/three/`（按依赖闭包裁剪），不自己造轮子 |
+| [Sketchfab 低模火星基地/空间站](https://sketchfab.com/3d-models/mars-science-station-low-poly-808afc037a254494a040d409b0bf3d70)（[Mars Science Station](https://sketchfab.com/3d-models/mars-science-station-low-poly-808afc037a254494a040d409b0bf3d70)、[Low Poly Space Kit](https://sketchfab.com/3d-models/low-poly-space-kit-7045c47936934d6988a15cb7ce4eb20b)、[Low poly space station](https://sketchfab.com/3d-models/low-poly-space-station-717e672923484b0b9c66d6df19b211fc)、[Sci-Fi Space Station](https://sketchfab.com/3d-models/sci-fi-space-station-f6b9106fffc64fec93cabc17492cb2e4)） | 造型语言参考（穹顶/桁架塔/储罐布局） | ⚠️ 只读作美术参考：授权参差、贴图重、风格不统一，不直接下载进仓库 |
+| [BlendSwap 空间站模型](https://blendswap.com/3d/space-station) / [CGTrader low-poly space](https://www.cgtrader.com/low-poly-3d-models/space) | 免费 .blend 源 | ⚠️ 同上，多角灯、材质混乱，导入后返工成本高于自产 |
+| Blender 5.2 LTS（本机 `/snap/bin/blender`） | Python API 无头建模 + glTF 导出 | ✅ 最终路线：`tools/blender/build_assets.py` 一个脚本产出全部 13 个 `.glb`，可版本化、可复现、零外部依赖 |
+
+**为什么自产而不下载**：项目要进 three.js showcase，风格一致性是硬要求；
+脚本化建模让「改一个参数 → 全基地重出」只需 40 秒，比修第三方模型干净得多。
+
+## Blender 资产清单（`public/assets/`）
+
+| 资产 | 用途 | 关键节点（运行时驱动） |
+| --- | --- | --- |
+| `rover.glb` | 玩家漫游车 | `wheelpivot_0..5`（转向/滚动枢轴） |
+| `starship.glb` | 发射台主角 | 材质克隆后接入灯光秀 `lightStrips` |
+| `launch_tower.glb` | Mechazilla 桁架塔 | 整体静态 |
+| `habitat_dome.glb` | 生活穹顶 ×4 | 琥珀窗带自发光 |
+| `greenhouse.glb` | 玻璃温室 | 品红植物生长灯 |
+| `cryo_tank.glb` | 推进剂储罐 ×8 | 非均匀缩放适配不同罐径 |
+| `solar_array.glb` | 太阳能阵 ×15 | 静态 |
+| `comm_dish.glb` | 通信碟 ×3 | 静态 |
+| `lamp.glb` | 道路灯 ×60 | 静态 |
+| `crystal.glb` | 矿物样本 ×6 | 整组旋转悬浮 |
+| `lander.glb` | 沙尘暴区残骸 | 侧翻姿态 |
+| `gate.glb` / `rock_cluster.glb` | 预留：计时赛门 / 岩石散布 | — |
 
 ![环基地计时赛](docs/screenshots/05-time-trial.png)

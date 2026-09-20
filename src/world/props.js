@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { surfaceAt } from './height.js';
 import { ZONES, SHIP_POS, LEAK_POS, SAMPLE_COUNT } from '../config.js';
 import { mulberry32, fbm } from '../utils/noise.js';
+import { loadModel, cloneModel, cloneMaterials } from './assets.js';
 
 const G = new THREE.Group();
 function box(w, h, d, mat, x, y, z, parent) {
@@ -51,8 +52,12 @@ function pipeAt(x1, z1, x2, z2, y, mat, rr = 0.5, parent) {
   m.castShadow = true; (parent || G).add(m); return m;
 }
 
-export function buildBase(scene, quality) {
+export async function buildBase(scene, quality) {
   G.clear();
+  const MODEL_NAMES = ['habitat_dome', 'greenhouse', 'launch_tower', 'starship',
+    'solar_array', 'comm_dish', 'cryo_tank', 'lamp', 'crystal', 'lander'];
+  const models = {};
+  await Promise.all(MODEL_NAMES.map(async (n) => { models[n] = await loadModel(n); }));
   const M = {
     concrete: new THREE.MeshStandardMaterial({ color: 0x6a6357, roughness: 0.97, metalness: 0.02 }),
     dark: new THREE.MeshStandardMaterial({ color: 0x24221f, roughness: 0.7, metalness: 0.5 }),
@@ -83,7 +88,7 @@ export function buildBase(scene, quality) {
   const lightRings = [];
   const showBeamMats = [];
   let showBeams = null;
-  const shipMats = [M.steel, M.steelDull, M.panelGlass];
+  const shipMats = [];
   let shipGroup = null;
 
   // ══════════ LAUNCH ZONE — pad + Mechazilla + Starship/SuperHeavy ══════════
@@ -101,76 +106,45 @@ export function buildBase(scene, quality) {
     // deluge water ring
     const ring = new THREE.Mesh(new THREE.TorusGeometry(13, 0.5, 8, 40), M.blue);
     ring.rotation.x = Math.PI / 2; ring.position.set(px, 2.6, pz); G.add(ring);
-    // Mechazilla tower
+    // Mechazilla tower — Blender-modeled lattice gantry (launch_tower.glb)
     const [tx, tz] = [px + 42, pz];
-    const towerH = 145, tw = 8, td = 16;
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      box(2.2, towerH, 2.2, M.struct, tx + sx * tw / 2, towerH / 2, tz + sz * td / 2);
-    }
-    for (let y = 6; y < towerH; y += 9) {
-      box(tw + 2.4, 0.8, 0.8, M.struct, tx, y, tz - td / 2 - 0.6);
-      box(tw + 2.4, 0.8, 0.8, M.struct, tx, y, tz + td / 2 + 0.6);
-      box(0.8, 0.8, td + 2.4, M.struct, tx - tw / 2 - 0.6, y, tz);
-      box(0.8, 0.8, td + 2.4, M.struct, tx + tw / 2 + 0.6, y, tz);
-    }
-    for (let y = 10; y < towerH - 10; y += 27) { // diagonal braces
-      const d1 = box(0.7, 30, 0.7, M.struct, tx - tw / 2 - 0.6, y + 13, tz, );
-      d1.rotation.x = 0.28;
-    }
-    // chopstick arms
-    for (const ay of [62, 66]) {
-      const arm = box(46, 2.2, 2.6, M.steelDull, tx - 23 - 4, ay, tz - 5);
-      arm.rotation.z = 0.06;
-      const tip = box(4, 14, 2.4, M.struct, tx - 47, ay - 5, tz - 5);
-      tip.rotation.z = 0.12;
-    }
+    const towerTopY = surfaceAt(tx, tz) + 122;
+    const tower = cloneModel(models.launch_tower);
+    tower.scale.setScalar(2.45);
+    tower.position.set(tx, surfaceAt(tx, tz) - 0.3, tz);
+    tower.rotation.y = Math.PI;      // chopstick service arm reaches west, over the pad
+    G.add(tower);
     // service blocks at tower base
     box(24, 12, 14, M.white, tx + 20, 6, tz + 24);
     box(16, 8, 10, M.white, tx + 20, 4, tz - 24);
     colliders.push({ x: tx, z: tz, r: 14 }, { x: tx + 20, z: tz + 24, r: 14 }, { x: tx + 20, z: tz - 24, r: 11 });
-    beacons.push(box(1.2, 1.2, 1.2, M.beacon, tx, towerH + 1, tz));
-    // ---- Starship stack (Ship on Booster) ----
+    beacons.push(box(1.2, 1.2, 1.2, M.beacon, tx, towerTopY + 1, tz));
+    // ---- Starship (Blender-modeled starship.glb on the pad) ----
     const ship = new THREE.Group();
     ship.position.set(px, 2.2, pz);
-    const bh = 72, r = 4.5;
-    cyl(r, r, bh, M.steelDull, 0, bh / 2, 0, 28, ship);                    // booster
-    const skirt = cyl(r + 0.5, r + 1.1, 10, M.steel, 0, 5, 0, 28, ship, true);
-    for (let i = 0; i < 28; i++) {                                          // engine bells
-      const a = i / 28 * Math.PI * 2, rr = i < 8 ? 1.6 : (i < 20 ? 3.2 : 4.2);
-      const bell = cyl(1.1, 0.55, 2.4, M.dark, Math.cos(a) * rr, -0.4, Math.sin(a) * rr, 10, ship);
-      bell.rotation.x = Math.sin(a) * 0.12; bell.rotation.z = -Math.cos(a) * 0.12;
-    }
-    for (let i = 0; i < 4; i++) {                                            // grid strakes
-      const a = i / 4 * Math.PI * 2;
-      const fin = box(0.5, 6, 3, M.steel, Math.cos(a) * (r + 0.6), bh - 6, Math.sin(a) * (r + 0.6), ship);
-      fin.rotation.y = -a;
-    }
-    const inter = cyl(r, r, 5, M.steel, 0, bh + 2.5, 0, 28, ship);          // interstage
-    const sh = bh + 5;                                                        // ship section
-    cyl(r - 0.15, r - 0.15, 28, M.steel, 0, sh + 14, 0, 28, ship);
-    // heat shield dark side (half shell)
-    const hs = new THREE.Mesh(new THREE.CylinderGeometry(r + 0.08, r + 0.08, 28, 28, 1, true, -Math.PI / 2, Math.PI), M.blackTile);
-    hs.position.y = sh + 14; ship.add(hs);
-    // nosecone
-    const pts = []; for (let i = 0; i <= 12; i++) { const t = i / 12; pts.push(new THREE.Vector2(r * (1 - Math.pow(t, 1.6)), 28 * 0 + t * 16)); }
-    const nose = new THREE.Mesh(new THREE.LatheGeometry(pts, 28), M.steel);
-    nose.position.y = sh + 28; ship.add(nose); nose.castShadow = true;
-    const noseHs = new THREE.Mesh(new THREE.LatheGeometry(pts.map(p => new THREE.Vector2(p.x + 0.06, p.y)), 14, 0, Math.PI), M.blackTile);
-    noseHs.position.y = sh + 28; noseHs.rotation.y = Math.PI / 2; ship.add(noseHs);
-    // ship flaps + forward flaps
-    for (const [sz2, sy2, sw] of [[1, sh + 6, 7], [-1, sh + 6, 7]]) {
-      const flap = box(0.5, 8, sw, M.steelDull, 0, sy2 + 4, sz2 * (r + 1.6), ship);
-      flap.rotation.x = sz2 * 0.25;
-    }
-    for (const s of [1, -1]) box(0.4, 3.6, 2.4, M.steelDull, 0, sh + 38, s * (r + 0.8), ship);
+    const hull = cloneModel(models.starship);
+    const shipMatMap = cloneMaterials(hull);
+    hull.scale.setScalar(2.78);       // ~121 m nose to engine
+    ship.add(hull);
+    const seenMats = new Set();
+    hull.traverse(o => {
+      if (!o.isMesh) return;
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+        if (!seenMats.has(m)) { seenMats.add(m); shipMats.push(m); }
+      }
+    });
     // Light-show rings. The trigger radius is 90 m, and from there a 121 m stack never fits in a
     // 60° frame — only the booster is on screen — so most rings sit low, on the visible band.
     const RING_HUES = [0x3fd9ff, 0xff8a3c, 0xa05cff, 0x3fffc9, 0xff4d6d, 0x8fb4ff, 0xffd166, 0xff7ad9];
-    for (const [i, yy] of [6, 15, 26, 40, 55, sh + 2, sh + 16, sh + 34].entries()) {
-      const tr = new THREE.Mesh(new THREE.TorusGeometry(r + 0.15, 0.13, 6, 40), M.shipLightRing.clone());
+    for (const [i, f] of [0.05, 0.12, 0.21, 0.32, 0.45, 0.59, 0.72, 0.86].entries()) {
+      const tr = new THREE.Mesh(new THREE.TorusGeometry(8.75, 0.3, 6, 40), M.shipLightRing.clone());
       tr.material.color.setHex(RING_HUES[i]); tr.material.emissive.setHex(RING_HUES[i]);
-      tr.rotation.x = Math.PI / 2; tr.position.y = yy; tr.visible = false; ship.add(tr);
+      tr.rotation.x = Math.PI / 2; tr.position.y = f * 121; tr.visible = false; ship.add(tr);
       lightStrips.push(tr.material); lightRings.push(tr);
+    }
+    // the ship's modeled window strip + logo band join the show with their own cloned materials
+    for (const m of shipMatMap.values()) {
+      if (m.name === 'light_amber' || m.name === 'light_cyan') lightStrips.push(m);
     }
     // Pad-edge wash ring: the one element of the show that is guaranteed to be on screen from the
     // trigger distance, so the ground itself reads as lit rather than a distant dot. Kept well
@@ -287,33 +261,14 @@ export function buildBase(scene, quality) {
   {
     const [cx, cz] = at('tanks', 0, 0);
     const rand = mulberry32(99);
+    // Blender-modeled cryo tank (cryo_tank.glb): shell, domed cap, amber/cyan hoop lights,
+    // legs, outlet stub and hazard label in one stylized asset.
     const tank = (x, z, rr, h, bandMat) => {
-      cyl(rr, rr, h, M.cryo, x, h / 2, z, 26);
-      const dome = new THREE.Mesh(new THREE.SphereGeometry(rr, 26, 10, 0, 6.283, 0, 1.57), M.insul);
-      dome.position.set(x, h, z); dome.castShadow = true; G.add(dome);
-      const band = cyl(rr + 0.06, rr + 0.06, 1.6, bandMat, x, h * 0.72, z, 26);
-      // merged per material: the seams, skirt, ladder and roof ring exist to give the shell
-      // something to shade across, and to carry a human scale reference
-      const insulG = [];
-      for (const fy of [0.16, 0.34, 0.52, 0.9]) {
-        insulG.push(new THREE.CylinderGeometry(rr + 0.045, rr + 0.045, 0.5, 26).translate(x, h * fy, z));
-      }
-      const d1 = new THREE.Mesh(mergeGeometries(insulG), M.insul);
-      d1.castShadow = true; G.add(d1);
-      cyl(rr * 1.05, rr * 1.11, 1.5, M.dark, x, 0.75, z, 26);
-      const structG = [new THREE.TorusGeometry(rr + 0.85, 0.17, 6, 26).rotateX(Math.PI / 2).translate(x, h * 0.965, z)];
-      for (const s of [-0.42, 0.42]) {
-        structG.push(new THREE.BoxGeometry(0.16, h - 1, 0.16).translate(x + rr * 0.78 + s, h / 2, z + rr * 0.78));
-      }
-      for (let dy = 2.4; dy < h - 1; dy += 2.4) {
-        structG.push(new THREE.BoxGeometry(1.05, 0.12, 0.12).translate(x + rr * 0.78, dy, z + rr * 0.78));
-      }
-      const d2 = new THREE.Mesh(mergeGeometries(structG), M.struct);
-      d2.castShadow = true; G.add(d2);
-      for (let i = 0; i < 4; i++) {
-        const a = i / 4 * Math.PI * 2;
-        box(0.4, h, 0.4, M.struct, x + Math.cos(a) * (rr + 0.8), h / 2, z + Math.sin(a) * (rr + 0.8));
-      }
+      const t = cloneModel(models.cryo_tank);
+      t.scale.set(rr / 2.0, h / 9.6, rr / 2.0);
+      t.position.set(x, 0, z);
+      t.rotation.y = (x * 0.37 + z * 0.71) % 6.283;
+      G.add(t);
       colliders.push({ x, z, r: rr + 2 });
       return { x, z };
     };
@@ -380,58 +335,37 @@ export function buildBase(scene, quality) {
     });
   }
 
-  // ══════════ HABITAT — modules / greenhouse / solar farm ══════════
+  // ══════════ HABITAT — Blender-modeled dome village / greenhouse / solar farm ══════════
   {
     const [vx, vz] = at('habitat', 0, 0);
-    const habitat = (x, z, rot) => {
-      const g3 = new THREE.Group(); g3.position.set(x, 0, z); g3.rotation.y = rot;
-      cyl(5, 5, 14, M.white, 0, 5, 0, 24, g3).rotation.x = Math.PI / 2;
-      const caps = new THREE.Mesh(new THREE.SphereGeometry(5, 24, 12, 0, 6.283, 0, 1.57), M.white);
-      caps.position.set(0, 5, -7); caps.rotation.x = -Math.PI / 2; g3.add(caps);
-      const caps2 = caps.clone(); caps2.position.z = 7; caps2.rotation.x = Math.PI / 2; g3.add(caps2);
-      for (let i = 0; i < 5; i++) box(1.4, 0.9, 0.25, M.warmWin, -6 + i * 3, 6.2, 0.01, g3).position.z = 4.9;
-      g3.traverse(o => { if (o.isMesh) o.castShadow = true; });
-      G.add(g3); colliders.push({ x, z, r: 7 });
-      return g3;
+    const put = (model, x, z, s, ry) => {
+      const o = cloneModel(model);
+      o.scale.setScalar(s);
+      o.position.set(x, surfaceAt(x, z) - 0.15, z);
+      o.rotation.y = ry || 0;
+      G.add(o); return o;
     };
-    habitat(vx - 14, vz, 0.2); habitat(vx + 6, vz - 12, 1.3); habitat(vx + 16, vz + 6, -0.5);
-    // connecting tubes
-    for (const [a, b] of [[[-14, 0], [6, -12]], [[6, -12], [16, 6]]]) {
-      pipeAt(vx + a[0], vz + a[1], vx + b[0], vz + b[1], 4.2, M.steelDull, 1.4);
+    put(models.habitat_dome, vx - 16, vz - 6, 1.15, 0.4);
+    put(models.habitat_dome, vx + 10, vz - 18, 0.9, 2.4);
+    put(models.habitat_dome, vx + 18, vz + 6, 1.05, -1.1);
+    put(models.greenhouse, vx - 6, vz + 18, 1.2, 0.7);
+    colliders.push({ x: vx - 16, z: vz - 6, r: 8 }, { x: vx + 10, z: vz - 18, r: 7 },
+      { x: vx + 18, z: vz + 6, r: 8 }, { x: vx - 6, z: vz + 18, r: 6 });
+    // pressurized walkways between the domes
+    pipeAt(vx - 16, vz - 6, vx + 10, vz - 18, surfaceAt(vx - 3, vz - 12) + 2.4, M.steelDull, 1.1);
+    pipeAt(vx + 10, vz - 18, vx + 18, vz + 6, surfaceAt(vx + 14, vz - 6) + 2.4, M.steelDull, 1.0);
+    // solar farm — 15 tracked arrays
+    for (let gx = 0; gx < 5; gx++) for (let gz = 0; gz < 3; gz++) {
+      const x = vx + 36 + gx * 11, z = vz - 16 + gz * 11;
+      put(models.solar_array, x, z, 1.15, 0.25);
+      if (gz === 1) colliders.push({ x, z, r: 3.2 });
     }
-    // greenhouse dome
-    const gh = new THREE.Mesh(new THREE.IcosahedronGeometry(7, 1), new THREE.MeshPhysicalMaterial({
-      color: 0xbfe8c8, transparent: true, opacity: 0.35, roughness: 0.15, metalness: 0, transmission: 0, envMapIntensity: 2,
-    }));
-    gh.scale.y = 0.85; gh.position.set(vx - 2, 3.5, vz + 16); G.add(gh);
-    const wire = new THREE.Mesh(new THREE.IcosahedronGeometry(7.05, 1), new THREE.MeshStandardMaterial({ color: 0xddd8cc, wireframe: true }));
-    wire.scale.copy(gh.scale); wire.position.copy(gh.position); G.add(wire);
-    const plants = new THREE.Mesh(new THREE.SphereGeometry(5.5, 16, 8), new THREE.MeshStandardMaterial({ color: 0x2f7a33, roughness: 1, emissive: 0x0e2b10, emissiveIntensity: 1.5 }));
-    plants.scale.y = 0.6; plants.position.copy(gh.position).setY(2); G.add(plants);
-    colliders.push({ x: vx - 2, z: vz + 16, r: 8 });
-    // solar farm — instanced
-    const cellG = box(6, 0.15, 3.4, M.panelGlass, 0, 0, 0, new THREE.Group());
-    const poleG = cyl(0.12, 0.12, 2, M.struct, 0, 0, 0, 8, new THREE.Group());
-    const solarMat = M.panelGlass, solarGeo = new THREE.BoxGeometry(6, 0.15, 3.4);
-    const im = new THREE.InstancedMesh(solarGeo, solarMat, 40);
-    const pm = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 2.2, 0.2), M.struct, 40);
-    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(1, 1, 1);
-    let n = 0;
-    for (let gx = 0; gx < 8; gx++) for (let gz = 0; gz < 5; gz++) {
-      const x = vx + 34 + gx * 8, z = vz - 18 + gz * 8;
-      e.set(0.6, 0.3, 0); q.setFromEuler(e);
-      m4.compose(new THREE.Vector3(x, 2.6, z), q, s); im.setMatrixAt(n, m4);
-      m4.compose(new THREE.Vector3(x, 1, z), new THREE.Quaternion(), s); pm.setMatrixAt(n, m4);
-      n++;
-    }
-    im.count = pm.count = n; im.castShadow = pm.castShadow = true;
-    im.instanceMatrix.needsUpdate = pm.instanceMatrix.needsUpdate = true;
-    G.add(im, pm);
-    cellG.parent && cellG.parent.removeFromParent(cellG); poleG.parent && poleG.parent.removeFromParent(poleG);
-    // comm dish + lamps
-    const dish = new THREE.Mesh(new THREE.SphereGeometry(4, 20, 10, 0, 6.283, 0, 1.0), M.white);
-    dish.position.set(vx - 24, 6, vz + 14); dish.rotation.set(2.1, 0.6, 0); G.add(dish); dish.castShadow = true;
-    colliders.push({ x: vx - 24, z: vz + 14, r: 3 });
+    // comm dishes
+    put(models.comm_dish, vx - 28, vz + 14, 1.0, 2.1);
+    put(models.comm_dish, vx - 20, vz + 27, 0.7, 0.6);
+    colliders.push({ x: vx - 28, z: vz + 14, r: 3.5 }, { x: vx - 20, z: vz + 27, r: 2.6 });
+    // a lone research dome out on the night-overlook hill, its warm windows facing the galaxy
+    put(models.habitat_dome, ...ZONES.night.pos.map((v, i) => i === 0 ? v + 26 : v + 10), 0.8, 1.7);
     infoZones.push({
       key: 'habitat', pos: [vx, vz], r: 46, tag: 'SETTLEMENT · MODULE A-D',
       name: '火星生活舱段', params: ['加压体积 4×920 m³ · 气闸 ×2', '温室穹顶 生物量 ~2.1 t', '光伏阵列 310 kW + 甲烷备电'],
@@ -503,10 +437,10 @@ export function buildBase(scene, quality) {
       const g4 = new THREE.Group();
       const y = surfaceAt(x, z);
       g4.position.set(x, y, z);
-      const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.9, 0), M.steelDull);
-      rock.scale.set(1, 0.7, 1.2); rock.position.y = 0.3; g4.add(rock);
-      const c = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 0), M.crystal);
-      c.position.y = 1.05; g4.add(c);
+      // Blender-modeled alien crystal shard (crystal.glb)
+      const c = cloneModel(models.crystal);
+      c.scale.setScalar(1.1 + rand() * 0.6);
+      g4.add(c);
       // A fat additive cone at 0.16 reads as a video-game pickup beam; keep the hint thin and
       // let the crystal itself carry the glow, with a soft ground ring for legibility at speed.
       const halo = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 1.1, 4.4, 14, 1, true),
@@ -537,14 +471,12 @@ export function buildBase(scene, quality) {
       const [yx, yz] = at('storm', -66, 44);
       const wy = surfaceAt(yx, yz);
       wreckPos = new THREE.Vector3(yx, wy, yz);
-      const w = cyl(4.5, 4.5, 26, M.steelDull, yx, wy + 3, yz, 24);
-      // rough metal with no env contribution renders as a black void shard in a haze frame —
-      // this wreck is dust-coated, so it has to read as dielectric scarp, not a hole in the world
-      w.rotation.z = 1.35; w.rotation.y = 0.6; w.material = new THREE.MeshStandardMaterial({ color: 0x8b7a6b, roughness: 0.82, metalness: 0.28 });
-      // scorched but dust-coated, and pushed off the parking spot — a huge dark slab
-      // right behind the rover reads as a void shard in a haze frame
-      const w2 = new THREE.Mesh(new THREE.ConeGeometry(3.2, 8, 24), new THREE.MeshStandardMaterial({ color: 0x8a7256, roughness: 0.95, metalness: 0.12 }));
-      w2.position.set(yx + 27, wy + 0.4, yz + 13); w2.rotation.set(1.8, 0.4, 0.2); G.add(w2); w2.castShadow = true;
+      // the freight lander "Dawn-7", down on its side — Blender-modeled lander.glb
+      const w = cloneModel(models.lander);
+      w.scale.setScalar(4.6);
+      w.position.set(yx, wy + 3.2, yz);
+      w.rotation.set(1.45, 0.6, 0.25);
+      G.add(w);
       const pole = cyl(0.4, 0.4, 14, M.struct, yx - 14, wy + 7, yz - 8);
       beacons.push(cyl(0.9, 0.9, 1.4, M.beacon, yx - 14, wy + 14, yz - 8, 10));
       colliders.push({ x: yx, z: yz, r: 12 });
@@ -627,9 +559,8 @@ export function buildBase(scene, quality) {
     }
   }
 
-  // ══════════ road lamps (instanced) along roads ══════════
+  // ══════════ road lamps along roads — Blender-modeled lamp.glb clones ══════════
   {
-    const lampGeoPole = new THREE.CylinderGeometry(0.12, 0.15, 5, 6);
     const rand = mulberry32(55);
     const pts = [];
     const pairs = [[ZONES.launch.pos, ZONES.watch.pos], [ZONES.watch.pos, ZONES.habitat.pos], [ZONES.watch.pos, ZONES.tanks.pos], [ZONES.tanks.pos, ZONES.production.pos], [ZONES.production.pos, ZONES.launch.pos]];
@@ -642,16 +573,12 @@ export function buildBase(scene, quality) {
         pts.push([x + dz / l * 12, z - dx / l * 12], [x - dz / l * 12, z + dx / l * 12]);
       }
     }
-    const im2 = new THREE.InstancedMesh(lampGeoPole, M.struct, pts.length);
-    const bulbGeo = new THREE.SphereGeometry(0.2, 8, 6);
-    const bulbs = new THREE.InstancedMesh(bulbGeo, M.goldLight, pts.length);
-    const m4 = new THREE.Matrix4();
     pts.forEach(([x, z], i) => {
-      im2.setMatrixAt(i, m4.makeTranslation(x, surfaceAt(x, z) + 2.5, z));
-      bulbs.setMatrixAt(i, m4.makeTranslation(x, surfaceAt(x, z) + 5.2, z));
+      const l = cloneModel(models.lamp);
+      l.position.set(x, surfaceAt(x, z) - 0.1, z);
+      l.rotation.y = (i % 2 ? 1 : -1) * Math.PI / 2 + rand() * 0.2;
+      G.add(l);
     });
-    im2.instanceMatrix.needsUpdate = true; G.add(im2);
-    bulbs.instanceMatrix.needsUpdate = true; G.add(bulbs);
   }
 
   G.traverse(o => { if (o.isMesh && o.castShadow === false && o.geometry?.type?.includes('Box')) o.castShadow = true; });

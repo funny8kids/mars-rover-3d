@@ -5,7 +5,7 @@ import { smoothstep } from '../utils/noise.js';
 export class Environment {
   constructor(scene, sky, quality) {
     this.scene = scene; this.sky = sky; this.q = quality;
-    this.dayT = 0.30;               // 0..1 (0=midnight)
+    this.dayT = 0.235;              // 0..1 (0=midnight) — boot in golden hour
     this.dayLength = 300;           // seconds for full cycle
     this.cycleOn = true;
     this.weather = 'clear';         // clear | storm
@@ -69,7 +69,7 @@ export class Environment {
     }
     this.sun.target.position.copy(focus);
     this.sun.target.updateMatrixWorld();
-    this.sun.intensity = THREE.MathUtils.lerp(0.10, 4.3, dayF) * (1 - stormMix * 0.72);
+    this.sun.intensity = THREE.MathUtils.lerp(0.10, 3.4, dayF) * (1 - stormMix * 0.72);
     this._c.sun.setRGB(1.0, 0.72, 0.5).lerp(new THREE.Color(1.0, 0.92, 0.82), smoothstep(0.1, 0.5, el));
     this.sun.color.copy(this._c.sun).lerp(new THREE.Color(0.4, 0.5, 0.75), nightF * 0.99);
     this.sun.intensity += nightF * 0.5; // moonlight key

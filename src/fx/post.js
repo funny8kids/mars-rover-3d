@@ -21,6 +21,7 @@ const FINAL = {
     uFlash: { value: 0 },
     uFlashCol: { value: new THREE.Color(1, 0.5, 0.2) },
     uGrade: { value: 1 },
+    uNight: { value: 0 },
     uRes: { value: new THREE.Vector2(1, 1) },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
@@ -28,7 +29,7 @@ const FINAL = {
 precision highp float;
 varying vec2 vUv;
 uniform sampler2D tDiffuse, uDirtTex;
-uniform float uTime, uGodRay, uCA, uGrain, uVignette, uDirt, uFlash, uGrade;
+uniform float uTime, uGodRay, uCA, uGrain, uVignette, uDirt, uFlash, uGrade, uNight;
 uniform vec2 uSunUV, uRes;
 uniform vec3 uFlashCol;
 float h12(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)))*43758.5453); }
@@ -57,15 +58,17 @@ void main(){
     }
     col += rays * 0.045 * uGodRay * vec3(1.0, 0.62, 0.32);
   }
-  // color grade: violet shadows / amber highlights (Outer Wilds dusk mood)
+  // color grade: violet shadows / amber highlights (Outer Wilds dusk mood).
+  // At night this same violet sat on an already dark frame and turned the whole base into
+  // purple mush, so the split-tone, the black crush and the vignette all back off with it.
   float lum = dot(col, vec3(0.299, 0.587, 0.114));
-  vec3 shadows = vec3(0.052, 0.030, 0.085);
-  vec3 highs = vec3(1.12, 0.80, 0.48);
-  col = mix(col * highs * 0.94, mix(col, col * highs, 0.55) + shadows * (1.0 - clamp(lum * 2.6, 0.0, 1.0)) * 1.15, uGrade);
+  vec3 shadows = mix(vec3(0.052, 0.030, 0.085), vec3(0.020, 0.026, 0.048), uNight);
+  vec3 highs = mix(vec3(1.12, 0.80, 0.48), vec3(0.92, 0.97, 1.10), uNight);
+  col = mix(col * highs * 0.94, mix(col, col * highs, 0.55) + shadows * (1.0 - clamp(lum * 2.6, 0.0, 1.0)) * mix(1.15, 0.55, uNight), uGrade);
   // excess fill light flattens the image into pale pink — crush blacks and re-saturate
-  col = max(col - 0.022, vec3(0.0)) * 1.10;
+  col = max(col - mix(0.022, 0.004, uNight), vec3(0.0)) * mix(1.10, 1.55, uNight);
   float lum2 = dot(col, vec3(0.299, 0.587, 0.114));
-  col = mix(vec3(lum2), col, 1.22);
+  col = mix(vec3(lum2), col, mix(1.22, 1.10, uNight));
   // screen dirt during storms
   if (uDirt > 0.001){
     vec3 dirt = texture2D(uDirtTex, uv * 1.15 + 0.02).rgb;
@@ -75,7 +78,7 @@ void main(){
     col += vec3(0.75, 0.55, 0.35) * specks * uDirt * 0.12;
   }
   // vignette
-  col *= clamp(1.0 - r2 * uVignette * 1.35, 0.0, 1.5);
+  col *= clamp(1.0 - r2 * uVignette * mix(1.35, 0.82, uNight), 0.0, 1.5);
   // launch flash / color bias — a bias, not a whiteout: the frame has to keep its structure
   col = mix(col, col * vec3(1.35, 0.78, 0.58) + uFlashCol * 0.18, uFlash);
   // film grain, scaled by luminance so a night frame never fills with grey snow

@@ -709,7 +709,8 @@ function update(dt) {
   }
   fu.uGodRay.value = quality.godrays && sunVis ? (1 - stormF) * st.dayF * THREE.MathUtils.clamp(camDir.dot(st.sunDir) * 2.2, 0, 1) : 0;
   fu.uCA.value = 0.12 + Math.min(0.5, phys.speed / 60) + stormF * 0.2 + launch.flash * 0.9;
-  fu.uGrain.value = 0.028 + st.nightF * 0.018 + stormF * 0.03;
+  fu.uNight.value = st.nightF;
+  fu.uGrain.value = 0.028 + st.nightF * 0.006 + stormF * 0.03;
   fu.uVignette.value = 0.55 + stormF * 0.5;
   fu.uDirt.value = stormF * 0.9;
   fu.uFlash.value = launch.flash;

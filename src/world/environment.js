@@ -72,16 +72,16 @@ export class Environment {
     this.sun.target.updateMatrixWorld();
     this.sun.intensity = THREE.MathUtils.lerp(0.10, 3.4, dayF) * (1 - stormMix * 0.72);
     this._c.sun.setRGB(1.0, 0.72, 0.5).lerp(new THREE.Color(1.0, 0.92, 0.82), smoothstep(0.1, 0.5, el));
-    this.sun.color.copy(this._c.sun).lerp(new THREE.Color(0.4, 0.5, 0.75), nightF * 0.99);
-    this.sun.intensity += nightF * 0.5; // moonlight key
+    this.sun.color.copy(this._c.sun).lerp(new THREE.Color(0.50, 0.58, 0.82), nightF * 0.99);
+    this.sun.intensity += nightF * 1.6; // moonlight key: strong enough to throw real shadows
 
     // ambient
     // a dust storm is a giant diffuse light box: the key dims but the wrap-around fill rises.
     // Without that fill every shadowed face in the frame collapses into a black void.
-    this.hemi.intensity = THREE.MathUtils.lerp(0.42, 0.58, dayF) * (1 + stormMix * 1.5) + nightF * 0.14;
+    this.hemi.intensity = THREE.MathUtils.lerp(0.42, 0.58, dayF) * (1 + stormMix * 1.5) + nightF * 0.34;
     this._c.sky.setRGB(0.55, 0.33, 0.2).lerp(new THREE.Color(0.75, 0.55, 0.4), dayF);
-    this._c.sky.lerp(new THREE.Color(0.08, 0.10, 0.20), nightF);
-    this.amb.intensity = 0.13 + nightF * 0.06 + stormMix * 0.30;
+    this._c.sky.lerp(new THREE.Color(0.10, 0.13, 0.26), nightF);
+    this.amb.intensity = 0.13 + nightF * 0.12 + stormMix * 0.30;
 
     // fog mood
     const fogC = this._c.fog.setRGB(0.38, 0.175, 0.085).lerp(new THREE.Color(0.045, 0.05, 0.075), nightF);

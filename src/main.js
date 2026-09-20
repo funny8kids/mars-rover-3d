@@ -444,11 +444,15 @@ function updateGrid(dt, st) {
   }
 
   // ── rig visuals: dark iron by day, a lit column you can navigate by at night
+  // The first day gate (0.45) still failed: a 1.2 m emissive octahedron at ei≈0.4 renders as a
+  // flat saturated cyan diamond even below the bloom threshold — pure hue, no glow involved.
+  // By day the core has to sit near-black inside its cage (0.10, same floor as the plaza studs),
+  // and the additive hex plate under it must stop tinting the pad disc until dusk.
   for (const r of base.gridRigs) {
     const p = r.power, beat = 0.72 + 0.28 * Math.sin(elapsed * 2.6 + r.x * 0.3);
-    r.core.material.emissiveIntensity = p * 5.4 * beat;
+    r.core.material.emissiveIntensity = p * (0.10 + st.nightF * 5.3) * beat;
     r.core.rotation.y += dt * (0.4 + p * 2.6);
-    r.mats[1].opacity = p * (0.2 + 0.55 * st.nightF) * beat;
+    r.mats[1].opacity = p * (0.02 + 0.73 * st.nightF) * beat;
     r.mats[2].opacity = p * (0.012 + 0.05 * st.nightF) * (1 - st.stormF * 0.6);
     if (r === grid.target && grid.linkT > 0) {
       // the tap you are currently welding flickers in amber so the hold has a target

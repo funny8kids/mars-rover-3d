@@ -92,7 +92,7 @@ export async function buildBase(scene, quality) {
       for (const mt of (Array.isArray(o.material) ? o.material : o.material ? [o.material] : [])) {
         switch (mt.name) {
           case 'pad_white': mt.color.setRGB(0.44, 0.415, 0.375); mt.roughness = 0.82; mt.metalness = 0.06; break;
-          case 'pad_glow': mt.color.setRGB(0.16, 0.42, 0.40); mt.roughness = 0.6; break;
+          case 'pad_glow': mt.color.setRGB(0.10, 0.27, 0.28); mt.roughness = 0.6; break;
           case 'rover_alu': mt.color.setRGB(0.46, 0.47, 0.49); mt.metalness = 0.62; mt.roughness = 0.46; break;
           case 'rover_dark': mt.color.setRGB(0.16, 0.155, 0.17); mt.metalness = 0.55; mt.roughness = 0.6; break;
           case 'light_amber': mt.color.setRGB(0.28, 0.15, 0.05); mt.roughness = 0.42; break;

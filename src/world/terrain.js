@@ -94,9 +94,14 @@ export function makeSandDetail(size = 512) {
       const k = (h[y * size + x] - lo) * inv;
       const i = (y * size + x) * 4;
       // Crest: bleached, coarse, bright. Trough: finer rust that has been swept clean.
-      d[i] = (0.66 + 0.42 * k) * 255;
-      d[i + 1] = (0.60 + 0.44 * k) * 255;
-      d[i + 2] = (0.55 + 0.47 * k) * 255;
+      // The first pass swung ~65% crest-to-trough, which is what a close-up wants and what a
+      // driving view punishes: repeated over the dune field it banding-moiréed into hard parallel
+      // stripes the moment the trains fell below Nyquist. The swing comes down to ~30% and the
+      // shader fades the map entirely past that point (see applyPaving), so the near grain keeps
+      // its bite and the far field settles into a flat warm expanse like real dunes seen off.
+      d[i] = (0.80 + 0.24 * k) * 255;
+      d[i + 1] = (0.77 + 0.25 * k) * 255;
+      d[i + 2] = (0.75 + 0.26 * k) * 255;
       d[i + 3] = 255;
     }
   });
@@ -176,6 +181,8 @@ float rsbNoise(vec2 p){
 float gPave;
 vec2 gPaveN = vec2( 0.0 );
 float gPaveR = 0.0;
+// Ripple survival factor: 1 right under the lens, 0 once the tile is denser than the pixels.
+float gRipple = 1.0;
 // Sand blows across the edge of every deck. The height field's pad falloff is a perfect circle, and
 // a mathematically round boundary between paving and dune is the most obviously synthetic line in
 // the world — so the outer band loses the deck wherever a drift has crossed it.
@@ -278,6 +285,14 @@ function applyPaving(mat) {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\n' + PARS)
       .replace('#include <map_fragment>', `#include <map_fragment>
+  // The 512² ripple tile spans 11.5 m and its fastest train runs ~3.5 cycles per metre, so past
+  // roughly 30 m it falls below Nyquist and anisotropic sampling stops saving it: the whole dune
+  // face banding-moiréed into hard parallel stripes in every driving shot. Fade the detail map
+  // toward its own mean with texture density — grain under the lens, flat rust on the horizon,
+  // which is exactly how a real dune field resolves.
+  gRipple = 1.0 - smoothstep( 0.004, 0.016, fwidth( vMapUv.x ) + fwidth( vMapUv.y ) );
+  // (no vColor here — color_fragment multiplies the vertex tint in *after* this chunk)
+  diffuseColor.rgb = mix( vec3( 0.92, 0.895, 0.88 ), diffuseColor.rgb, gRipple );
   gPave = rsbPave( vWP.xz, vPave );
   // Sintered regolith, not poured concrete. The deck has to sit *inside* the sand's value range:
   // the first pass mixed toward pure white and made a glaring apron, and even the grey that
@@ -296,7 +311,7 @@ function applyPaving(mat) {
   roughnessFactor = clamp( roughnessFactor + gPaveR, 0.58, 1.0 );`)
       .replace('#include <normal_fragment_maps>', `#ifdef USE_NORMALMAP_TANGENTSPACE
   vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
-  mapN.xy *= normalScale * ( 1.0 - gPave * 0.95 );
+  mapN.xy *= normalScale * ( 1.0 - gPave * 0.95 ) * gRipple;
   mapN.xy += gPaveN;
   normal = normalize( tbn * mapN );
 #endif`);
@@ -368,7 +383,9 @@ export function createTerrain(scene) {
   mat.normalMap = detail.normalMap;
   // The ripple shape is now carried by albedo, so the normals only have to whisper; at full
   // strength the tiling field read as corduroy — perfectly parallel waves with no height behind them.
-  mat.normalScale.set(0.62, 0.62);
+  // Nudged up once the albedo swing came down: with the stripes softened, the lighting term is what
+  // keeps the near-field grain three-dimensional, and it is the distance fade that kills the moiré.
+  mat.normalScale.set(0.78, 0.78);
   applyPaving(mat);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;
@@ -413,7 +430,10 @@ export async function createRocks(scene) {  const names = ['rock_largeA', 'rock_
 // low sun along the whole dune field.
 export function createStones(scene, count = 3600) {
   const rand = mulberry32(0x5c0ffee);
-  const geo = new THREE.IcosahedronGeometry(1, 0);
+  // Detail 1, not 0: at the base of a dune a 20-face chip is a handful of triangles, and mid-way
+  // out it was the one object in the frame that read as unmodelled geometry. The extra facet loop
+  // costs 4x the verts of a single instanced draw call and gives the noise something to chew on.
+  const geo = new THREE.IcosahedronGeometry(1, 1);
   const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) {
     // A chip broken off a basalt slab is flat-ish and angular, not a ball: squash Y and push each
@@ -422,7 +442,9 @@ export function createStones(scene, count = 3600) {
     p.setXYZ(i, p.getX(i) * k, p.getY(i) * k * 0.55, p.getZ(i) * k);
   }
   geo.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0.04, flatShading: true });
+  // Smooth-shaded. Flat shading on top of the jitter made every stone a cut gem that caught the
+  // low sun as 20 hard bright facets — real scoria chips are dust-coated and read matte.
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0.04 });
   const mesh = new THREE.InstancedMesh(geo, mat, count);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), s = new THREE.Vector3();
   const e = new THREE.Euler(), col = new THREE.Color();

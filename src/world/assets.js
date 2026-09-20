@@ -17,14 +17,30 @@ const BRDF = {
   skin: [0, 0.66], crystal: [0.2, 0.12], leaf: [0, 0.85], wood: [0, 0.8], _defaultMat: [0.05, 0.55],
 };
 
+// A pale full conductor at roughness ~0.2 is a mirror, and a mirror facing a 3.4-intensity sun
+// clips: the lamp heads and rail posts drew as blank white tiles before bloom even entered the
+// chain (measured — 2.5% of one lamp head sat at 255,255,255). envMapIntensity does nothing about
+// it, because the spike is the direct analytic light, not image-based. 0.62 keeps a readable
+// metallic gradient and removes 96% of the clipped pixels. Darker metals return less of the sun,
+// so they may stay glossier.
+function desun(mt) {
+  if (!mt || mt.metalness <= 0.5 || !mt.color) return;
+  const luma = mt.color.r + mt.color.g + mt.color.b;
+  const floor = luma > 1.6 ? 0.62 : 0.44;
+  if (mt.roughness < floor) mt.roughness = floor + (mt.roughness % 0.05);
+}
+
 function unstub(root) {
   root.traverse((o) => {
     const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
     for (const mt of mats) {
-      if (!mt || mt.metalness < 0.99 || mt.roughness < 0.99 || mt.metalnessMap || mt.roughnessMap) continue;
-      const b = BRDF[mt.name] || [0.06, 0.6];
-      mt.metalness = b[0];
-      mt.roughness = b[1];
+      if (!mt) continue;
+      if (mt.metalness >= 0.99 && mt.roughness >= 0.99 && !mt.metalnessMap && !mt.roughnessMap) {
+        const b = BRDF[mt.name] || [0.06, 0.6];
+        mt.metalness = b[0];
+        mt.roughness = b[1];
+      }
+      desun(mt);
     }
     if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
   });

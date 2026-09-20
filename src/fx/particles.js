@@ -109,7 +109,10 @@ export function createFX(scene, quality) {
   fx.spark = new ParticlePool(scene, Math.round(600 * P), { color0: 0xfff2b0, color1: 0xff5a10, opacity: 1, gravity: -9.8, drag: 0.985, additive: true, sizeGrow: 0.9 });
   fx.flame = new ParticlePool(scene, Math.round(1400 * P), { color0: 0xfff8e0, color1: 0xff4400, opacity: 1, gravity: 1.0, drag: 0.97, additive: true, sizeGrow: 1.25 });
   fx.smoke = new ParticlePool(scene, Math.round(1200 * P), { color0: 0xd8c8bc, color1: 0x5a4a42, opacity: 0.5, gravity: 1.6, drag: 0.975, sizeGrow: 1.9 });
-  fx.steam = new ParticlePool(scene, Math.round(500 * P), { color0: 0xeaf6ff, color1: 0x9fc8de, opacity: 0.45, gravity: 0.4, drag: 0.96, sizeGrow: 1.8 });
+  // A near-white puff at 0.45 opacity over a dark deck drew as a cotton ball with a visible
+  // polygon outline. Vapour off a cryo leak is loaded with suspended dust, so it is dim, warm-grey
+  // and much larger by the time it leaves the plume.
+  fx.steam = new ParticlePool(scene, Math.round(500 * P), { color0: 0xd9cabb, color1: 0x8d7f74, opacity: 0.20, gravity: 0.4, drag: 0.96, sizeGrow: 2.9 });
   fx.storm = new ParticlePool(scene, Math.round(quality.stormParticles), { color0: 0xc88a52, color1: 0x96612f, opacity: 0.3, gravity: 0, drag: 0.999, sizeGrow: 1, maxSize: 12, nearFade: 5 });
   fx.storm2 = new ParticlePool(scene, Math.round(quality.stormParticles * 0.4), { color0: 0xa06a3a, color1: 0x7a4a26, opacity: 0.42, gravity: 0, drag: 0.999, sizeGrow: 1, maxSize: 18, nearFade: 5 });
   Object.values(fx).forEach(p => p.setPixelRatio(1));

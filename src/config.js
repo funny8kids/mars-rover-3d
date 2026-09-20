@@ -1,8 +1,10 @@
+// maxPixels caps the *framebuffer* area, not the device ratio: a 1.5 ratio on a small window and
+// on a 4K display differ by four times in cost, and it is the area that decides the frame time.
 export const QUALITIES = {
-  low:   { label:'低', pixelRatio:0.75, shadow:0,    particles:0.30, ssao:false, dof:false, bloom:true,  bloomStrength:0.55, godrays:false, samples:0, envUpdateHz:1.0,  stormParticles:900  },
-  med:   { label:'中', pixelRatio:1.0,  shadow:1536, particles:0.60, ssao:false, dof:false, bloom:true,  bloomStrength:0.7,  godrays:true,  samples:0, envUpdateHz:2.0,  stormParticles:2000 },
-  high:  { label:'高', pixelRatio:1.5,  shadow:2048, particles:1.0,  ssao:true,  dof:true,  bloom:true,  bloomStrength:0.85, godrays:true,  samples:4, envUpdateHz:4.0,  stormParticles:3800 },
-  ultra: { label:'极致',pixelRatio:2.0, shadow:4096, particles:1.6,  ssao:true,  dof:true,  bloom:true,  bloomStrength:0.95, godrays:true,  samples:8, envUpdateHz:6.0,  stormParticles:6000 },
+  low:   { label:'低', pixelRatio:0.75, maxPixels:0.6e6, shadow:0,    particles:0.30, ssao:false, bloom:true,  bloomStrength:0.55, godrays:false, envUpdateHz:1.0, stormParticles:900  },
+  med:   { label:'中', pixelRatio:1.0,  maxPixels:1.3e6, shadow:1024, particles:0.60, ssao:true,  bloom:true,  bloomStrength:0.70, godrays:true,  envUpdateHz:2.0, stormParticles:2000 },
+  high:  { label:'高', pixelRatio:1.5,  maxPixels:2.3e6, shadow:2048, particles:1.0,  ssao:true,  bloom:true,  bloomStrength:0.85, godrays:true,  envUpdateHz:2.0, stormParticles:3800 },
+  ultra: { label:'极致',pixelRatio:2.0, maxPixels:4.0e6, shadow:3072, particles:1.6,  ssao:true,  bloom:true,  bloomStrength:0.95, godrays:true,  envUpdateHz:2.0, stormParticles:6000 },
 };
 
 // Compact art-diorama layout (metres). The whole base lives inside a ~110 m playfield

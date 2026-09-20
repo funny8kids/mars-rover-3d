@@ -24,6 +24,14 @@ float vn(vec2 p){
 }
 float fbm2(vec2 p){ float s=0.,a=.5; for(int i=0;i<5;i++){ s+=a*vn(p); p*=2.07; a*=.5;} return s; }
 
+// Ridgelines are sampled on a circle in azimuth, so the silhouette closes on itself without a seam.
+// smoothstep flattens the summits: Martian horizon features are table mesas, not triangular peaks.
+float mesa(float a, float seed, float f){
+  vec2 p = vec2(cos(a), sin(a)) * f;
+  float h = vn(p + seed) + vn(p * 2.3 + seed + 7.0) * 0.40 + vn(p * 5.7 + seed + 19.0) * 0.13;
+  return smoothstep(0.30, 0.78, h / 1.53);
+}
+
 void main(){
   vec3 d = normalize(vDir);
   float y = clamp(d.y, -1.0, 1.0);
@@ -102,6 +110,42 @@ void main(){
     }
   }
 
+  // High dust veils. A smooth two-colour gradient is the main reason the dome reads as a flat
+  // colour field: wind-sheared cirrus gives the sky structure, and drifting bands give it time.
+  // Projected onto a plane at unit height so the pattern stays the same size overhead instead of
+  // converging at the zenith.
+  if (y > 0.012){
+    vec2 cp = d.xz / max(y, 0.05);
+    float veil = fbm2(vec2(cp.x * 0.40, cp.y * 1.30) + vec2(uTime * 0.0035, uTime * 0.0012));
+    float filament = fbm2(vec2(cp.x * 1.7, cp.y * 5.4) - vec2(uTime * 0.0085, 0.0));
+    float cover = smoothstep(0.50, 0.79, veil) * (0.30 + 0.80 * smoothstep(0.30, 0.74, filament));
+    // cp = d.xz / y diverges toward the horizon, so the filament field goes far above Nyquist
+    // within a few degrees of it and aliased into the flat white scratches that dominated every
+    // driving frame. The veils now start well above the horizon line.
+    float fade = smoothstep(0.075, 0.34, y) * (1.0 - smoothstep(0.62, 0.98, y));
+    // +1e-4 keeps the horizontal normal finite when the view points straight at the zenith
+    vec2 sd = normalize(vec2(d.x, d.z) + 1e-4);
+    vec2 sdSun = normalize(vec2(uSunDir.x, uSunDir.z) + 1e-4);
+    float sunward = pow(max(dot(sd, sdSun), 0.0), 1.6);
+    // sunward veils catch the key light; the rest of the field stays a cool, thin grey
+    vec3 veilCol = mix(vec3(0.55, 0.56, 0.68), vec3(1.00, 0.83, 0.65), 0.25 + sunward * 0.75);
+    sky = mix(sky, veilCol, cover * fade * (0.16 + 0.52 * dayF) * (1.0 - uStorm * 0.55));
+  }
+
+  // Distant mesas. With nothing standing on the horizon line every sightline ended in a hard band
+  // of haze, which is most of what made the world feel like a small stage. Two layers at different
+  // values put real depth behind the settlement, and the far one is washed toward the sky colour
+  // because that is what an atmosphere does.
+  float az = atan(d.z, d.x);
+  float farLine  = 0.055 + mesa(az, 1.7, 3.0) * 0.075;
+  float nearLine = 0.018 + mesa(az, 9.4, 5.5) * 0.040;
+  float lit = 0.07 + 0.93 * dayF;
+  vec3 farRock = mix(hor, vec3(0.52, 0.35, 0.27), 0.55) * lit;
+  vec3 nearRock = mix(hor * 0.55, vec3(0.30, 0.19, 0.15), 0.62) * lit;
+  float ridgeA = 1.0 - uStorm * 0.8;
+  sky = mix(sky, farRock, smoothstep(farLine + 0.004, farLine - 0.004, y) * ridgeA);
+  sky = mix(sky, nearRock, smoothstep(nearLine + 0.004, nearLine - 0.004, y) * ridgeA);
+
   // storm darkening + ochre soup
   vec3 stormCol = vec3(0.48, 0.24, 0.11);
   sky = mix(sky, stormCol * (0.5 + dayF * 0.7), uStorm * 0.85 * (0.4 + 0.6 * horizon));
@@ -125,8 +169,13 @@ export function createSky(scene) {
   mesh.renderOrder = -10;
   mesh.frustumCulled = false;
   scene.add(mesh);
+  // Metals need an irradiance map, and the only honest source for one on Mars is this dome. The
+  // mirror shares the material, so it tracks every uniform for free and PMREM can sample the sky
+  // without the whole settlement being re-rendered six times per refresh.
+  const envScene = new THREE.Scene();
+  envScene.add(new THREE.Mesh(geo, mat));
   return {
-    mesh, mat,
+    mesh, mat, envScene,
     setSun(dir, day, storm, time, moonDir, moonF) {
       mat.uniforms.uSunDir.value.copy(dir);
       mat.uniforms.uDay.value = day;

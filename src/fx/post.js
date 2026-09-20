@@ -4,8 +4,17 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+
+// EffectComposer.setSize() re-sizes every pass to the full effective buffer, so a pass that only
+// needs to work in a blurry half-resolution world has to opt out by hand. Without this the
+// constructor's resolution argument is silently discarded on the first addPass().
+function atScale(pass, k) {
+  const base = pass.setSize.bind(pass);
+  pass.setSize = (w, h) => base(Math.max(2, Math.round(w * k)), Math.max(2, Math.round(h * k)));
+  return pass;
+}
 
 const FINAL = {
   uniforms: {
@@ -43,17 +52,20 @@ void main(){
   col.r = texture2D(tDiffuse, uv + fromCenter * ca).r;
   col.g = texture2D(tDiffuse, uv).g;
   col.b = texture2D(tDiffuse, uv - fromCenter * ca).b;
-  // god rays: radial march toward sun UV
+  // god rays: radial march toward the sun's screen position.
+  // The march step has to be bounded and the samples have to stop at the frame edge: with the sun
+  // just off-screen the step was larger than the whole frame, so all ten taps clamped onto the same
+  // bright sky row and painted solid gold bars across half the image.
   if (uGodRay > 0.001){
     vec3 rays = vec3(0.0);
-    vec2 d = (uv - uSunUV) * -0.062;
+    vec2 d = clamp((uv - uSunUV) * -0.062, vec2(-0.030), vec2(0.030));
     vec2 p = uv;
     float illum = 1.0;
     for (int i = 0; i < 10; i++){
       p += d;
+      float inside = step(0.0, p.x) * step(p.x, 1.0) * step(0.0, p.y) * step(p.y, 1.0);
       vec3 s = texture2D(tDiffuse, clamp(p, 0.001, 0.999)).rgb;
-      float lum = dot(s, vec3(0.333));
-      rays += max(s * lum - 0.55, 0.0) * illum;
+      rays += max(s * dot(s, vec3(0.333)) - 0.55, 0.0) * illum * inside;
       illum *= 0.86;
     }
     col += rays * 0.045 * uGodRay * vec3(1.0, 0.62, 0.32);
@@ -106,35 +118,45 @@ function makeDirtTexture() {
 }
 
 export function createPost(renderer, scene, camera, quality, w, h) {
-  const rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: quality.samples });
+  // Four samples of MSAA on a half-float buffer is four times the blend bandwidth on every
+  // triangle in the scene, and the effect composer then resamples that buffer anyway. The edges
+  // come back from the FXAA pass at the end for a twentieth of the cost.
+  const rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType });
   const composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
-  let ssao = null, bokeh = null;
   if (quality.ssao) {
-    ssao = new SSAOPass(scene, camera, w, h);
-    ssao.kernelRadius = 10; ssao.minDistance = 0.0006; ssao.maxDistance = 0.09;
+    // Contact darkening at half resolution. AO is a low-frequency signal with a blur on top of it,
+    // so a full-resolution buffer bought nothing but three million extra samples a frame.
+    const ssao = atScale(new SSAOPass(scene, camera, w, h), 0.5);
+    // kernelRadius is in view-space metres; min/maxDistance are normalised over cameraNear..Far,
+    // and with a 9 000 m far plane one metre of depth is 1/9000 of the range. The old values (10 /
+    // 0.0006 / 0.09) therefore sampled ten metres around each pixel and ignored any occluder
+    // closer than 5.4 m — a broad gradient over whole buildings at 17 ms a frame, not contact AO.
+    ssao.kernelRadius = 0.65; ssao.minDistance = 0.00004; ssao.maxDistance = 0.0014;
     ssao.output = SSAOPass.OUTPUT.Default;
     composer.addPass(ssao);
   }
-  if (quality.dof) {
-    bokeh = new BokehPass(scene, camera, { focus: 24, aperture: 0.00006, maxblur: 0.008 });
-    composer.addPass(bokeh);
-  }
-  // The composer's target is linear HDR and OutputPass tone-maps afterwards, so this
-  // threshold is read against raw radiance: sunlit white hull sits near 3.0, and 0.82 made
-  // every lit surface bloom into a featureless blob. Only true emissives should cross it.
-  const bloom = new UnrealBloomPass(new THREE.Vector2(w, h), quality.bloomStrength, 0.62, 1.75);
+  // Bloom mips are by definition blurry, so the chain starts at a quarter of the frame's pixels
+  // rather than its full size — the same four bright hull pixels, at a quarter the bandwidth.
+  const bloom = atScale(new UnrealBloomPass(new THREE.Vector2(w, h), quality.bloomStrength, 0.62, 1.75), 0.5);
   composer.addPass(bloom);
   const finalPass = new ShaderPass(FINAL);
   finalPass.uniforms.uDirtTex.value = makeDirtTexture();
   finalPass.uniforms.uRes.value.set(w, h);
   composer.addPass(finalPass);
   composer.addPass(new OutputPass());
+  const fxaa = new ShaderPass(FXAAShader);
+  const setFxaa = (w, h) => fxaa.uniforms.resolution.value.set(1 / Math.max(1, w), 1 / Math.max(1, h));
+  fxaa.setSize = setFxaa;
+  composer.addPass(fxaa);
   return {
-    composer, bloom, ssao, bokeh, final: finalPass,
+    composer, bloom, ssao: quality.ssao ? composer.passes[1] : null, final: finalPass, fxaa,
     setSize(w, h) {
+      // EffectComposer caches the renderer's pixel ratio at construction, so a resize or an
+      // auto-degrade that changes it has to re-publish it or the buffers stay at the old area.
+      composer.setPixelRatio(renderer.getPixelRatio());
       composer.setSize(w, h);
-      finalPass.uniforms.uRes.value.set(w, h);
+      finalPass.uniforms.uRes.value.set(w * composer._pixelRatio, h * composer._pixelRatio);
     },
   };
 }

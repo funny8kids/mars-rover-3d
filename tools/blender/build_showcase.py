@@ -1020,104 +1020,217 @@ def build_teleport():
     return root
 
 # ###########################################################################
-#                              GATE ARCH
-#  footprint compatible: ~7.4 wide × ~4.2 tall × 0.9 deep. Stone parts use
-#  "rover_dark" (props.js recolors them to warm stone).
+#                     GATE ARCH  →  SPACEPORT GATE 01
+#  footprint compatible: ~7.4 wide × ~4.3 tall × ~1.2 deep, front = -Y.
+#  A fluted-column temple is the wrong vocabulary for a habitat on Mars, so
+#  this is an engineered gate: banded load pylons with bolted flanges, a
+#  recessed service spine, a bolted box-truss lintel carrying a lit sign
+#  band, and aviation beacons.
 # ###########################################################################
+def _text_mesh(body, size, extrude=0.02):
+    bpy.ops.object.text_add(location=(0, 0, 0))
+    t = act(bpy.context.object)
+    t.data.body = body
+    t.data.size = size
+    t.data.align_x = 'CENTER'
+    t.data.align_y = 'CENTER'
+    t.data.extrude = extrude
+    t.data.bevel_depth = 0.003
+    t.data.bevel_resolution = 1
+    _only(t)
+    bpy.ops.object.convert(target='MESH')
+    o = act(bpy.context.object)
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    return o
+
+
 def build_arch():
     purge()
     root = empty("arch", (0, 0, 0))
-    STONE = P["dark"]      # "rover_dark" → re-assigned to stone at runtime
-    MET = P["alu"]
-    AX_ = 3.1              # column axis x
+    BODY = P["body"]      # painted structural white
+    MET = P["alu"]        # bare machined alloy
+    DARK = P["dark"]      # anodised recesses
+    HAZ = P["accent"]     # hazard orange
+    CONC = P["pad"]       # cast footing
+    AX_ = 3.1             # pylon axis x
+    DEPTH = 0.80          # pylon depth (Y)
+    FRONT = -DEPTH / 2    # -0.40
+
+    # stacked shaft segments: [width, z0, z1]. The stepped inset is what a
+    # compression gantry looks like; a plain box reads as scaffolding.
+    SEGS = [(1.16, 0.17, 0.78), (1.06, 0.78, 1.46), (0.98, 1.46, 2.14),
+            (0.92, 2.14, 2.72), (0.86, 2.72, 3.10)]
+
     for sgn in (-1, 1):
-        # stepped plinth with panel seam + bolts
-        rbox("plinth_%d" % sgn, 1.15, 0.88, 0.28, (sgn * AX_, 0, 0.14), STONE,
-             bevel_r=0.045, segs=2, par=root)
-        rbox("plinth2_%d" % sgn, 0.95, 0.74, 0.20, (sgn * AX_, 0, 0.36), STONE,
+        # ── cast footing with a hazard-striped kerb ──
+        rbox("foot_%d" % sgn, 1.62, 1.24, 0.17, (sgn * AX_, 0, 0.085), CONC,
              bevel_r=0.035, segs=2, par=root)
+        rbox("footcap_%d" % sgn, 1.40, 1.04, 0.06, (sgn * AX_, 0, 0.20), MET,
+             bevel_r=0.018, segs=1, par=root)
+        for i in range(7):
+            x = sgn * AX_ - 0.66 + i * 0.22
+            m = HAZ if i % 2 == 0 else BODY
+            pbox("kerb_f_%d_%d" % (sgn, i), 0.21, 0.05, 0.075, (x, -0.60, 0.13), m, par=root)
+            pbox("kerb_b_%d_%d" % (sgn, i), 0.21, 0.05, 0.075, (x, 0.60, 0.13), m, par=root)
+        for i in range(4):
+            y = -0.44 + i * 0.29
+            m = HAZ if i % 2 == 0 else BODY
+            pbox("kerb_l_%d_%d" % (sgn, i), 0.05, 0.28, 0.075, (sgn * AX_ - 0.81, y, 0.13), m, par=root)
+            pbox("kerb_r_%d_%d" % (sgn, i), 0.05, 0.28, 0.075, (sgn * AX_ + 0.81, y, 0.13), m, par=root)
+
+        # ── shaft: banded segments, each crowned by a protruding bolted flange ──
+        for si, (w, z0, z1) in enumerate(SEGS):
+            h = z1 - z0
+            rbox("seg%d_%d" % (si, sgn), w, DEPTH, h, (sgn * AX_, 0, z0 + h / 2), BODY,
+                 bevel_r=0.030, segs=2, par=root)
+            rbox("flange%d_%d" % (si, sgn), w + 0.13, DEPTH + 0.11, 0.075,
+                 (sgn * AX_, 0, z1 - 0.035), MET, bevel_r=0.016, segs=1, par=root)
+            for sy in (-1, 1):
+                boltrow("fbolt%d_%d_%d" % (si, sgn, sy),
+                        (sgn * AX_ - w / 2 + 0.06, sy * (DEPTH / 2 + 0.06), z1 - 0.035),
+                        (sgn * AX_ + w / 2 - 0.06, sy * (DEPTH / 2 + 0.06), z1 - 0.035),
+                        4, DARK, br=0.020, bh=0.016, normal=(0, sy, 0), par=root)
+            # horizontal stiffener ribs on both cheeks
+            for k in range(3):
+                z = z0 + h * (0.28 + k * 0.22)
+                for sx in (-1, 1):
+                    pbox("rib%d_%d_%d_%d" % (si, sgn, k, sx), 0.035, DEPTH * 0.72, 0.055,
+                         (sgn * AX_ + sx * (w / 2 + 0.012), 0, z), MET, par=root)
+
+        # ── service spine: recessed channel, emissive run, louvres, quick-release clamps ──
+        pbox("spine_%d" % sgn, 0.46, 0.045, 2.72, (sgn * AX_, FRONT - 0.008, 1.68), DARK, par=root)
+        pbox("spinelight_%d" % sgn, 0.10, 0.045, 2.34, (sgn * AX_, FRONT - 0.030, 1.68),
+             P["cyan"], par=root)
+        for k in range(9):
+            z = 0.66 + k * 0.255
+            pbox("louvre%d_%d" % (sgn, k), 0.40, 0.055, 0.038,
+                 (sgn * AX_, FRONT - 0.030, z), MET, par=root)
+        for k in range(4):
+            z = 0.80 + k * 0.62
+            rbox("clamp%d_%d" % (sgn, k), 0.60, 0.10, 0.11, (sgn * AX_, FRONT - 0.02, z),
+                 MET, bevel_r=0.014, segs=1, par=root)
+            hexn("clampbolt%d_%d" % (sgn, k), 0.038, 0.026, (sgn * AX_, FRONT - 0.075, z),
+                 DARK, rot=(math.pi / 2, 0, 0), par=root)
+
+        # ── side conduit, junction box and data line ──
+        cx = sgn * (AX_ + 0.62)
+        tube("conduit_%d" % sgn, [(cx, 0.24, 0.16), (cx, 0.24, 1.10),
+                                  (sgn * (AX_ + 0.44), 0.24, 1.42),
+                                  (sgn * (AX_ + 0.44), 0.24, 2.58),
+                                  (sgn * (AX_ + 0.30), 0.24, 2.86)], 0.055, DARK, par=root)
+        tube("dataline_%d" % sgn, [(sgn * (AX_ - 0.62), 0.26, 0.16),
+                                   (sgn * (AX_ - 0.62), 0.26, 1.90),
+                                   (sgn * (AX_ - 0.48), 0.26, 2.16)], 0.028, HAZ, par=root)
+        rbox("jbox_%d" % sgn, 0.26, 0.20, 0.34, (sgn * (AX_ + 0.55), 0.20, 1.86), MET,
+             bevel_r=0.020, segs=1, par=root)
+        pbox("jboxface_%d" % sgn, 0.17, 0.02, 0.22, (sgn * (AX_ + 0.55), 0.09, 1.86),
+             DARK, par=root)
+        pbox("jboxled_%d" % sgn, 0.05, 0.02, 0.05, (sgn * (AX_ + 0.62), 0.088, 1.96),
+             P["amber"], par=root)
+
+        # ── shoulder: the pylon flares out to receive the truss ──
+        rbox("shoulder_%d" % sgn, 1.34, DEPTH + 0.20, 0.15, (sgn * AX_, 0, 3.175), BODY,
+             bevel_r=0.030, segs=2, par=root)
+        rbox("shplate_%d" % sgn, 1.06, DEPTH + 0.02, 0.13, (sgn * AX_, 0, 3.315), MET,
+             bevel_r=0.018, segs=1, par=root)
         for sy in (-1, 1):
-            pbox("plinthseam_%d_%d" % (sgn, sy), 1.0, 0.02, 0.06,
-                 (sgn * AX_, sy * 0.45, 0.28), P["worn"], par=root)
-            boltrow("plbolt_%d_%d" % (sgn, sy),
-                    (sgn * AX_ - 0.4, sy * 0.455, 0.14), (sgn * AX_ + 0.4, sy * 0.455, 0.14),
-                    5, MET, br=0.024, bh=0.014, normal=(0, sy, 0), par=root)
-        # fluted column shaft + base collar + capital moldings
-        rod("colbase_%d" % sgn, 0.36, 0.14, (sgn * AX_, 0, 0.53), STONE, verts=20,
-            br=0.025, par=root)
-        fluted("column_%d" % sgn, 0.30, 2.30, (sgn * AX_, 0, 0.60), STONE, par=root,
-               flutes=13, depth=0.05)
-        # fillet ring at fluted top
-        ring("colring_%d" % sgn, 0.295, 0.028, (sgn * AX_, 0, 2.84), STONE, maj=26, mino=6, par=root)
-        # capital: two moldings + abacus
-        cone("cap1_%d" % sgn, 0.30, 0.42, 0.16, (sgn * AX_, 0, 2.98), STONE, verts=18, br=0.02, par=root)
-        rbox("cap2_%d" % sgn, 0.92, 0.86, 0.16, (sgn * AX_, 0, 3.14), STONE, bevel_r=0.04, segs=2, par=root)
-        # Ionic-ish volute discs
+            boltrow("shbolt_%d_%d" % (sgn, sy), (sgn * AX_ - 0.44, sy * (DEPTH / 2 + 0.11), 3.175),
+                    (sgn * AX_ + 0.44, sy * (DEPTH / 2 + 0.11), 3.175), 5, DARK,
+                    br=0.021, bh=0.017, normal=(0, sy, 0), par=root)
+        # diagonal gussets tying shoulder to shaft
         for sy in (-1, 1):
-            rod("volute_%d_%d" % (sgn, sy), 0.10, 0.10, (sgn * AX_, sy * 0.40, 3.06),
-                STONE, rot=(math.pi / 2, 0, 0), verts=12, br=0.015, par=root)
-        # bracket hardware spanning the capital→lintel joint (front + back faces)
+            pbox("gusset_%d_%d" % (sgn, sy), 0.05, 0.34, 0.34,
+                 (sgn * (AX_ + 0.50), sy * 0.30, 3.02), MET,
+                 rot=(0, math.radians(-40 * sgn), 0), par=root)
+        # corner guard posts
         for sy in (-1, 1):
-            pbox("bracket_%d_%d" % (sgn, sy), 0.55, 0.12, 0.26,
-                 (sgn * (AX_ + 0.28), sy * 0.26, 3.30), MET, par=root)
-            hexn("brbolt_%d_%d" % (sgn, sy), 0.035, 0.02,
-                 (sgn * (AX_ + 0.56), sy * 0.26, 3.30),
-                 P["worn"], rot=(0, math.pi / 2, 0), par=root)
-    # ---- lintel beam with seams + engraved frieze band + cornice
-    lint = rbox("lintel", 7.40, 0.66, 0.55, (0, 0, 3.65), STONE, bevel_r=0.05, segs=2, par=root)
-    rbox("cornice", 7.40, 0.72, 0.18, (0, 0, 4.01), STONE, bevel_r=0.04, segs=2, par=root)
-    # panel seams (vertical recesss on the front face)
-    for k in range(4):
-        x = -2.4 + k * 1.6
-        if abs(x) < 0.5:
-            continue
-        pbox("lintseam_%d" % k, 0.035, 0.02, 0.46, (x, -0.34, 3.65), P["worn"], par=root)
-    # engraved band: recessed strip + incised glyph marks (front face)
-    pbox("frieze", 6.40, 0.015, 0.17, (0, -0.338, 3.44), P["worn"], par=root)
-    glyphs = []
-    for k in range(9):
-        gx = -2.56 + k * 0.64
-        for j, (ox, oy, sx, sy2, rz) in enumerate([
-                (-0.10, 0.0, 0.05, 0.11, 0), (0.10, 0.0, 0.05, 0.11, 0),
-                (0.0, 0.035, 0.16, 0.04, 0), (0.0, -0.045, 0.06, 0.06, 45)]):
-            bpy.ops.mesh.primitive_cube_add(size=1, location=(gx + ox, -0.352, 3.44 + oy))
-            g = act(bpy.context.object)
-            g.scale = (sx, 0.02, sy2)
-            if rz:
-                g.rotation_euler = (0, 0, math.radians(rz))
-            _only(g)
-            # bake rotation into the mesh: setting rotation after
-            # transform_apply and before join mis-orients in 5.2 headless
-            bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-            g.data.materials.append(MET)
-            glyphs.append(g)
-    gl = join(glyphs, "engraving")
-    fix_slots(gl, MET)
-    parent(gl, root)
-    # ---- keystone: hexagonal wedge medallion proud of the lintel front + emblem
-    bpy.ops.mesh.primitive_cone_add(radius1=0.42, radius2=0.34, depth=0.14,
-        location=(0, -0.30, 3.60), rotation=(math.radians(90), 0, 0), vertices=6)
-    ks = act(bpy.context.object)
-    ks.name = "keystone"
-    ks.rotation_euler = (math.radians(90), 0, math.radians(30))
-    _only(ks)
-    bevel(ks, 0.025, 1)
-    smooth_angle(ks, 40)
-    ks.data.materials.append(STONE)
-    parent(ks, root)
-    # star emblem disc on the keystone (front)
-    rod("emblem", 0.20, 0.05, (0, -0.39, 3.60), P["amber"], rot=(math.pi / 2, 0, 0),
-        verts=5, br=0.015, par=root)
-    # ---- light strip under the lintel + status pucks
-    strip = rbox("light_strip", 6.20, 0.10, 0.14, (0, 0, 3.30), P["cyan"],
-                 bevel_r=0.035, segs=1, par=root)
+            rod("guard_%d_%d" % (sgn, sy), 0.045, 0.62,
+                (sgn * (AX_ + 0.70 * (1 if sy > 0 else -1) * 0.94),
+                 sy * 0.52, 0.48), HAZ, verts=10, br=0.012, par=root)
+
+    # ── box-truss lintel: chords, posts, diagonals, end posts ──
+    Z0, Z1 = 3.38, 4.06
+    for z in (Z0, Z1):
+        o = ibeam("chord_%g" % z, 7.30, 0.26, 0.17, 0.045, (0, 0, z), MET,
+                  rot=(0, 0, math.pi / 2))
+        parent(o, root)
+    for k in range(11):
+        x = -3.30 + k * 0.66
+        pbox("post_%d" % k, 0.085, 0.15, Z1 - Z0, (x, 0, (Z0 + Z1) / 2), MET, par=root)
+        if k < 10:
+            d = 0.66 / 2
+            pbox("diag_%d" % k, 0.075, 0.12, 0.86, (x + d, 0, (Z0 + Z1) / 2), MET,
+                 rot=(0, math.radians(52 if k % 2 == 0 else -52), 0), par=root)
     for sgn in (-1, 1):
-        rbox("stripsock_%d" % sgn, 0.30, 0.16, 0.18, (sgn * 3.35, 0, 3.30), MET,
+        rbox("endpost_%d" % sgn, 0.16, 0.30, 0.86, (sgn * 3.62, 0, (Z0 + Z1) / 2), BODY,
+             bevel_r=0.020, segs=1, par=root)
+        for z in (Z0, Z1):
+            boltring("chordbolt_%d_%g" % (sgn, z), (sgn * 3.62, 0, z), (1, 0, 0), 0.09, 6,
+                     DARK, br=0.017, bh=0.016, par=root)
+    # handrail along the top chord
+    rod("rail_top", 0.026, 7.10, (0, -0.16, 4.20), MET, rot=(0, math.pi / 2, 0),
+        verts=8, br=0.006, par=root)
+    for k in range(9):
+        pbox("railpost_%d" % k, 0.032, 0.032, 0.15, (-3.2 + k * 0.8, -0.16, 4.13), MET, par=root)
+
+    # ── sign band: recessed panel, frame, lit 3D wordmark ──
+    # The gate has two faces and the player arrives on the one that used to be a blank slab, so the
+    # sign is built once and mirrored. The rear text needs a 180° roll on top of the −90° pitch,
+    # otherwise it stands upright but reads backwards.
+    def sign_face(sgn):
+        def y(d):
+            return sgn * (abs(FRONT) + d)
+        # Text is modelled in the XY plane facing +Z. Pitching +90° lays it upright with its face
+        # to −Y; rolling a further 180° about Z mirrors it onto the other side while keeping the
+        # same up vector. Pitching −90° instead put the face on +Y upside-down, and the roll then
+        # corrected the tilt but left the letters mirrored — the approach side read "ƎBATS ЯDE".
+        rot = (math.radians(90), 0, 0) if sgn < 0 \
+            else (math.radians(90), 0, math.radians(180))
+        rbox("signback_%d" % sgn, 4.72, 0.05, 0.60, (0, y(0.03), 3.72), DARK,
+             bevel_r=0.014, segs=1, par=root)
+        pbox("signrail_t_%d" % sgn, 4.86, 0.075, 0.055, (0, y(0.045), 4.045), HAZ, par=root)
+        pbox("signrail_b_%d" % sgn, 4.86, 0.075, 0.055, (0, y(0.045), 3.395), HAZ, par=root)
+        pbox("signst_l_%d" % sgn, 0.055, 0.075, 0.70, (-2.40, y(0.045), 3.72), HAZ, par=root)
+        pbox("signst_r_%d" % sgn, 0.055, 0.075, 0.70, (2.40, y(0.045), 3.72), HAZ, par=root)
+        for tag, body, size, ex, z, dy, material in (
+                ("wordmark", "RED STARBASE", 0.30, 0.022, 3.74, 0.075, P["cyan"]),
+                ("subtitle", "GATE 01 · SECTOR AMAZONIS", 0.075, 0.008, 3.50, 0.062, P["body"])):
+            t = _text_mesh(body, size, ex)
+            t.name = "%s_%d" % (tag, sgn)
+            t.rotation_euler = rot
+            _only(t)
+            bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+            t.location = (0, y(dy), z)
+            t.data.materials.append(material)
+            parent(t, root)
+    sign_face(-1)
+    sign_face(1)
+
+    # ── soffit: a shallow segmented arc closing the span, with downlights ──
+    for k in range(15):
+        t = k / 14.0
+        x = -2.86 + t * 5.72
+        z = 3.30 - math.sin(t * math.pi) * 0.20
+        rz = math.cos(t * math.pi) * 0.16
+        pbox("soffit_%d" % k, 0.40, 0.46, 0.055, (x, 0, z), BODY, rot=(0, 0, rz), par=root)
+        if k % 4 == 1:
+            pbox("downlight_%d" % k, 0.16, 0.16, 0.045, (x, 0, z - 0.05), P["amber"], par=root)
+    for sgn in (-1, 1):
+        rbox("soffitboot_%d" % sgn, 0.30, 0.50, 0.30, (sgn * 2.98, 0, 3.22), MET,
              bevel_r=0.025, segs=1, par=root)
-    # top badge
-    ball("badge", 0.28, (0, 0, 4.22), P["amber"], segs=16, par=root)
-    rod("badgering", 0.38, 0.05, (0, 0, 4.22), MET, rot=(0, 0, 0), verts=20,
-        br=0.012, par=root)
+
+    # ── aviation beacons + mast ──
+    rod("mast", 0.042, 0.95, (0, 0.16, 4.62), MET, verts=10, br=0.008, par=root)
+    for k in range(3):
+        rod("mastarm_%d" % k, 0.018, 0.34, (0, 0.16, 4.36 + k * 0.16), MET,
+            rot=(0, math.pi / 2, 0), verts=8, br=0.004, par=root)
+    ball("mastbeacon", 0.085, (0, 0.16, 5.14), P["red"], segs=14, par=root)
+    rod("beaconcage", 0.13, 0.02, (0, 0.16, 5.06), DARK, verts=12, br=0.004, par=root)
+    for sgn in (-1, 1):
+        rbox("navpod_%d" % sgn, 0.24, 0.20, 0.14, (sgn * 3.62, 0, 4.20), MET,
+             bevel_r=0.018, segs=1, par=root)
+        ball("navlens_%d" % sgn, 0.055, (sgn * 3.62, -0.11, 4.20),
+             P["red"] if sgn < 0 else P["amber"], segs=12, par=root)
     return root
 
 # ###########################################################################
@@ -1210,6 +1323,87 @@ def build_rocks():
     return root
 
 # ------------------------------------------------------------------- export
+# ------------------------------------------------------------- CRYSTAL CLUSTER
+# The pack's sample crystal is one smooth lozenge — the last prop on the island that reads as
+# programmer art. A real crystal is grown, not poured: hexagonal prisms that taper and wander,
+# terminate in six-fold points, and break off where the regolith swallowed their roots.
+def _f(bm, *vs):
+    try:
+        return bm.faces.new(vs)
+    except ValueError:
+        return None
+
+
+def _shard(bm, h, r, tip, rings=9, sides=6, seed=1.0, twist=0.22):
+    rows = []
+    made = []
+    for i in range(rings + 1):
+        t = i / rings
+        # two wavelengths of growth bulge over a linear taper: enough that no two shards,
+        # and no two sides of the same shard, share a silhouette
+        rad = r * (1.0 - 0.26 * t) * (1.0 + 0.060 * math.sin(t * 10.0 + seed)
+                                      + 0.032 * math.sin(t * 26.0 + seed * 2.7))
+        row = []
+        for j in range(sides):
+            a = twist * t + j * TAU / sides
+            rr = rad * (1.0 + 0.055 * math.sin(j * 2.094 + seed * 5.1))
+            v = bm.verts.new((rr * math.cos(a), rr * math.sin(a), t * h))
+            made.append(v)
+            row.append(v)
+        rows.append(row)
+    for i in range(rings):
+        for j in range(sides):
+            k = (j + 1) % sides
+            _f(bm, rows[i][j], rows[i][k], rows[i + 1][k], rows[i + 1][j])
+    # chipped root rather than a sawn base — this is where it fractured out of the bedrock
+    rv = bm.verts.new((r * 0.16 * math.cos(seed * 1.3), r * 0.16 * math.sin(seed * 1.3), -h * 0.11))
+    made.append(rv)
+    for j in range(sides):
+        _f(bm, rows[0][(j + 1) % sides], rows[0][j], rv)
+    # termination: six facets meeting slightly off-axis
+    ap = bm.verts.new((r * 0.13 * math.cos(seed * 1.7), r * 0.13 * math.sin(seed * 1.7), h + tip))
+    made.append(ap)
+    return made
+    for j in range(sides):
+        _f(bm, rows[rings][j], rows[rings][(j + 1) % sides], ap)
+
+
+def build_crystal():
+    purge()
+    root = empty("crystal", (0, 0, 0))
+    bm = bmesh.new()
+    # h, r, tip, x, y, tilt, lean, seed — one dominant point with a generational fan around it
+    # Stubier than real quartz: a 7:1 prism reads as a sliver from a rover seat two metres off
+    # the ground, and the whole point of the sample is that you can identify it at speed.
+    SPEC = [(1.72, 0.44, 0.52,  0.00,  0.00,  4,  20, 1.0),
+            (1.24, 0.34, 0.40,  0.62, -0.26, 16, 300, 2.7),
+            (0.92, 0.30, 0.32, -0.52,  0.44, 23, 118, 4.1),
+            (0.62, 0.24, 0.24,  0.18,  0.66, 31,  62, 6.9),
+            (0.46, 0.20, 0.19, -0.70, -0.40, 38, 210, 8.2),
+            (0.30, 0.16, 0.14,  0.78,  0.46, 50, 145, 3.3),
+            (0.22, 0.13, 0.11, -0.22, -0.82, 58,  12, 9.4)]
+    for h, r, tip, x, y, tilt, lean, seed in SPEC:
+        made = _shard(bm, h, r, tip, seed=seed, twist=0.18 + 0.12 * math.sin(seed))
+        m = (Matrix.Translation((x, y, 0)) @ Matrix.Rotation(math.radians(lean), 4, 'Z')
+             @ Matrix.Rotation(math.radians(tilt), 4, 'Y'))
+        for v in made:
+            v.co = m @ v.co
+    me = bpy.data.meshes.new("crystal")
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new("crystal", me)
+    bpy.context.collection.objects.link(o)
+    o.data.materials.append(P["glass"])
+    for p in o.data.polygons:
+        p.use_smooth = False
+    zs = [v.co.z for v in o.data.vertices]
+    for v in o.data.vertices:
+        v.co.z -= min(zs)          # cluster sits on its own base; the runtime sinks it by bbox
+    o.data.update()
+    parent(o, root)
+    return root
+
+
 def export(root, fname):
     # final safety pass: no NULL / out-of-range material slots may survive —
     # the glTF exporter emits unmaterialised primitives for them
@@ -1231,7 +1425,8 @@ if __name__ == "__main__":
     for fn, fname in [(build_rover, "rover.glb"),
                       (build_teleport, "teleport_pad.glb"),
                       (build_arch, "arch.glb"),
-                      (build_rocks, "rocks.glb")]:
+                      (build_rocks, "rocks.glb"),
+                      (build_crystal, "crystal.glb")]:
         r = fn()
         export(r, fname)
     print("SHOWCASE_DONE")

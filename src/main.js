@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { QUALITIES, ZONES, START, SAMPLE_COUNT } from './config.js';
 import { createSky } from './world/sky.js';
-import { createTerrain, createRocks } from './world/terrain.js';
+import { createTerrain, createRocks, createStones } from './world/terrain.js';
 import { Environment } from './world/environment.js';
 import { buildBase } from './world/props.js';
 import { surfaceAt, surfaceSlope } from './world/height.js';
@@ -190,6 +190,7 @@ async function boot() {
   createTerrain(scene);
   setBar(44, '撞击坑与岩石风化场…'); await raf();
   await createRocks(scene);
+  createStones(scene);
   setBar(56, '载入 Blender 建模的星舰基地资产…'); await raf();
   base = await buildBase(scene, { particles: 1 });
   // the hub tap is the always-live mains feed; every other district starts blacked out
@@ -245,9 +246,21 @@ async function boot() {
   });
 }
 
+// A frame costs pixels, not device ratios: 1.5× on a laptop and 1.5× on a 4K monitor differ by
+// four times in area while the table only ever said "1.5". Solve for the ratio that fits the
+// quality tier's pixel budget at this exact window size.
+let renderCap = 1;
+function solvePixelRatio() {
+  const want = Math.min(devicePixelRatio, quality.pixelRatio * renderCap);
+  const fit = Math.sqrt(quality.maxPixels * renderCap * renderCap / Math.max(1, innerWidth * innerHeight));
+  return THREE.MathUtils.clamp(Math.min(want, fit), 0.55, 2);
+}
+
 function applyQuality() {
   quality = QUALITIES[qKey];
-  renderer.setPixelRatio(Math.min(devicePixelRatio, quality.pixelRatio));
+  renderCap = 1;
+  degradeLevel = 0;
+  renderer.setPixelRatio(solvePixelRatio());
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = quality.shadow > 0;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -257,13 +270,11 @@ function applyQuality() {
   skids ??= createSkidMarks(scene);
   Object.values(fx).forEach(p => p.setPixelRatio(renderer.getPixelRatio()));
   post = createPost(renderer, scene, camera, quality, innerWidth, innerHeight);
-  // bind live cube env map for real-time reflections
-  for (const m of base.shipMats) { m.envMap = env.cubeRT.texture; m.needsUpdate = true; }
-  // Everything else was excluded from that. A metal hull with no environment to reflect renders as
-  // flat matte grey plastic no matter how many parts it has, which is most of the "the modelling
-  // looks cheap" complaint. One scene.environment makes every standard material reflect the Mars
-  // sky; the intensity is split so dielectrics get a whisper of sky fill and metals get a mirror.
-  scene.environment = env.cubeRT.texture;
+  // Reflections are owned by Environment.update(): it captures the cube, runs it through
+  // PMREMGenerator and publishes the result as scene.environment. Assigning the raw cube render
+  // target here was the bug — MeshStandardMaterial has no IBL path for a non-PMREM map and reflects
+  // literally nothing from one, so every metal in the base drew as a black silhouette on the sky.
+  // The intensity below is split so dielectrics keep a whisper of sky fill and metals get a mirror.
   {
     const seen = new Set();
     scene.traverse(o => {
@@ -271,7 +282,11 @@ function applyQuality() {
       for (const mt of (Array.isArray(o.material) ? o.material : [o.material])) {
         if (!mt || seen.has(mt.uuid) || mt.envMap) continue;
         seen.add(mt.uuid);
-        mt.envMapIntensity = (mt.metalness ?? 0) > 0.25 ? 0.9 : 0.22;
+        // A step, not a switch. At a 0.25 cut-off the plaza's 'dark' panels (metalness 0.38) were
+        // classed as mirrors and took the whole peach sky at 0.9, so the ground tiles rendered
+        // periwinkle with white frames — the single loudest object in the arrival view. A
+        // conductor's reflectance scales with its albedo and its metalness, so ramp it with both.
+        mt.envMapIntensity = 0.22 + (mt.metalness ?? 0) * 0.7;
         mt.needsUpdate = true;
       }
     });
@@ -748,14 +763,21 @@ function update(dt) {
       }
     }
   }
-  // samples pulse
-  for (const s of base.samples) if (!s.taken) {
-    s.crystal.rotation.y += dt * 1.6;
-    s.crystal.position.y = 1.05 + Math.sin(elapsed * 2 + s.x) * 0.12;
-  }
+  // A mineral outcrop does not spin in place or hover a metre off the deck — that levitating loot-gem
+  // animation was the most obviously "gamey" thing on the island, and it unseated every crystal from
+  // the scree ring built around it. They stay put and breathe with light instead; the halo beam does
+  // the long-range signalling. The glow has to stay under the sun, not over it: at emissive ~1.0 the
+  // self-light dominated the shading and a 798-triangle faceted cluster drew as three flat mint
+  // pillows. By day it is stone catching the sun; only after dark does the light inside show.
+  const cnight = Math.max(env.state.nightF, env.state.stormF * 0.6);
+  base.crystalMat.emissiveIntensity = 0.13 + cnight * 1.35 + Math.sin(elapsed * 1.9) * (0.05 + cnight * 0.2);
   // beacon blink + night lamps + light cones
   const st = env.state;
-  for (const b of base.beacons) b.material.emissiveIntensity = 1.5 + Math.sin(elapsed * 5) * 2.5;
+  // An aviation beacon exists to be seen against darkness, so its drive belongs to the night: at a
+  // flat 1.5–4.0 it was a hot pink blob on every mast in the day views, the single brightest
+  // saturated object in the industry zone. Full blink after dusk, a faint confirmation by day.
+  const bnight = Math.max(st.nightF, st.stormF * 0.7);
+  for (const b of base.beacons) b.material.emissiveIntensity = 0.18 + bnight * 1.1 + Math.sin(elapsed * 5) * (0.12 + bnight * 1.9);
   const spots = rover.group.userData.spots;
   if (spots) for (const sp of spots) sp.intensity = st.nightF * 46 + st.stormF * 22;
   // the lens quads must follow the beam: at full emissive in clear daylight they bloom the whole deck
@@ -925,12 +947,16 @@ function update(dt) {
   fu.uTime.value = elapsed;
   const sunWorld = tmpV.copy(st.sunDir).multiplyScalar(2000).add(camera.position);
   const camDir = camera.getWorldDirection(new THREE.Vector3());
-  const sunVis = camDir.dot(st.sunDir) > 0.08 && st.sunDir.y > -0.02;
-  if (sunVis) {
+  // `camDir.dot(sunDir) > 0.08` is an 85° cone, but a 60° camera only sees ~43° horizontally, so
+  // the sun was routinely being projected far outside the frame. The march then clamped every tap
+  // onto one edge pixel — see the guard in the FINAL shader — so gate on the screen position too.
+  let sunOnFrame = false;
+  if (camDir.dot(st.sunDir) > 0.08 && st.sunDir.y > -0.02) {
     const p = sunWorld.clone().project(camera);
-    fu.uSunUV.value.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5);
+    sunOnFrame = Math.abs(p.x) < 1.25 && Math.abs(p.y) < 1.25;
+    if (sunOnFrame) fu.uSunUV.value.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5);
   }
-  fu.uGodRay.value = quality.godrays && sunVis ? (1 - stormF) * st.dayF * THREE.MathUtils.clamp(camDir.dot(st.sunDir) * 2.2, 0, 1) : 0;
+  fu.uGodRay.value = quality.godrays && sunOnFrame ? (1 - stormF) * st.dayF * THREE.MathUtils.clamp(camDir.dot(st.sunDir) * 2.2, 0, 1) : 0;
   fu.uCA.value = 0.12 + Math.min(0.5, phys.speed / 60) + stormF * 0.2 + launch.flash * 0.9;
   fu.uNight.value = st.nightF;
   fu.uGrain.value = 0.028 + st.nightF * 0.006 + stormF * 0.03;
@@ -939,19 +965,17 @@ function update(dt) {
   fu.uVignette.value = 0.26 + stormF * 0.45;
   fu.uDirt.value = stormF * 0.9;
   fu.uFlash.value = launch.flash;
-  if (post.bokeh) {
-    const d = camera.position.distanceTo(rover.group.position);
-    post.bokeh.uniforms.focus.value = THREE.MathUtils.damp(post.bokeh.uniforms.focus.value, d, 4, dt);
-  }
   // at night a full-strength bloom turns every lamp into a disc that lifts the whole
   // sky and erases the stars, so the night frames get a tighter bloom budget
   post.bloom.strength = (quality.bloomStrength + (launch.audioLevel || 0) * 0.5) * (1 - st.nightF * 0.35);
   // Bloom threshold is read against raw linear radiance. By day sunlit hull sits near 3.0
   // and must stay under it; by night the lamps are the whole picture and must clear it.
-  post.bloom.threshold = THREE.MathUtils.lerp(2.05, 0.42, st.nightF) * (1 - stormF * 0.45);
+  // The rim crest also reaches ~3.0, and blooming it veiled the whole horizon in a flat orange
+  // wash, so the day gate now sits above the brightest thing the sun can light.
+  post.bloom.threshold = THREE.MathUtils.lerp(2.9, 0.42, st.nightF) * (1 - stormF * 0.45);
   // Daylight frames were crushing to 43% near-black silhouette; night was already balanced
   // at 0.97 by the lamp pass, so the lift tracks the sun rather than the whole clock.
-  renderer.toneMappingExposure = 1.04 - st.nightF * 0.20;
+  renderer.toneMappingExposure = 1.02 - st.nightF * 0.20;
 
   // HUD
   UI.setSpeed(phys.speed * 3.6);
@@ -976,13 +1000,13 @@ function tick() {
     if (fpsAvg < 30 && degradeLevel < 2) {
       degradeLevel++;
       if (degradeLevel === 1) {
-        renderer.setPixelRatio(Math.min(devicePixelRatio, quality.pixelRatio * 0.7));
+        renderCap = 0.72;
+        renderer.setPixelRatio(solvePixelRatio());
         Object.values(fx).forEach(p => p.setPixelRatio(renderer.getPixelRatio()));
         post.setSize(innerWidth, innerHeight);
         UI.toast('⚠ 检测到帧率偏低 — 已自动降采样');
       } else {
         if (post.ssao) post.ssao.enabled = false;
-        if (post.bokeh) post.bokeh.enabled = false;
         post.bloom.strength *= 0.7;
         UI.toast('⚠ 已自动关闭部分特效以保证流畅');
       }
@@ -994,8 +1018,10 @@ function tick() {
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+  renderer.setPixelRatio(solvePixelRatio());
   renderer.setSize(innerWidth, innerHeight);
   post?.setSize(innerWidth, innerHeight);
+  Object.values(fx).forEach(p => p.setPixelRatio(renderer.getPixelRatio()));
 });
 
 addEventListener('keydown', e => {

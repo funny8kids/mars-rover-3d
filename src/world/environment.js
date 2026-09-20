@@ -25,9 +25,14 @@ export class Environment {
     this.sun.castShadow = true;
     const sm = quality.shadow || 1024;
     this.sun.shadow.mapSize.set(sm, sm);
-    Object.assign(this.sun.shadow.camera, { left: -160, right: 160, top: 160, bottom: -160, near: 1, far: 700 });
-    this.sun.shadow.bias = -0.0006;
-    this.sun.shadow.normalBias = 0.35;
+    // The map used to cover ±160 m — the whole island — which cost both ways: 15 cm per texel, so
+    // every handrail, wheel and rivet in the frame fell between texels and vanished, and because the
+    // frustum held the entire settlement no shadow caster was ever culled. Tracking the rover with a
+    // 120 m box makes the shadows four times sharper and the pass far cheaper.
+    Object.assign(this.sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 1, far: 460 });
+    this.sun.shadow.camera.updateProjectionMatrix();
+    this.sun.shadow.bias = -0.0004;
+    this.sun.shadow.normalBias = 0.09;
     scene.add(this.sun, this.sun.target);
 
     this.hemi = new THREE.HemisphereLight(0xc98a5a, 0x40251a, 0.30);
@@ -39,12 +44,12 @@ export class Environment {
     scene.fog = new THREE.FogExp2(0x9a5a32, 0.00042);
     this.fog = scene.fog;
 
-    // real-time environment reflections (steel ship / tanks)
-    this.cubeRT = new THREE.WebGLCubeRenderTarget(256, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
-    this.cubeCam = new THREE.CubeCamera(1, 8000, this.cubeRT);
-    // hover over the plaza so the 300 m diorama — sky, dunes and the ship — fills all six faces
-    this.cubeCam.position.set(0, 40, 0);
-    scene.add(this.cubeCam);
+    // Reflections come from the sky dome. A live cube capture of the whole scene was the original
+    // source and it failed twice over: MeshStandardMaterial has no IBL path for a raw cube map, so
+    // the metals reflected nothing at all, and re-rendering 1 500 meshes six times a face at 4 Hz
+    // cost more than the frame it was supposed to improve. PMREM of the dome is one sphere.
+    this.pmrem = null;      // needs the renderer, so it is built on the first update
+    this.envRT = null;
     this.envTimer = 0;
 
     this._c = { sky: new THREE.Color(), fog: new THREE.Color(), sun: new THREE.Color() };
@@ -117,12 +122,15 @@ export class Environment {
     this.state.clock = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
     Object.assign(this.state, { dayF, nightF, duskF, stormF: stormMix });
 
-    // refresh cube env map
+    // refresh environment reflections
     this.envTimer -= dt;
     if (this.envTimer <= 0) {
-      this.envTimer = 1 / (this.q.envUpdateHz || 2);
-      const vis = this.scene.visible; void vis;
-      this.cubeCam.update(renderer, this.scene);
+      this.envTimer = 1 / Math.min(this.q.envUpdateHz || 2, 2);
+      this.pmrem ||= new THREE.PMREMGenerator(renderer);
+      const prev = this.envRT;
+      this.envRT = this.pmrem.fromScene(this.sky.envScene, 0, 1, 20000);
+      prev?.dispose();
+      this.scene.environment = this.envRT.texture;
     }
     return this.state;
   }

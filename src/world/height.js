@@ -33,6 +33,20 @@ function distToSeg(px, pz, a, b) {
   return Math.hypot(px - (ax + dx * t), pz - (az + dz * t));
 }
 
+// The terrain shader has to know exactly where the ground stops being sand and becomes a
+// compacted deck — the dune ripples must not run across a landing pad. Mirror of the flattening
+// above, deduplicated because several ZONES entries alias the same site.
+export function paveGeometry() {
+  const seen = new Set(), out = [];
+  for (const p of pads) {
+    const key = `${Math.round(p.x)},${Math.round(p.z)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push([p.x, p.z, p.r]);
+  }
+  return { pads: out, roads: roads.map(([a, b, hw]) => [a[0], a[1], b[0], b[1], hw]) };
+}
+
 // Stylised island: a toy-plateau of gentle dunes ringed by a raised crater rim that
 // drops into the haze — the whole world reads as one hand-placed diorama.
 function rawHeight(x, z) {

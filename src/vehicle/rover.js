@@ -15,12 +15,16 @@ export async function createRover(scene) {
   // metalness 1.0 — a bare mirror facing the sun. Re-apply the authored rover shell values to this
   // clone (idempotent where the props pass already landed) and take the dish's mirror away for
   // good: a high-gain antenna is painted substrate over a dielectric reflector, not chrome.
+  // `rover_hub` joins the table from the close-up wheel frame: the exported rim caps are a
+  // 0.8-albedo gloss that renders as polished white five-spoke toy wheels. Anodised structure
+  // under a season of dust film sits a full stop below the deck, not above it.
   const SHELL = {
     metalRed:   [[0.52, 0.135, 0.055], 0.52, 0.1],
     metal:      [[0.44, 0.435, 0.43], 0.44, 0.72],
     metalDark:  [[0.135, 0.13, 0.135], 0.62, 0.6],
     rover_white:[[0.40, 0.385, 0.355], 0.56, 0.08],
     rover_alu:  [[0.395, 0.4, 0.415], 0.42, 0.85],
+    rover_hub:  [[0.27, 0.255, 0.24], 0.58, 0.55],
     solar_cell: [[0.019, 0.031, 0.072], 0.34, 0.3],
   };
   inner.traverse(o => {

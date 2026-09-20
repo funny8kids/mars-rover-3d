@@ -158,6 +158,7 @@ export async function buildBase(scene, quality) {
           case 'metalDark': mt.color.setRGB(0.135, 0.13, 0.135); mt.roughness = 0.62; mt.metalness = 0.6; break;
           case 'rover_white': mt.color.setRGB(0.40, 0.385, 0.355); mt.roughness = 0.56; mt.metalness = 0.08; break;
           case 'rover_alu': mt.color.setRGB(0.395, 0.4, 0.415); mt.roughness = 0.42; mt.metalness = 0.85; break;
+          case 'rover_hub': mt.color.setRGB(0.27, 0.255, 0.24); mt.roughness = 0.58; mt.metalness = 0.55; break;
           case 'solar_cell': mt.color.setRGB(0.019, 0.031, 0.072); mt.roughness = 0.34; mt.metalness = 0.3; break;
         }
       }

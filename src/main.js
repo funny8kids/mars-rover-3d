@@ -785,7 +785,10 @@ function update(dt) {
   const night = Math.max(st.nightF, st.stormF * 0.6);
   // The assets' authored emissive strips are thin tubes; at full strength under the sun they
   // alias into bright scribbles. They read as painted trim by day and only become lamps after dusk.
-  for (const m of base.heroLights) m.emissiveIntensity = 0.42 + night * 1.5;
+  // 0.42 by day still tripped the bloom threshold on the cyan fittings — a vertical flare off every
+  // deck lamp in the noon frames — so the daytime drive comes down to a glow that reads as lit
+  // glass without feeding the bloom; the night term rises to keep the after-dark levels identical.
+  for (const m of base.heroLights) m.emissiveIntensity = 0.26 + night * 1.66;
   for (const c of cones) c.material.opacity = st.nightF * 0.045 * (1 - st.stormF);
   // pad discs: a flat read-able ring by day, an armed portal at night. The whole base is dimmer
   // until the rover re-links the districts, so progress is legible from anywhere on the map.

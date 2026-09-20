@@ -6,3 +6,6 @@ shots/
 Thumbs.db
 .vscode/
 .idea/
+__pycache__/
+# 55 MB CC0 asset staging area — downloaded sources, not shipped game data
+public/assets/web/

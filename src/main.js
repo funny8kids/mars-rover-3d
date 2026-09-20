@@ -19,7 +19,7 @@ const $ = id => document.getElementById(id);
 const canvas = $('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: true });
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.97;
+renderer.toneMappingExposure = 1.22;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.4, 9000);
 
@@ -205,6 +205,28 @@ async function boot() {
   chase.setColliders(base.colliders.map(c => ({ x: c.x, z: c.z, r: c.r, y: surfaceAt(c.x, c.z), top: c.top })));
   buildGates();
   addVolumetricCones();
+  // Nothing in the frame may be a dead pixel. An albedo under the Mars sky's luminance renders as
+  // a flat black cut-out, which is what turned the industrial frames into silhouettes. Lift every
+  // opaque, unlit surface proportionally to how close to black it was, so rubber and soot stay
+  // dark but never featureless — and do it scene-wide, because the props that needed it most were
+  // never part of the GLB set.
+  {
+    const basalt = new THREE.Color(0.26, 0.19, 0.155);
+    const done = new Set();
+    scene.traverse(o => {
+      if (!o.isMesh) return;
+      for (const mt of (Array.isArray(o.material) ? o.material : [o.material])) {
+        if (!mt || !mt.color || mt.transparent || done.has(mt.uuid)) continue;
+        done.add(mt.uuid);
+        if (mt.emissive && mt.emissive.getHex()) continue;
+        const L = 0.299 * mt.color.r + 0.587 * mt.color.g + 0.114 * mt.color.b;
+        if (L < 0.055) {
+          mt.color.lerp(basalt, 1 - L / 0.055);
+          mt.roughness = Math.max(mt.roughness ?? 0.6, 0.6);
+        }
+      }
+    });
+  }
   buildTeleportUI();
   setBar(92, '链路就绪 · 等待指令');
   await raf();
@@ -395,7 +417,7 @@ function updateGrid(dt, st) {
     r.core.material.emissiveIntensity = p * 5.4 * beat;
     r.core.rotation.y += dt * (0.4 + p * 2.6);
     r.mats[1].opacity = p * (0.2 + 0.55 * st.nightF) * beat;
-    r.mats[2].opacity = p * (0.035 + 0.1 * st.nightF) * (1 - st.stormF * 0.6);
+    r.mats[2].opacity = p * (0.012 + 0.05 * st.nightF) * (1 - st.stormF * 0.6);
     if (r === grid.target && grid.linkT > 0) {
       // the tap you are currently welding flickers in amber so the hold has a target
       r.mats[1].opacity = 0.25 + 0.6 * Math.abs(Math.sin(elapsed * 7));
@@ -633,7 +655,7 @@ function update(dt) {
       const d = rover.wheels[Math.floor(Math.random() * 6)].getWorldPosition(tmpV.set(0, 0, 0));
       fx.dust.emit(d.x + (Math.random() - .5), d.y - 0.1, d.z + (Math.random() - .5),
         -phys.vx * 0.25 + (Math.random() - .5) * 2, 1.2 + Math.random(), -phys.vz * 0.25 + (Math.random() - .5) * 2,
-        1.4 + Math.random(), 2.4 + Math.random() * 2);
+        1.4 + Math.random(), 1.7 + Math.random() * 1.3);
     }
   }
   if (phys.drifting) {
@@ -722,6 +744,9 @@ function update(dt) {
   // the lens quads must follow the beam: at full emissive in clear daylight they bloom the whole deck
   rover.lampMat.emissiveIntensity = 0.18 + Math.max(st.nightF, st.stormF * 0.7) * 1.6;
   const night = Math.max(st.nightF, st.stormF * 0.6);
+  // The assets' authored emissive strips are thin tubes; at full strength under the sun they
+  // alias into bright scribbles. They read as painted trim by day and only become lamps after dusk.
+  for (const m of base.heroLights) m.emissiveIntensity = 0.42 + night * 1.5;
   for (const c of cones) c.material.opacity = st.nightF * 0.045 * (1 - st.stormF);
   // pad discs: a flat read-able ring by day, an armed portal at night. The whole base is dimmer
   // until the rover re-links the districts, so progress is legible from anywhere on the map.
@@ -892,7 +917,9 @@ function update(dt) {
   fu.uCA.value = 0.12 + Math.min(0.5, phys.speed / 60) + stormF * 0.2 + launch.flash * 0.9;
   fu.uNight.value = st.nightF;
   fu.uGrain.value = 0.028 + st.nightF * 0.006 + stormF * 0.03;
-  fu.uVignette.value = 0.55 + stormF * 0.5;
+  // 0.55 put the corners at 26% brightness, which turned any dark prop near the frame edge into
+  // a black hole. Storms still want the heavy tunnel; calm daylight wants barely a hint.
+  fu.uVignette.value = 0.26 + stormF * 0.45;
   fu.uDirt.value = stormF * 0.9;
   fu.uFlash.value = launch.flash;
   if (post.bokeh) {
@@ -902,6 +929,12 @@ function update(dt) {
   // at night a full-strength bloom turns every lamp into a disc that lifts the whole
   // sky and erases the stars, so the night frames get a tighter bloom budget
   post.bloom.strength = (quality.bloomStrength + (launch.audioLevel || 0) * 0.5) * (1 - st.nightF * 0.35);
+  // Bloom threshold is read against raw linear radiance. By day sunlit hull sits near 3.0
+  // and must stay under it; by night the lamps are the whole picture and must clear it.
+  post.bloom.threshold = THREE.MathUtils.lerp(1.75, 0.42, st.nightF) * (1 - stormF * 0.45);
+  // Daylight frames were crushing to 43% near-black silhouette; night was already balanced
+  // at 0.97 by the lamp pass, so the lift tracks the sun rather than the whole clock.
+  renderer.toneMappingExposure = 1.24 - st.nightF * 0.27;
 
   // HUD
   UI.setSpeed(phys.speed * 3.6);

@@ -89,7 +89,7 @@ void main(){
     if (mdot > 0.9990){
       float disc = smoothstep(0.99930, 0.99958, mdot);
       vec3 ma = normalize(uMoonDir);
-      vec3 mt = normalize(cross(vec3(0.0, 1.0), ma));
+      vec3 mt = normalize(cross(vec3(0.0, 1.0, 0.0), ma));
       vec3 mb = cross(ma, mt);
       vec2 mp = vec2(dot(d, mt), dot(d, mb)) / max(mdot, 0.999);
       float r = length(mp) / 0.0265;

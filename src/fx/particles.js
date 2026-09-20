@@ -2,23 +2,29 @@ import * as THREE from 'three';
 
 const VS = `
 attribute float aLife; attribute float aSize;
-uniform float uPixelRatio;
+uniform float uPixelRatio, uMaxSize, uNearFade;
 varying float vLife;
+varying float vNear;
 void main(){
   vLife = aLife;
   vec4 mv = modelViewMatrix * vec4(position,1.0);
-  gl_PointSize = aSize * uPixelRatio * (160.0 / max(-mv.z, 1.0));
+  float dist = max(-mv.z, 1.0);
+  // Uncapped, a mote 1 m from the lens covers the whole screen; the DOF pass then smears it
+  // into a flat orange disc that dominates the frame. Clamp the sprite and dissolve it near.
+  gl_PointSize = min(aSize * (160.0 / dist), uMaxSize) * uPixelRatio;
+  vNear = smoothstep(uNearFade * 0.3, uNearFade, dist);
   gl_Position = projectionMatrix * mv;
 }`;
 const FS = `
 precision mediump float;
 varying float vLife;
+varying float vNear;
 uniform vec3 uColor0, uColor1;
 uniform float uOpacity, uFadeIn;
 void main(){
   vec2 uv = gl_PointCoord - 0.5;
   float d = length(uv);
-  float a = smoothstep(0.5, 0.14, d);
+  float a = smoothstep(0.5, 0.14, d) * vNear;
   if (a <= 0.001 || vLife >= 1.0 || vLife < 0.0) discard;
   float t = vLife;
   vec3 c = mix(uColor0, uColor1, t);
@@ -46,6 +52,8 @@ export class ParticlePool {
         uOpacity: { value: opts.opacity ?? 0.8 },
         uFadeIn: { value: 0 },
         uPixelRatio: { value: 1 },
+        uMaxSize: { value: opts.maxSize ?? 52 },
+        uNearFade: { value: opts.nearFade ?? 2.6 },
       },
       transparent: true, depthWrite: false,
       blending: opts.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
@@ -96,14 +104,14 @@ export class ParticlePool {
 export function createFX(scene, quality) {
   const P = quality.particles;
   const fx = {};
-  fx.dust = new ParticlePool(scene, Math.round(700 * P), { color0: 0xb98a5c, color1: 0x8a5c38, opacity: 0.5, gravity: -0.6, drag: 0.94, sizeGrow: 1.6 });
-  fx.driftSmoke = new ParticlePool(scene, Math.round(400 * P), { color0: 0xa08264, color1: 0x6a4a34, opacity: 0.55, gravity: 0.2, drag: 0.95, sizeGrow: 1.9 });
+  fx.dust = new ParticlePool(scene, Math.round(700 * P), { color0: 0xb98a5c, color1: 0x8a5c38, opacity: 0.26, gravity: -0.6, drag: 0.94, sizeGrow: 1.25, maxSize: 15, nearFade: 4.0 });
+  fx.driftSmoke = new ParticlePool(scene, Math.round(400 * P), { color0: 0xa08264, color1: 0x6a4a34, opacity: 0.30, gravity: 0.2, drag: 0.95, sizeGrow: 1.5, maxSize: 20, nearFade: 4.0 });
   fx.spark = new ParticlePool(scene, Math.round(600 * P), { color0: 0xfff2b0, color1: 0xff5a10, opacity: 1, gravity: -9.8, drag: 0.985, additive: true, sizeGrow: 0.9 });
   fx.flame = new ParticlePool(scene, Math.round(1400 * P), { color0: 0xfff8e0, color1: 0xff4400, opacity: 1, gravity: 1.0, drag: 0.97, additive: true, sizeGrow: 1.25 });
   fx.smoke = new ParticlePool(scene, Math.round(1200 * P), { color0: 0xd8c8bc, color1: 0x5a4a42, opacity: 0.5, gravity: 1.6, drag: 0.975, sizeGrow: 1.9 });
   fx.steam = new ParticlePool(scene, Math.round(500 * P), { color0: 0xeaf6ff, color1: 0x9fc8de, opacity: 0.45, gravity: 0.4, drag: 0.96, sizeGrow: 1.8 });
-  fx.storm = new ParticlePool(scene, Math.round(quality.stormParticles), { color0: 0xc88a52, color1: 0x96612f, opacity: 0.6, gravity: 0, drag: 0.999, sizeGrow: 1 });
-  fx.storm2 = new ParticlePool(scene, Math.round(quality.stormParticles * 0.4), { color0: 0xa06a3a, color1: 0x7a4a26, opacity: 0.8, gravity: 0, drag: 0.999, sizeGrow: 1 });
+  fx.storm = new ParticlePool(scene, Math.round(quality.stormParticles), { color0: 0xc88a52, color1: 0x96612f, opacity: 0.3, gravity: 0, drag: 0.999, sizeGrow: 1, maxSize: 12, nearFade: 5 });
+  fx.storm2 = new ParticlePool(scene, Math.round(quality.stormParticles * 0.4), { color0: 0xa06a3a, color1: 0x7a4a26, opacity: 0.42, gravity: 0, drag: 0.999, sizeGrow: 1, maxSize: 18, nearFade: 5 });
   Object.values(fx).forEach(p => p.setPixelRatio(1));
   return fx;
 }
@@ -117,7 +125,7 @@ export function updateStorm(fx, dt, cam, stormF, windT, audioLevel) {
     fx.storm.emit(
       cam.x + Math.cos(a) * r, cam.y + 2 + Math.random() * 14 - stormF * 4, cam.z + Math.sin(a) * r,
       14 + Math.sin(windT) * 6, (Math.random() - 0.5) * 1.5, Math.cos(windT * 0.7) * 8,
-      2.5 + Math.random() * 2, (0.5 + Math.random() * 1.2) * (1 + audioLevel)
+      2.5 + Math.random() * 2, (0.3 + Math.random() * 0.5) * (1 + audioLevel)
     );
   }
   fx.storm.update(dt, 6 * stormF, 2, 0);

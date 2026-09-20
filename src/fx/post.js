@@ -62,8 +62,10 @@ void main(){
   // At night this same violet sat on an already dark frame and turned the whole base into
   // purple mush, so the split-tone, the black crush and the vignette all back off with it.
   float lum = dot(col, vec3(0.299, 0.587, 0.114));
-  vec3 shadows = mix(vec3(0.052, 0.030, 0.085), vec3(0.020, 0.026, 0.048), uNight);
-  vec3 highs = mix(vec3(1.12, 0.80, 0.48), vec3(0.92, 0.97, 1.10), uNight);
+  // The old lift was blue-dominant (0.085 B vs 0.052 R), so every unlit face — the underside of
+  // arches, the shaded side of hulls — collapsed into a purple dead-pixel silhouette.
+  vec3 shadows = mix(vec3(0.062, 0.042, 0.062), vec3(0.020, 0.026, 0.048), uNight);
+  vec3 highs = mix(vec3(1.10, 0.88, 0.64), vec3(0.92, 0.97, 1.10), uNight);
   col = mix(col * highs * 0.94, mix(col, col * highs, 0.55) + shadows * (1.0 - clamp(lum * 2.6, 0.0, 1.0)) * mix(1.15, 0.55, uNight), uGrade);
   // excess fill light flattens the image into pale pink — crush blacks and re-saturate
   col = max(col - mix(0.022, 0.004, uNight), vec3(0.0)) * mix(1.10, 1.55, uNight);
@@ -118,7 +120,10 @@ export function createPost(renderer, scene, camera, quality, w, h) {
     bokeh = new BokehPass(scene, camera, { focus: 24, aperture: 0.00006, maxblur: 0.008 });
     composer.addPass(bokeh);
   }
-  const bloom = new UnrealBloomPass(new THREE.Vector2(w, h), quality.bloomStrength, 0.75, 0.82);
+  // The composer's target is linear HDR and OutputPass tone-maps afterwards, so this
+  // threshold is read against raw radiance: sunlit white hull sits near 3.0, and 0.82 made
+  // every lit surface bloom into a featureless blob. Only true emissives should cross it.
+  const bloom = new UnrealBloomPass(new THREE.Vector2(w, h), quality.bloomStrength, 0.62, 1.75);
   composer.addPass(bloom);
   const finalPass = new ShaderPass(FINAL);
   finalPass.uniforms.uDirtTex.value = makeDirtTexture();

@@ -576,10 +576,58 @@ export async function buildBase(scene, quality) {
     }
   }
 
+  // ══════════ BASE GRID — one reactor tap beside every teleport pad ══════════
+  // Five outer districts start blacked out and the rover's battery is the only mobile relay,
+  // so each tap needs its own materials: the base-wide emissive sets are shared and cannot be
+  // dimmed per district. Deliberately emissive-only (no PointLight) — the whole scene is lit by
+  // sun/hemi plus bloom, and six extra dynamic lights would recompile every standard shader.
+  const gridRigs = [];
+  {
+    const iron = new THREE.MeshStandardMaterial({ color: 0x5a544b, roughness: 0.44, metalness: 0.86 });
+    const soot = new THREE.MeshStandardMaterial({ color: 0x2a2825, roughness: 0.72, metalness: 0.5 });
+    for (const tp of teleports) {
+      const rad = Math.hypot(tp.x, tp.z) || 1;
+      const rx = tp.x + (tp.x / rad) * 4.4, rz = tp.z + (tp.z / rad) * 4.4;
+      const rig = new THREE.Group();
+      rig.position.set(rx, surfaceAt(rx, rz) - 0.05, rz);
+      rig.rotation.y = Math.atan2(tp.x - rx, tp.z - rz);
+      G.add(rig);
+
+      cyl(1.15, 1.5, 0.4, soot, 0, 0.2, 0, 6, rig);
+      cyl(0.22, 0.5, 3.1, iron, 0, 1.95, 0, 6, rig);
+      for (let i = 0; i < 3; i++) {
+        const a = i * 2.094 + 0.5;
+        const arm = box(0.14, 0.14, 1.15, iron, Math.sin(a) * 0.55, 2.5, Math.cos(a) * 0.55, rig);
+        arm.rotation.y = -a;
+        box(0.2, 0.2, 0.2, soot, Math.sin(a) * 1.1, 2.5, Math.cos(a) * 1.1, rig);
+      }
+      // cable run back to the pad so the two read as one installation
+      for (let i = 1; i <= 3; i++) {
+        const t = i / 4;
+        box(0.1, 0.09, 0.1, soot, 0, 0.32 - t * 0.1, -1.1 - t * 2.1, rig);
+      }
+
+      const coreMat = new THREE.MeshStandardMaterial({ color: 0x101a1f, emissive: 0x4fe2ff, emissiveIntensity: 0, roughness: 0.2, metalness: 0.1 });
+      const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.58, 0), coreMat);
+      core.position.y = 3.75; core.castShadow = true; rig.add(core);
+      const plateMat = new THREE.MeshBasicMaterial({ color: 0x4fe2ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+      const plate = new THREE.Mesh(new THREE.CircleGeometry(1.35, 6), plateMat);
+      plate.rotation.x = -Math.PI / 2; plate.position.y = 0.42; rig.add(plate);
+      const beamMat = new THREE.MeshBasicMaterial({ color: 0x6fe8ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 1.5, 26, 6, 1, true), beamMat);
+      beam.position.y = 13.5; rig.add(beam);
+      // the additive halo meshes must not cast — a shadow-casting light shaft reads as a solid pole
+      for (const o of rig.children) if (o !== beam && o !== plate) { o.castShadow = true; o.receiveShadow = true; }
+
+      gridRigs.push({ key: tp.key, name: tp.name, tp, x: rx, z: rz, power: 0, shown: -1, core, beam, plate, mats: [coreMat, plateMat, beamMat] });
+      colliders.push({ x: rx, z: rz, r: 1.5 });
+    }
+  }
+
   scene.add(G);
   const flamePoint = new THREE.Vector3(SHIP_POS[0], 1.6, SHIP_POS[1]);
   return {
-    group: G, colliders, infoZones, samples, sparkPoints, beacons, lightStrips, lightRings, showBeams, showBeamMats, shipMats, shipGroup, teleports, padGlow, occluders,
+    group: G, colliders, infoZones, samples, sparkPoints, beacons, lightStrips, lightRings, showBeams, showBeamMats, shipMats, shipGroup, teleports, padGlow, occluders, gridRigs,
     leakPoint: new THREE.Vector3(LEAK_POS[0], surfaceAt(LEAK_POS[0], LEAK_POS[1]) + 1.8, LEAK_POS[1]),
     flamePoint,
     launchPadPos: new THREE.Vector3(...ZONES.launch.pos),

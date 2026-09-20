@@ -38,6 +38,8 @@ export class Environment {
     this.envTimer = 0;
 
     this._c = { sky: new THREE.Color(), fog: new THREE.Color(), sun: new THREE.Color() };
+    this._mh = new THREE.Vector3();
+    this.moonDir = new THREE.Vector3(0, 1, 0);
     this.state = { sunDir: new THREE.Vector3(), dayF: 1, nightF: 0, duskF: 0, stormF: 0, clock: '06:00' };
   }
   forceNight() { this.dayT = 0.02; }
@@ -62,12 +64,14 @@ export class Environment {
 
     // sun light
     this.sun.visible = dayF > 0.01 || nightF > 0.01;
-    this.sun.position.copy(dir).multiplyScalar(300).add(focus);
-    if (nightF > 0.01) {
-      // the sun has set below the horizon — swing this same directional overhead as moonlight,
-      // otherwise a night base collapses into unreadable black silhouettes
-      this.sun.position.y = THREE.MathUtils.lerp(this.sun.position.y, focus.y + 260, nightF);
-    }
+    // The moon rides opposite the sun's longitude and climbs through the night, and the
+    // directional key is swung to come from it — otherwise the dune shadows point away from
+    // a light source that isn't anywhere in the sky.
+    const mh = this._mh.set(-dir.x, 0, -dir.z);
+    if (mh.lengthSq() < 1e-6) mh.set(1, 0, 0);
+    const tilt = 0.36 + nightF * 0.30;
+    this.moonDir.copy(mh.normalize()).multiplyScalar(Math.cos(tilt)).setY(Math.sin(tilt)).normalize();
+    this.sun.position.copy(nightF > 0.01 ? this.moonDir : dir).multiplyScalar(300).add(focus);
     this.sun.target.position.copy(focus);
     this.sun.target.updateMatrixWorld();
     this.sun.intensity = THREE.MathUtils.lerp(0.10, 3.4, dayF) * (1 - stormMix * 0.72);
@@ -95,7 +99,7 @@ export class Environment {
     this.fog.density = THREE.MathUtils.lerp(0.0026, 0.0014, dayF) + nightF * 0.0016 + stormMix * 0.0095;
     renderer.setClearColor(fogC, 1);
 
-    this.sky.setSun(dir, dayF * (1 - stormMix * 0.75), stormMix, elapsed);
+    this.sky.setSun(dir, dayF * (1 - stormMix * 0.75), stormMix, elapsed, this.moonDir, nightF * (1 - stormMix * 0.9));
 
     const hh = Math.floor(((this.dayT * 24) + 6) % 24), mm = Math.floor((this.dayT * 24 * 60) % 60);
     this.state.clock = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;

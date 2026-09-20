@@ -27,6 +27,36 @@ export const UI = {
     card.classList.add('show');
   },
   setSpeed(kmh) { $('speed-val').textContent = Math.round(kmh); },
+  gridInit(zones) {
+    const row = $('grid-row');
+    row.innerHTML = '';
+    this.pips = {};
+    for (const z of zones) {
+      const d = document.createElement('div');
+      d.className = 'grid-pip';
+      d.title = z.name;
+      row.appendChild(d);
+      this.pips[z.key] = d;
+    }
+  },
+  setBattery(pct, state) {
+    $('battery-fill').style.width = `${Math.round(pct * 100)}%`;
+    $('battery-pct').textContent = `${Math.round(pct * 100)}%`;
+    const row = $('battery-row');
+    row.classList.toggle('low', pct <= 0.30 && pct > 0.12);
+    row.classList.toggle('crit', pct <= 0.12);
+    void state;
+  },
+  setGridStatus(powers, hint) {
+    for (const k in this.pips) {
+      const p = powers[k];
+      this.pips[k].classList.toggle('on', p >= 0.99);
+      this.pips[k].classList.toggle('link', p > 0.02 && p < 0.99);
+    }
+    const el = $('grid-hint');
+    el.textContent = hint || '';
+    el.classList.toggle('act', !!hint);
+  },
   setTop(time, weather, quality, fps) {
     $('tb-time').textContent = `LMT ${time}`;
     $('tb-weather').textContent = weather;

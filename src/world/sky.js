@@ -11,6 +11,8 @@ const SKY_FS = `
 precision highp float;
 varying vec3 vDir;
 uniform vec3 uSunDir;
+uniform vec3 uMoonDir;
+uniform float uMoonF;
 uniform float uDay;      // 0 night .. 1 noon
 uniform float uStorm;
 uniform float uTime;
@@ -75,6 +77,29 @@ void main(){
     sky += (vec3(0.92, 0.94, 1.0) * star * 3.2 + vec3(0.5, 0.55, 0.78) * mw) * nightF;
   }
 
+  // the moon: the night key light has a visible source, so the dune shadows
+  // actually point away from something in the sky
+  if (uMoonF > 0.01){
+    float mdot = max(dot(d, uMoonDir), 0.0);
+    float halo = pow(mdot, 900.0) * 0.55 + pow(mdot, 60.0) * 0.10 + pow(mdot, 7.0) * 0.022;
+    sky += vec3(0.55, 0.65, 0.92) * halo * uMoonF;
+    // the disc is only ~1.5° wide, so the maria are evaluated inside it — projecting the whole
+    // sky through a gnomonic UV would divide by ~0 behind the moon and feed sin() values near
+    // 1e10, which is enough to NaN the entire dome white
+    if (mdot > 0.9990){
+      float disc = smoothstep(0.99930, 0.99958, mdot);
+      vec3 ma = normalize(uMoonDir);
+      vec3 mt = normalize(cross(vec3(0.0, 1.0), ma));
+      vec3 mb = cross(ma, mt);
+      vec2 mp = vec2(dot(d, mt), dot(d, mb)) / max(mdot, 0.999);
+      float r = length(mp) / 0.0265;
+      float maria = fbm2(mp * 110.0 + 4.0);
+      vec3 moonCol = mix(vec3(0.96, 0.97, 1.0), vec3(0.54, 0.59, 0.74), smoothstep(0.34, 0.74, maria));
+      moonCol *= 1.0 - 0.34 * smoothstep(0.45, 1.0, r);   // limb darkening keeps it a sphere
+      sky += moonCol * disc * 2.2 * uMoonF;
+    }
+  }
+
   // storm darkening + ochre soup
   vec3 stormCol = vec3(0.48, 0.24, 0.11);
   sky = mix(sky, stormCol * (0.5 + dayF * 0.7), uStorm * 0.85 * (0.4 + 0.6 * horizon));
@@ -88,6 +113,8 @@ export function createSky(scene) {
     vertexShader: SKY_VS, fragmentShader: SKY_FS,
     uniforms: {
       uSunDir: { value: new THREE.Vector3(0.4, 0.5, 0.2) },
+      uMoonDir: { value: new THREE.Vector3(0, 1, 0) },
+      uMoonF: { value: 0 },
       uDay: { value: 0.8 }, uStorm: { value: 0 }, uTime: { value: 0 },
     },
     side: THREE.BackSide, depthWrite: false, fog: false,
@@ -98,11 +125,13 @@ export function createSky(scene) {
   scene.add(mesh);
   return {
     mesh, mat,
-    setSun(dir, day, storm, time) {
+    setSun(dir, day, storm, time, moonDir, moonF) {
       mat.uniforms.uSunDir.value.copy(dir);
       mat.uniforms.uDay.value = day;
       mat.uniforms.uStorm.value = storm;
       mat.uniforms.uTime.value = time;
+      if (moonDir) mat.uniforms.uMoonDir.value.copy(moonDir);
+      mat.uniforms.uMoonF.value = moonF || 0;
     },
   };
 }

@@ -72,6 +72,21 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 #speedo{position:absolute;right:22px;bottom:18px;text-align:right}
 #speed-val{font-family:var(--mono);font-size:52px;font-weight:700;color:#fff;text-shadow:0 0 22px rgba(255,140,40,.55);line-height:1}
 #speed-unit{font-family:var(--mono);font-size:11px;letter-spacing:.35em;color:#a08b6e}
+/* rover battery + base grid restoration */
+#power-hud{position:absolute;right:22px;bottom:104px;width:216px;text-align:right}
+#battery-row{display:flex;align-items:center;gap:8px;justify-content:flex-end;font-family:var(--mono);font-size:10px;color:#a08b6e;letter-spacing:.18em}
+#battery-bar{position:relative;flex:0 0 auto;width:112px;height:11px;border:1px solid var(--line);border-radius:3px;overflow:hidden;background:rgba(8,6,4,.6)}
+#battery-bar::after{content:'';position:absolute;right:-4px;top:3px;width:3px;height:5px;background:var(--line)}
+#battery-fill{display:block;height:100%;width:100%;background:linear-gradient(90deg,#3fd6c8,#8ff0b0);box-shadow:0 0 12px rgba(80,230,190,.6);transition:width .25s linear}
+#battery-row.low #battery-fill{background:linear-gradient(90deg,#e0662a,#ffb050);box-shadow:0 0 14px rgba(255,140,40,.75)}
+#battery-row.crit #battery-fill{background:linear-gradient(90deg,#c9302a,#ff6a4a);animation:pulse-batt 1s ease-in-out infinite}
+@keyframes pulse-batt{0%,100%{opacity:1}50%{opacity:.35}}
+#grid-row{display:flex;gap:5px;justify-content:flex-end;margin-top:8px}
+.grid-pip{width:30px;height:4px;border-radius:2px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.08);transition:.4s}
+.grid-pip.on{background:var(--cyan);border-color:var(--cyan);box-shadow:0 0 10px rgba(60,210,230,.8)}
+.grid-pip.link{background:var(--amber);border-color:var(--amber);box-shadow:0 0 12px rgba(255,150,50,.9);animation:pulse-batt .55s ease-in-out infinite}
+#grid-hint{margin-top:6px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:#7d7566;min-height:12px}
+#grid-hint.act{color:var(--amber)}
 #topbar{position:absolute;top:14px;right:18px;display:flex;gap:14px;font-family:var(--mono);font-size:11px;color:#8a8478}
 #toast{position:absolute;top:64px;left:50%;transform:translateX(-50%);background:rgba(10,8,6,.8);border:1px solid var(--line);
   color:#ffd9a0;padding:10px 26px;border-radius:999px;letter-spacing:.15em;font-size:14px;opacity:0;transition:.4s;pointer-events:none!important;
@@ -113,6 +128,7 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 @media (max-height:560px){.t-btns{display:grid;grid-template-columns:repeat(2,84px);gap:8px}.t-btns button{height:44px}}
 /* the touch pad stack owns the bottom-right corner, so the speedo moves out of its way */
 body.touch #speedo{top:38px;bottom:auto;right:12px;transform:scale(.78);transform-origin:top right}
+body.touch #power-hud{top:74px;bottom:auto;right:12px;transform:scale(.82);transform-origin:top right}
 body.no-ui #hud,body.no-ui #photo-ui .photo-tip{opacity:0}
 
 /* ─── teleport network ─── */

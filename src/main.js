@@ -34,7 +34,11 @@ const clock = new THREE.Clock();
 const tmpV = new THREE.Vector3();
 
 // ───────────────────────── game state ─────────────────────────
+// One dark district per teleport pad outside the hub — derived from ZONES so props.js can never
+// drift away from the mission text.
+const GRID_COUNT = Object.values(ZONES).filter(z => z.teleport).length - 1;
 const missions = [
+  { id: 'grid', text: `重启基地电网 0/${GRID_COUNT}`, done: false },
   { id: 'inspect', text: '巡检轨道发射台', done: false },
   { id: 'leak', text: '修复储罐区泄漏', done: false },
   { id: 'samples', text: `采集火星样本 0/${SAMPLE_COUNT}`, done: false },
@@ -42,6 +46,15 @@ const missions = [
 ];
 let activeMission = 0, leakFixed = false, repairHold = 0, samplesTaken = 0;
 let launchArmed = false;
+const mAct = () => missions[activeMission]?.id;
+
+// ─── rover battery + base grid ───
+// bruno-simon.com has no objective beyond driving; this is the loop that has to beat it.
+// Five districts are blacked out and the rover is the only mobile relay, so every link costs
+// charge, every restored pad becomes both a charger and a jump gate, and the base visibly
+// brightens district by district instead of all at once at the end.
+const grid = { battery: 1, online: 0, target: null, linkT: 0, dead: false, recover: 0, lowWarned: false };
+const LINK_RADIUS = 9, LINK_TIME = 4, LINK_DRAIN = 0.02, LINK_MIN = 0.12;
 const launch = { phase: 'idle', t: 0, cd: 11, y: 0, vy: 0, tilt: 0, intensity: 0, flash: 0, doneAt: 0 };
 let showOn = 0;          // night light-show timer
 let demoPin = null;      // demo cinematic: hold the rover parked
@@ -83,10 +96,11 @@ function buildTeleportUI() {
     const mx = (e.clientX - r.left) / r.width * 2 - 1, mz = (e.clientY - r.top) / r.height * 2 - 1;
     let best = null, bd = 0.22;
     for (const tp of base.teleports) {
+      if (tp.online === false) continue;
       const d = Math.hypot(tp.x / 132 - mx, tp.z / 132 - mz);
       if (d < bd) { bd = d; best = tp; }
     }
-    if (best) teleportTo(best);
+    if (best) teleportTo(best); else UI.toast('⛔ 该区电网未恢复 — 光台无法成像');
   });
 }
 function openTeleport() {
@@ -100,14 +114,15 @@ function openTeleport() {
     b.className = 'tp-item';
     const dist = Math.hypot(phys.x - tp.x, phys.z - tp.z);
     const onPad = padHere === tp;
-    b.innerHTML = `<kbd>${i + 1}</kbd><span class="tp-name">${tp.name}</span><span class="tp-dist">${onPad ? '你在这里' : Math.round(dist) + ' m'}</span>`;
-    b.disabled = onPad;
+    const live = tp.online !== false;
+    b.innerHTML = `<kbd>${i + 1}</kbd><span class="tp-name">${live ? '' : '⛔ '}${tp.name}</span><span class="tp-dist">${onPad ? '你在这里' : live ? Math.round(dist) + ' m' : '无电'}</span>`;
+    b.disabled = onPad || !live;
     b.onclick = () => teleportTo(tp);
     list.appendChild(b);
   });
 }
 function closeTeleport() { teleOpen = false; teleEl?.classList.add('hidden'); }
-function teleportTo(tp) {
+function teleportTo(tp, opt = {}) {
   const x = tp.x + 4.6, z = tp.z + 4.6;
   phys.x = x; phys.z = z; phys.y = platformAt(base.colliders, x, z) + 0.9;
   phys.vx = phys.vy = phys.vz = 0; phys.speed = 0; phys.trauma = 0.3;
@@ -117,8 +132,8 @@ function teleportTo(tp) {
   const fl = document.createElement('div'); fl.className = 'tp-flash';
   document.body.appendChild(fl);
   setTimeout(() => fl.remove(), 620);
-  UI.toast(`✦ 跃迁完成 — ${tp.name}`);
-  if (audio.play) audio.play('warp', 0.4); else audio.radio('good');
+  if (!opt.silent) UI.toast(`✦ 跃迁完成 — ${tp.name}`);
+  if (opt.silent) audio.radio('bad'); else if (audio.play) audio.play('warp', 0.4); else audio.radio('good');
 }
 function drawTeleMap() {
   const g = teleMap.getContext('2d'), W = 252, c = W / 2, k = (W / 2 - 10) / 132;
@@ -132,9 +147,11 @@ function drawTeleMap() {
   }
   for (const tp of base.teleports) {
     const x = c + tp.x * k, y = c + tp.z * k;
-    g.fillStyle = padHere === tp ? '#7df2ff' : '#38c7e0';
+    const live = tp.online !== false;
+    g.fillStyle = padHere === tp ? '#7df2ff' : live ? '#38c7e0' : '#5b4f45';
     g.beginPath(); g.arc(x, y, 6, 0, 7); g.fill();
-    g.fillStyle = '#e9e4da'; g.font = '11px sans-serif'; g.textAlign = 'center';
+    g.fillStyle = live ? '#e9e4da' : '#8a7d70';
+    g.font = '11px sans-serif'; g.textAlign = 'center';
     g.fillText(tp.name, x, y - 10);
   }
   g.fillStyle = '#ffbe5c';
@@ -175,6 +192,9 @@ async function boot() {
   await createRocks(scene);
   setBar(56, '载入 Blender 建模的星舰基地资产…'); await raf();
   base = await buildBase(scene, { particles: 1 });
+  // the hub tap is the always-live mains feed; every other district starts blacked out
+  for (const r of base.gridRigs) { r.online = r.key === 'hub'; r.power = r.online ? 1 : 0; r.tp.online = r.online; }
+  UI.gridInit(base.teleports);
   setBar(74, '装配漫游车 RD-6 …'); await raf();
   rover = await createRover(scene);
   setBar(82, '启动火星大气模拟…'); await raf();
@@ -257,30 +277,142 @@ function addVolumetricCones() {
 
 // ───────────────────────── missions UI ─────────────────────────
 function renderMissions() {
-  const arr = missions.map((m, i) => ({
-    text: m.text, done: m.done, active: i === activeMission && !m.done,
-    extra: m.id === 'leak' && !m.done && activeMission === 1 ? '' : '',
-  }));
+  const arr = missions.map((m, i) => ({ text: m.text, done: m.done, active: i === activeMission && !m.done, extra: '' }));
   UI.renderMissions(arr);
 }
 function advanceMission() {
   while (activeMission < missions.length && missions[activeMission].done) activeMission++;
   renderMissions();
-  if (activeMission === 1) { UI.toast('▸ 新任务：储罐区检测到推进剂泄漏，前往修复'); audio.radio('beep'); }
-  if (activeMission === 2) { UI.toast(`▸ 新任务：采集 ${SAMPLE_COUNT} 块火星样本（发光信标处）`); audio.radio('beep'); }
-  if (activeMission === 3) { launchArmed = true; UI.toast('▸ 任务链完成 — 发射窗口开启，返回观礼台'); audio.radio('good'); }
+  const id = mAct();
+  if (id === 'inspect') { UI.toast('▸ 新任务：电网恢复，巡检轨道发射台'); audio.radio('beep'); }
+  if (id === 'leak') { UI.toast('▸ 新任务：储罐区检测到推进剂泄漏，前往修复'); audio.radio('beep'); }
+  if (id === 'samples') { UI.toast(`▸ 新任务：采集 ${SAMPLE_COUNT} 块火星样本（发光信标处）`); audio.radio('beep'); }
+  if (id === 'watch') { launchArmed = true; UI.toast('▸ 任务链完成 — 发射窗口开启，返回观礼台'); audio.radio('good'); }
   if (activeMission >= missions.length) UI.arrowAngle(phys, null);
 }
 function objectiveTarget() {
-  if (activeMission === 0) return base.launchPadPos;
-  if (activeMission === 1 && !leakFixed) return base.leakPoint;
-  if (activeMission === 2) {
+  const id = mAct();
+  if (id === 'grid') {
+    const r = base.gridRigs.find(r => r.power < 0.99 && r.key !== 'hub');
+    return r ? new THREE.Vector3(r.x, surfaceAt(r.x, r.z) + 2, r.z) : null;
+  }
+  if (id === 'inspect') return base.launchPadPos;
+  if (id === 'leak' && !leakFixed) return base.leakPoint;
+  if (id === 'samples') {
     const s = base.samples.find(s => !s.taken);
     return s ? new THREE.Vector3(s.x, surfaceAt(s.x, s.z) + 1, s.z) : null;
   }
-  if (activeMission === 3) return base.watchPos;
+  if (id === 'watch') return base.watchPos;
   return null;
 }
+
+// ───────────────────────── battery + grid simulation ─────────────────────────
+function districtRigs() { return base.gridRigs.filter(r => r.key !== 'hub'); }
+
+function updateGrid(dt, st) {
+  const rigs = districtRigs();
+  const online = rigs.filter(r => r.online).length;
+  if (online !== grid.online) {
+    grid.online = online;
+    if (mAct() === 'grid') { missions[0].text = `重启基地电网 ${online}/${GRID_COUNT}`; renderMissions(); }
+  }
+
+  // ── drain: the drivetrain, the lamps and the relay are all the same battery
+  let use = 0.0015 + 0.006 * phys.enginePower + 0.00012 * phys.speed;
+  if (st.nightF > 0.05) use += 0.0025 * st.nightF;
+  if (grid.target && grid.linkT > 0) use += LINK_DRAIN;
+  grid.battery = Math.max(0, grid.battery - use * dt);
+
+  // ── charge: the hub tap is mains power, the outer pads are solar and die with the dust
+  const pad = padHere && padHere.online ? padHere : null;
+  if (pad && phys.speed < 1.4 && !grid.dead) {
+    const sun = Math.max(0, st.dayF) * (1 - st.stormF * 0.8);
+    const rate = pad.key === 'hub' ? 0.155 : 0.05 + 0.09 * sun;
+    grid.battery = Math.min(1, grid.battery + rate * dt);
+  }
+
+  if (grid.battery <= 0 && !grid.dead) {
+    grid.dead = true; grid.recover = 3; grid.linkT = 0;
+    UI.toast('⚡ 电力耗尽 — 自动回收程序已呼叫，3 秒后拖回中央广场');
+    audio.radio('bad');
+  }
+  if (grid.dead) {
+    grid.recover -= dt;
+    if (grid.recover <= 0) {
+      const hub = base.teleports.find(tp => tp.key === 'hub') || base.teleports[0];
+      teleportTo(hub, { silent: true });
+      // teleportTo parks the rover beside the pad; a towed rover has to end up on the charger
+      phys.x = hub.x; phys.z = hub.z; phys.y = platformAt(base.colliders, hub.x, hub.z) + 0.9;
+      phys.vx = phys.vy = phys.vz = 0; phys.speed = 0;
+      grid.battery = 0.38; grid.dead = false;
+      UI.toast('◂ 拖回中央广场 — 光台补电中，电量 38%');
+    }
+  } else {
+    if (!grid.lowWarned && grid.battery < 0.22) {
+      grid.lowWarned = true;
+      UI.toast('⚠ 电量低于 22% — 返回任一亮起的光台补电');
+      audio.radio('bad');
+    }
+    if (grid.battery > 0.35) grid.lowWarned = false;
+  }
+
+  // ── linking: park beside a dark tap and hold; walking away bleeds the progress back
+  let tgt = null, bd = LINK_RADIUS;
+  for (const r of rigs) {
+    if (r.online) continue;
+    const d = Math.hypot(phys.x - r.x, phys.z - r.z);
+    if (d < bd) { bd = d; tgt = r; }
+  }
+  grid.target = tgt;
+  const canHold = !grid.dead && !!tgt && phys.speed < 1.6 && grid.battery > LINK_MIN;
+  if (canHold) {
+    grid.linkT = Math.min(LINK_TIME, grid.linkT + dt);
+    tgt.power = Math.max(tgt.power, grid.linkT / LINK_TIME);
+    if (tgt !== grid.link && !tgt.announced) { grid.link = tgt; tgt.announced = true; UI.toast(`◈ 开始并网 — 停在 ${tgt.name} 反应桩旁保持不动 4 秒`); }
+    if (grid.linkT >= LINK_TIME) {
+      tgt.online = true; tgt.power = 1; tgt.announced = false; grid.linkT = 0; grid.link = null;
+      tgt.tp.online = true;   // the rig lights the district's jump gate — the pad reads its state off tp.online
+      const done = rigs.filter(r => r.online).length;
+      audio.radio('good');
+      for (let i = 0; i < 26; i++) {
+        const a = Math.random() * 6.283, s = 3 + Math.random() * 6;
+        fx.spark.emit(tgt.x, 0.8, tgt.z, Math.sin(a) * s, 2 + Math.random() * 4, Math.cos(a) * s, 0.9, 2);
+      }
+      shockWave(tgt.x, surfaceAt(tgt.x, tgt.z) + 0.5, tgt.z);
+      UI.toast(`✔ ${tgt.name} 已复电 — 光台跃迁解锁（${done}/${GRID_COUNT}）`);
+      if (mAct() === 'grid') { missions[0].text = `重启基地电网 ${done}/${GRID_COUNT}`; renderMissions(); }
+      if (done >= GRID_COUNT) onGridComplete();
+    }
+  } else {
+    grid.linkT = Math.max(0, grid.linkT - dt * 1.6);
+    grid.link = null;
+    for (const r of rigs) if (!r.online) { r.power = Math.max(0, r.power - dt * 0.28); if (r.power < 0.05) r.announced = false; }
+  }
+
+  // ── rig visuals: dark iron by day, a lit column you can navigate by at night
+  for (const r of base.gridRigs) {
+    const p = r.power, beat = 0.72 + 0.28 * Math.sin(elapsed * 2.6 + r.x * 0.3);
+    r.core.material.emissiveIntensity = p * 5.4 * beat;
+    r.core.rotation.y += dt * (0.4 + p * 2.6);
+    r.mats[1].opacity = p * (0.2 + 0.55 * st.nightF) * beat;
+    r.mats[2].opacity = p * (0.035 + 0.1 * st.nightF) * (1 - st.stormF * 0.6);
+    if (r === grid.target && grid.linkT > 0) {
+      // the tap you are currently welding flickers in amber so the hold has a target
+      r.mats[1].opacity = 0.25 + 0.6 * Math.abs(Math.sin(elapsed * 7));
+    }
+  }
+  const pct = {}; for (const r of base.gridRigs) pct[r.key] = r.power;
+  UI.setBattery(grid.battery);
+  UI.setGridStatus(pct, grid.target ? `并网 ${Math.round(grid.target.power * 100)}%` : '');
+}
+
+function onGridComplete() {
+  missions[0].done = true;
+  UI.toast('✦ 全区复电 — 基地电网满载，灯光亮度全开');
+  audio.radio('good');
+  advanceMission();
+}
+
 
 // ───────────────────────── launch sequence ─────────────────────────
 function startCountdown() {
@@ -353,6 +485,13 @@ function updateLaunch(dt) {
   }
 }
 const shockRings = [];
+function shockWave(x, y, z, color = 0x8fe8ff, r = 5) {
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.14, 8, 40),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
+  ring.rotation.x = Math.PI / 2; ring.position.set(x, y, z);
+  scene.add(ring); ring.userData.born = elapsed; ring.userData.grow = 1.7;
+  shockRings.push(ring);
+}
 let launchCamW = 0;                       // 0..1 blend into the launch framing
 const launchAim = new THREE.Vector3();
 const launchAir = { x: 0, y: 0, z: 0, w: 0 };   // held camera station for the ascent tracking shot
@@ -458,8 +597,10 @@ function update(dt) {
   elapsed += dt;
   const inp = input.read();
   if (teleOpen) { inp.gas = inp.brake = inp.steer = inp.drift = inp.interact = 0; }
-  // drive physics
-  phys.update(dt, { gas: inp.gas, brake: inp.brake, steer: inp.steer, drift: inp.drift }, base.colliders);
+  // drive physics — a flat battery kills the motors, and the last 20 % sags so that running
+  // dry is a slow, obvious slide into trouble rather than a sudden loss of control
+  const sag = grid.dead ? 0 : THREE.MathUtils.clamp((grid.battery - 0.06) / 0.16, 0.42, 1);
+  phys.update(dt, { gas: inp.gas * sag, brake: inp.brake, steer: inp.steer, drift: inp.drift * (grid.dead ? 0 : 1) }, base.colliders);
   // a demo warp parks the rover for the cinematic shot; the moment someone touches the
   // controls they own it again, otherwise ?demo=… leaves a player with a dead throttle
   if (demoPin && (inp.gas || inp.brake || inp.steer || inp.drift)) demoPin = null;
@@ -520,32 +661,32 @@ function update(dt) {
   if (zone?.key === 'watch' && launchArmed && launch.phase === 'idle') zone.hudAction = '★ 已抵达观礼台 — 发射程序即将启动';
 
   // missions
-  if (activeMission === 0 && Math.hypot(phys.x - ZONES.launch.pos[0], phys.z - ZONES.launch.pos[1]) < 48) {
-    missions[0].done = true; UI.toast('✔ 发射台巡检完成 — 结构读数正常'); audio.radio('good'); advanceMission();
+  if (mAct() === 'inspect' && Math.hypot(phys.x - ZONES.launch.pos[0], phys.z - ZONES.launch.pos[1]) < 48) {
+    missions[1].done = true; UI.toast('✔ 发射台巡检完成 — 结构读数正常'); audio.radio('good'); advanceMission();
   }
   const nearLeak = Math.hypot(phys.x - base.leakPoint.x, phys.z - base.leakPoint.z) < 12;
-  if (activeMission === 1 && !leakFixed) {
+  if (mAct() === 'leak' && !leakFixed) {
     if (nearLeak && inp.interact > 0 && phys.speed < 1.5) {
       repairHold += dt;
       UI.showInfo({ ...lastInfoZone || base.infoZones.find(z => z.key === 'tanks'), hudAction: `密封中… ${Math.min(100, Math.round(repairHold / 3 * 100))}%`, key: 'tanks' });
       if (repairHold >= 3) {
-        leakFixed = true; missions[1].done = true;
+        leakFixed = true; missions[2].done = true;
         UI.toast('✔ 泄漏已封堵 — 推进剂压力恢复'); audio.radio('good'); advanceMission();
       }
     } else if (!nearLeak) repairHold = 0;
   }
-  if (activeMission === 2) {
+  if (mAct() === 'samples') {
     for (const s of base.samples) {
       if (!s.taken && Math.hypot(phys.x - s.x, phys.z - s.z) < 4.2) {
         s.taken = true; s.group.visible = false; samplesTaken++;
-        missions[2].text = `采集火星样本 ${samplesTaken}/${SAMPLE_COUNT}`;
+        missions[3].text = `采集火星样本 ${samplesTaken}/${SAMPLE_COUNT}`;
         renderMissions(); audio.radio('beep'); UI.toast(`✦ 样本 ${samplesTaken}/${SAMPLE_COUNT} 已入库`);
         for (let i = 0; i < 40; i++) fx.spark.emit(s.x, 1, s.z, (Math.random() - .5) * 8, 3 + Math.random() * 5, (Math.random() - .5) * 8, 0.8, 2);
-        if (samplesTaken >= SAMPLE_COUNT) { missions[2].done = true; advanceMission(); }
+        if (samplesTaken >= SAMPLE_COUNT) { missions[3].done = true; advanceMission(); }
       }
     }
   }
-  if (launchArmed && launch.phase === 'idle' && activeMission === 3) {
+  if (launchArmed && launch.phase === 'idle' && mAct() === 'watch') {
     if (Math.hypot(phys.x - base.watchPos.x, phys.z - base.watchPos.z) < 26) startCountdown();
   }
   updateLaunch(dt);
@@ -582,20 +723,22 @@ function update(dt) {
   rover.lampMat.emissiveIntensity = 0.18 + Math.max(st.nightF, st.stormF * 0.7) * 1.6;
   const night = Math.max(st.nightF, st.stormF * 0.6);
   for (const c of cones) c.material.opacity = st.nightF * 0.045 * (1 - st.stormF);
-  // pad discs: a flat read-able ring by day, an armed portal at night
-  const padPulse = 0.12 + night * (1.05 + Math.sin(elapsed * 2.2) * 0.35);
+  // pad discs: a flat read-able ring by day, an armed portal at night. The whole base is dimmer
+  // until the rover re-links the districts, so progress is legible from anywhere on the map.
+  const gp = 0.34 + 0.66 * (grid.online / GRID_COUNT);
+  const padPulse = (0.12 + night * (1.05 + Math.sin(elapsed * 2.2) * 0.35)) * gp;
   for (const m of base.padGlow) m.emissiveIntensity = padPulse;
   // night light show on ship rings
   if (showOn > 0) {
     showOn -= dt;
     const beat = Math.sin(elapsed * 6) > 0 ? 5.5 : 1.2;
-    base.lightStrips.forEach((m, i) => { m.emissiveIntensity = beat * (0.5 + 0.5 * Math.sin(elapsed * 4 + i * 1.7)); });
+    base.lightStrips.forEach((m, i) => { m.emissiveIntensity = beat * gp * (0.5 + 0.5 * Math.sin(elapsed * 4 + i * 1.7)); });
     base.lightRings.forEach(r => r.visible = true);
     base.showBeams.rotation.y += dt * 0.6;
     const beamA = (0.016 + 0.012 * Math.sin(elapsed * 2.4)) * st.nightF;
     base.showBeamMats.forEach((m, i) => { m.opacity = beamA * (0.55 + 0.45 * Math.sin(elapsed * 5 + i * 2.1)); });
     if (showOn <= 0) {
-      base.lightStrips.forEach(m => m.emissiveIntensity = 2.5);
+      base.lightStrips.forEach(m => m.emissiveIntensity = 2.5 * gp);
       base.lightRings.forEach(r => r.visible = false);
       base.showBeamMats.forEach(m => { m.opacity = 0; });
     }
@@ -607,9 +750,20 @@ function update(dt) {
 
   // teleport pad presence — the pads are the map's fast-travel skeleton
   padHere = base.teleports.find(tp => Math.hypot(phys.x - tp.x, phys.z - tp.z) < 3.9) || null;
+  updateGrid(dt, st);
   const padHint = !!padHere && phys.speed < 2.5 && !teleOpen;
   teleHint.classList.toggle('hidden', !padHint);
-  if (padHint) teleHint.innerHTML = `◈ ${padHere.name} 光台已就绪 — 按 <kbd>G</kbd> 跃迁（<kbd>M</kbd> 全区地图）`;
+  if (padHint) {
+    teleHint.innerHTML = padHere.online
+      ? `◈ ${padHere.name} 光台已就绪 — 按 <kbd>G</kbd> 跃迁（<kbd>M</kbd> 全区地图）`
+      : `⛔ ${padHere.name} 光台无电 — 复电后才能成像跃迁`;
+  } else if (grid.target && phys.speed < 1.6 && !teleOpen) {
+    teleHint.classList.remove('hidden');
+    const pct = Math.round(grid.target.power * 100);
+    teleHint.innerHTML = grid.battery > LINK_MIN
+      ? `◈ 并网中 · ${grid.target.name} <b>${pct}%</b> — 保持停车直到反应桩亮起`
+      : `⚡ 电量不足（${Math.round(grid.battery * 100)}%）— 无法为 ${grid.target.name} 并网，先回光台补电`;
+  }
   teleHint._fab.classList.toggle('hidden', teleOpen || photo.on);
   teleHint._mute.classList.toggle('hidden', photo.on);
   if (teleOpen) drawTeleMap();
@@ -633,7 +787,7 @@ function update(dt) {
   for (let i = shockRings.length - 1; i >= 0; i--) {
     const r = shockRings[i];
     const age = elapsed - r.userData.born;
-    r.scale.setScalar(1 + age * 22);
+    r.scale.setScalar(1 + age * (r.userData.grow ?? 22));
     r.material.opacity = Math.max(0, 0.8 - age * 0.5);
     if (age > 2.2) { scene.remove(r); shockRings.splice(i, 1); }
   }
@@ -796,7 +950,7 @@ addEventListener('resize', () => {
 
 addEventListener('keydown', e => {
   if (!started) return;
-  if (teleOpen && /^Digit[1-6]$/.test(e.code)) { const tp = base.teleports[+e.code.slice(5) - 1]; if (tp) teleportTo(tp); return; }
+  if (teleOpen && /^Digit[1-6]$/.test(e.code)) { const tp = base.teleports[+e.code.slice(5) - 1]; if (tp && tp.online !== false) teleportTo(tp); else if (tp) UI.toast('⛔ 该区电网未恢复 — 光台无法成像'); return; }
   if (e.code === 'KeyG') {
     if (teleOpen) closeTeleport();
     else if (padHere) openTeleport();
@@ -840,7 +994,7 @@ $('start-btn').onclick = async () => {
   started = true;
   startedAt = performance.now();
   renderMissions();
-  UI.toast('欢迎来到 RED STARBASE — 驾驶漫游车开始探索');
+  UI.toast('欢迎来到 RED STARBASE — 基地断电中，驾驶漫游车重启电网');
   audio.radio('beep');
 };
 
@@ -849,13 +1003,22 @@ renderer.setAnimationLoop(tick);
 
 // ───────────────────────── test / demo hooks (URL params) ─────────────────────────
 window.__RSB = {
-  get state() { return { started, paused, bootMs: Math.round(startedAt), pos: [phys?.x, phys?.y, phys?.z], speed: phys?.speed, yaw: phys?.yaw, fps: fpsAvg, mission: activeMission, launch: launch.phase, launchY: launch.y, samples: samplesTaken, leak: leakFixed, quality: qKey }; },
-  skipMissions: () => { missions.forEach((m, i) => { if (i < 3) m.done = true; }); samplesTaken = SAMPLE_COUNT; missions[2].text = `采集火星样本 ${SAMPLE_COUNT}/${SAMPLE_COUNT}`; advanceMission(); },
+  get state() { return { started, paused, bootMs: Math.round(startedAt), pos: [phys?.x, phys?.y, phys?.z], speed: phys?.speed, yaw: phys?.yaw, fps: fpsAvg, mission: activeMission, launch: launch.phase, launchY: launch.y, samples: samplesTaken, leak: leakFixed, quality: qKey, battery: grid.battery, gridOnline: grid.online, gridDead: grid.dead }; },
+  skipMissions: () => {
+    base.gridRigs.forEach(r => { r.online = true; r.power = 1; r.tp.online = true; });
+    grid.online = GRID_COUNT; grid.battery = 1; grid.dead = false;
+    missions.forEach(m => { if (m.id !== 'watch') m.done = true; });
+    missions[0].text = `重启基地电网 ${GRID_COUNT}/${GRID_COUNT}`;
+    samplesTaken = SAMPLE_COUNT; missions[3].text = `采集火星样本 ${SAMPLE_COUNT}/${SAMPLE_COUNT}`;
+    advanceMission();
+  },
   startStorm: () => { env?.toggleWeather(); },
   startNight: () => { env?.forceNight(); },
   phys: () => phys, env: () => env, launchRef: launch,
   warp: (x, z, face, search) => warpTo(x, z, face, search ?? 8),
   sampleList: () => (base?.samples || []).map(s => [Math.round(s.x), Math.round(s.z), !!s.taken]),
+  taps: () => (base?.gridRigs || []).map(r => [r.key, +r.x.toFixed(1), +r.z.toFixed(1), +r.power.toFixed(2), !!r.online]),
+  setBattery: (v) => { grid.battery = v; grid.dead = false; grid.lowWarned = false; },
   post: () => post,
   camera: () => camera,
   scene: () => scene,

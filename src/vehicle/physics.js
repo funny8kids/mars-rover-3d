@@ -40,25 +40,40 @@ export class RoverPhysics {
     this.groundY = this.y - RIDE;
     this.prevGroundH = this.y;
     this.onFloor = false;
+    this.wheelAngle = 0;      // realised front-wheel angle (rad), driven toward a speed-scaled target
+    this.longAcc = 0;         // m/s², feeds the visual nose dive/squat
+    this.bodyRoll = 0; this.bodyPitch = 0;   // chassis lean from lateral / longitudinal G
+    this._acc = 0;            // fixed-step accumulator
   }
+  // Fixed 120 Hz integration: the feel must not change between a 60 Hz laptop and a stuttering
+  // frame, and a surface-locked rig that is stepped with a variable dt is exactly what makes an
+  // arcade car twitch.
   update(dt, inp, colliders) {
-    dt = Math.min(dt, 1 / 30);
+    this._acc += Math.min(dt, 0.25);
+    const h = 1 / 120;
+    let n = 0;
+    while (this._acc >= h && n < 8) { this.step(h, inp, colliders); this._acc -= h; n++; }
+    if (n === 8) this._acc = 0;
+    this.trauma = Math.max(0, this.trauma - Math.min(dt, 0.25) * 1.4);
+    return this;
+  }
+  step(dt, inp, colliders) {
     const fwdX = Math.sin(this.yaw), fwdZ = Math.cos(this.yaw);
     const rgtX = Math.cos(this.yaw), rgtZ = -Math.sin(this.yaw);
     let vf = this.vx * fwdX + this.vz * fwdZ;
     let vl = this.vx * rgtX + this.vz * rgtZ;
 
     // drive / brake
-    const throttle = inp.gas - inp.brake * (vf > 0.5 ? 0 : 1) - Math.max(0, -inp.brake) * 0;
-    const braking = inp.brake > 0 && vf > 0.5;
+    const braking = inp.brake > 0.05 && vf > 0.6;
     let accel = 0;
     if (!braking) {
       const t = inp.gas > 0 ? inp.gas : (inp.brake > 0 ? -0.6 : 0);
       accel = t * (t > 0 ? 10.5 : 8) * Math.max(0.25, 1 - Math.abs(vf) / MAX_SPEED);
       if (inp.gas > 0 && vf < -0.5) accel = -14;            // brake while reversing
-      if (inp.brake > 0 && vf > 0.5) accel = -16;           // service brake
+      if (inp.brake > 0 && vf > 0.6) accel = -16;           // service brake
     }
     this.enginePower = Math.abs(accel) / 10.5;
+    this.longAcc = accel;
     vf += accel * dt;
     if (braking) vf = Math.max(0, vf - 18 * dt);
     // rolling drag
@@ -66,10 +81,17 @@ export class RoverPhysics {
     if (Math.abs(vf) < 0.02 && !accel) vf = 0;
     vf = Math.max(-10, Math.min(MAX_SPEED, vf));
 
-    // steering (speed-scaled)
-    const steerCap = Math.min(1, 5.5 / (Math.abs(vf) * 0.42 + 2.2));
-    const dirSign = vf >= 0 ? 1 : -1;
-    this.yaw += inp.steer * 1.75 * steerCap * dt * dirSign * (inp.drift > 0 ? 1.35 : 1);
+    // steering: a realised wheel angle, not an instant yaw rate. Target angle narrows with
+    // speed (so full lock still spins the rover in place) and yaw comes from the bicycle
+    // equation, which is what makes the arc feel connected to the stick.
+    const sp = Math.abs(vf);
+    const lock = 0.60;
+    const target = inp.steer * lock / (1 + sp * 0.055) * (sp < 4 ? 1 + (4 - sp) * 0.16 : 1);
+    this.wheelAngle += (Math.max(-lock, Math.min(lock, target)) - this.wheelAngle) * Math.min(1, 9 * dt);
+    const WHEELBASE = 2.9;
+    let yawRate = -(vf / WHEELBASE) * Math.tan(this.wheelAngle);
+    if (sp < 1.2) yawRate *= 0.35 + sp / 1.2 * 0.65;         // authority without the crawl
+    this.yaw += yawRate * dt;
 
     // lateral grip — low on Mars, lower with handbrake → drift
     const grip = inp.drift > 0 ? 0.7 : 4.6;
@@ -141,6 +163,11 @@ export class RoverPhysics {
     const targetRoll = limb(-(tiltX * cosY + tiltZ * sinY));
     this.pitch += (targetPitch - this.pitch) * Math.min(1, dt * 7);
     this.roll += (targetRoll - this.roll) * Math.min(1, dt * 7);
+    // chassis lean that a surface normal alone cannot give: outside wheels unload in a corner,
+    // the nose dives under braking and squats under throttle.
+    const latG = yawRate * vf;
+    this.bodyRoll += ((-latG * 0.028) - this.bodyRoll) * Math.min(1, dt * 6);
+    this.bodyPitch += ((accel * 0.0075) - this.bodyPitch) * Math.min(1, dt * 5);
 
     // collisions (cylinders {x,z,r}); platforms are driveable, so they never shove you aside
     for (const c of colliders) {
@@ -157,10 +184,8 @@ export class RoverPhysics {
     // world bounds
     const rr = Math.hypot(this.x, this.z);
     if (rr > 1180) { const s = 1180 / rr; this.x *= s; this.z *= s; this.vx *= 0.5; this.vz *= 0.5; }
-    this.trauma = Math.max(0, this.trauma - dt * 1.4);
-    return this;
   }
   // The mesh root sits at the contact point (wheel centres hang exactly one radius above it), so
   // the heave term may lift the body but must never drop the reference under the drawn ground.
-  pose() { return { x: this.x, y: Math.max(this.y - RIDE + this.susp, this.groundY), z: this.z, yaw: this.yaw, pitch: this.pitch, roll: this.roll }; }
+  pose() { return { x: this.x, y: Math.max(this.y - RIDE + this.susp, this.groundY), z: this.z, yaw: this.yaw, pitch: this.pitch + this.bodyPitch, roll: this.roll + this.bodyRoll }; }
 }

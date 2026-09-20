@@ -25,9 +25,14 @@ export class ChaseCamera {
     this.trauma = Math.max(0, this.trauma - dt * 1.1);
     const yaw = vehicle.yaw;
     const bx = Math.sin(yaw), bz = Math.cos(yaw);
+    const rgtX = Math.cos(yaw), rgtZ = -Math.sin(yaw);
     // elastic chase: offset behind heading, rises & pulls back with speed
     const back = 9.6 + speed * 0.16, up = 4.1 + speed * 0.045 + this.raise;
-    let tx = vehicle.x - bx * back, tz = vehicle.z - bz * back, ty = vehicle.y + up;
+    // the rig trails to the outside of a corner, so rotation reads as force instead of as a
+    // pivot on rails — the single biggest difference between a car that feels driven and one
+    // that feels glued
+    const swing = THREE.MathUtils.clamp((vehicle.lateral || 0) * 0.22, -2.2, 2.2);
+    let tx = vehicle.x - bx * back + rgtX * swing, tz = vehicle.z - bz * back + rgtZ * swing, ty = vehicle.y + up;
     let stiff = 3.4;
     if (this.air) {
       const a = this.air;
@@ -69,6 +74,6 @@ export class ChaseCamera {
     const targetFov = 60 + speed * 0.42 + this.fovAdd;
     this.fov += (targetFov - this.fov) * Math.min(1, dt * 3);
     if (Math.abs(this.cam.fov - this.fov) > 0.01) { this.cam.fov = this.fov; this.cam.updateProjectionMatrix(); }
-    this.rollTilt = (vehicle.roll || 0) * 0.5;
+    this.rollTilt = (vehicle.roll || 0) * 0.5 + THREE.MathUtils.clamp((vehicle.lateral || 0) * 0.012, -0.12, 0.12);
   }
 }

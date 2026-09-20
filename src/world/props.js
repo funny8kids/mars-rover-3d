@@ -32,11 +32,12 @@ export async function buildBase(scene, quality) {
   await Promise.all(entries.map(async (n) => { models[n.split('/').pop()] = await loadModel(n); }));
   // glTF emissives arrive at full strength; under the sun + bloom band they blow out into
   // white discs. One art-direction pass over the shared hero materials fixes every instance.
+  const padGlow = [];
   for (const root of Object.values(models)) {
     root?.traverse(o => {
       for (const mt of (Array.isArray(o.material) ? o.material : o.material ? [o.material] : [])) {
         const n = mt.name || '';
-        if (n === 'pad_glow') mt.emissiveIntensity = 0.9;
+        if (n === 'pad_glow') { mt.emissiveIntensity = 0.12; padGlow.push(mt); }   // daylight: a read-able disc, not a bloom hole
         else if (n === 'light_cyan' || n === 'light_amber' || n === 'light_warm' || n === 'light_magenta' || n === 'plant' || n === 'crystal_mat') mt.emissiveIntensity = 0.55;
       }
     });
@@ -545,7 +546,7 @@ export async function buildBase(scene, quality) {
   scene.add(G);
   const flamePoint = new THREE.Vector3(SHIP_POS[0], 1.6, SHIP_POS[1]);
   return {
-    group: G, colliders, infoZones, samples, sparkPoints, beacons, lightStrips, lightRings, showBeams, showBeamMats, shipMats, shipGroup, teleports,
+    group: G, colliders, infoZones, samples, sparkPoints, beacons, lightStrips, lightRings, showBeams, showBeamMats, shipMats, shipGroup, teleports, padGlow,
     leakPoint: new THREE.Vector3(LEAK_POS[0], surfaceAt(LEAK_POS[0], LEAK_POS[1]) + 1.8, LEAK_POS[1]),
     flamePoint,
     launchPadPos: new THREE.Vector3(...ZONES.launch.pos),

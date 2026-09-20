@@ -11,6 +11,7 @@ import { ChaseCamera } from './camera/chase.js';
 import { createInput } from './input.js';
 import { createFX, updateStorm } from './fx/particles.js';
 import { createPost } from './fx/post.js';
+import { createSkidMarks } from './fx/skids.js';
 import { GameAudio } from './audio/audio.js';
 import { UI, fmtTime } from './ui.js';
 
@@ -25,7 +26,7 @@ const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.4, 90
 const input = createInput(canvas);
 const audio = new GameAudio();
 
-let quality, qKey, post, fx, env, sky, base, rover, phys, chase;
+let quality, qKey, post, fx, env, sky, base, rover, phys, chase, skids;
 let started = false, paused = false;
 let startedAt = 0;       // performance.now() at the moment the world became interactive
 let elapsed = 0;
@@ -211,6 +212,7 @@ function applyQuality() {
   env = new Environment(scene, sky, quality);
   if (quality.shadow) env.sun.shadow.mapSize.set(quality.shadow, quality.shadow);
   fx = createFX(scene, quality);
+  skids ??= createSkidMarks(scene);
   Object.values(fx).forEach(p => p.setPixelRatio(renderer.getPixelRatio()));
   post = createPost(renderer, scene, camera, quality, innerWidth, innerHeight);
   // bind live cube env map for real-time reflections
@@ -472,12 +474,17 @@ function update(dt) {
   rover.group.rotation.set(pose.pitch, pose.yaw, -pose.roll);
   // wheels
   const omega = (phys.speed * Math.sign(phys.vx * Math.sin(pose.yaw) + phys.vz * Math.cos(pose.yaw) || 1)) / 0.46;
-  rover.steerVis = THREE.MathUtils.damp(rover.steerVis || 0, inp.steer * 0.55, 8, dt);
+  // the modelled wheels show the angle the physics is actually using, so the tyres and the
+  // arc through the corner agree instead of the wheels lagging a smoothed copy of the key
+  const wa = phys.wheelAngle;
+  const track = [];
   for (const w of rover.wheels) {
     const d = w.userData;
-    w.rotation.y = d.row === 0 ? rover.steerVis : (d.row === 2 ? -rover.steerVis * 0.6 : 0);
+    w.rotation.y = d.row === 0 ? wa : (d.row === 2 ? -wa * 0.45 : 0);
     d.spin.rotation.x += omega * dt;
+    track.push(w.getWorldPosition(tmpV.set(0, 0, 0)));
   }
+  skids.update(dt, track, Math.abs(phys.lateral) + (inp.drift > 0.5 ? 2.2 : 0), pose.yaw);
   // driving dust from wheels
   if (phys.speed > 2 && phys.grounded) {
     const rate = Math.min(6, phys.speed * 0.25) * quality.particles;
@@ -573,7 +580,11 @@ function update(dt) {
   if (spots) for (const sp of spots) sp.intensity = st.nightF * 46 + st.stormF * 22;
   // the lens quads must follow the beam: at full emissive in clear daylight they bloom the whole deck
   rover.lampMat.emissiveIntensity = 0.18 + Math.max(st.nightF, st.stormF * 0.7) * 1.6;
+  const night = Math.max(st.nightF, st.stormF * 0.6);
   for (const c of cones) c.material.opacity = st.nightF * 0.045 * (1 - st.stormF);
+  // pad discs: a flat read-able ring by day, an armed portal at night
+  const padPulse = 0.12 + night * (1.05 + Math.sin(elapsed * 2.2) * 0.35);
+  for (const m of base.padGlow) m.emissiveIntensity = padPulse;
   // night light show on ship rings
   if (showOn > 0) {
     showOn -= dt;
@@ -674,7 +685,7 @@ function update(dt) {
       launchAir.w = Math.max(0, launchAir.w - dt * 1.1);
     }
     chase.air = launchAir.w > 0.001 ? launchAir : null;
-    chase.update(dt, { x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw, roll: pose.roll, groundY: phys.groundY }, phys.speed, phys.trauma);
+    chase.update(dt, { x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw, roll: pose.roll, lateral: phys.lateral, wheelAngle: phys.wheelAngle, groundY: phys.groundY }, phys.speed, phys.trauma);
   } else updatePhotoCam(dt);
 
   // audio

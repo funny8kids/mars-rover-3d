@@ -4,14 +4,29 @@ import { TERRAIN, ZONES, ISLAND } from '../config.js';
 import { fbm, vnoise, mulberry32, smoothstep } from '../utils/noise.js';
 import { loadModel, cloneModel } from './assets.js';
 
-export function makeDetailNormal(size = 256) {
+// Two-scale sand relief. The mesh is only ~1.4 m per vertex, so everything the player sees
+// from a metre away has to come from the normal map: elongated wind ripples for the medium
+// band and a grain field for the close band.
+export function makeDetailNormal(size = 512) {
   const c = document.createElement('canvas'); c.width = c.height = size;
   const g = c.getContext('2d');
   const img = g.createImageData(size, size);
-  const hs = (x, y) => fbm(x / size * 8, y / size * 8, 4) * 0.7 + vnoise(x / size * 40, y / size * 40) * 0.3;
+  const PX = 12;   // pixels per noise unit → ripple wavelength ≈ 2 m
+  const ripple = (x, y) => {
+    const drift = fbm(x / (size * 0.55), y / (size * 0.55), 2);
+    const a = drift * 1.6;
+    const along = x * Math.cos(a) + y * Math.sin(a);
+    const bend = vnoise(x * 0.06, y * 0.06) * 5.5;
+    const crest = Math.pow(0.5 + 0.5 * Math.sin((along / PX) * 6.28318 + bend), 2.4);
+    return crest * (0.55 + 0.45 * fbm(x / (PX * 9), y / (PX * 9), 3));
+  };
+  const hs = (x, y) =>
+    ripple(x, y) * 0.62
+    + vnoise(x / (PX * 0.45), y / (PX * 0.45)) * 0.20
+    + fbm(x / size * 8, y / size * 8, 4) * 0.18;
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const l = hs(x - 1, y), r = hs(x + 1, y), d = hs(x, y - 1), u = hs(x, y + 1);
-    let nx = (l - r) * 2.2, ny = (d - u) * 2.2, nz = 1;
+    let nx = (l - r) * 3.4, ny = (d - u) * 3.4, nz = 1;
     const len = Math.hypot(nx, ny, nz);
     const i = (y * size + x) * 4;
     img.data[i] = (nx / len * 0.5 + 0.5) * 255;
@@ -30,6 +45,7 @@ const SAND_A = new THREE.Color(0.80, 0.44, 0.31);   // warm coral toy sand
 const SAND_B = new THREE.Color(0.70, 0.35, 0.24);   // deeper terracotta in troughs
 const SAND_C = new THREE.Color(0.88, 0.58, 0.40);   // sun-lit crest
 const PAVE   = new THREE.Color(0.82, 0.76, 0.68);   // cream regolith pavement
+const GRAVEL = new THREE.Color(0.46, 0.26, 0.19);   // dark scree drifts
 
 export function createTerrain(scene) {
   const { size, seg } = TERRAIN;
@@ -53,6 +69,11 @@ export function createTerrain(scene) {
     if (pave > 0) col.lerp(PAVE, pave * 0.85);                  // cream pads & roads
     // soft dune banding so large flats never read as a dead sheet
     col.multiplyScalar(0.94 + 0.12 * vnoise(x * 0.35, z * 0.35));
+    // gravel drifts and wind-scoured lighter bands — the mid-scale reading that survives
+    // the 1.4 m vertex spacing
+    const gravel = smoothstep(0.58, 0.82, fbm(x * 0.055 + 31, z * 0.055 + 17, 3));
+    col.lerp(GRAVEL, gravel * 0.42 * (1 - pave));
+    col.lerp(SAND_C, Math.pow(smoothstep(0.55, 0.95, vnoise(x * 0.12, z * 0.12 + 40)), 2) * 0.20);
     colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
   }
   installSurfaceGrid(nodes, seg, size);
@@ -62,7 +83,7 @@ export function createTerrain(scene) {
     vertexColors: true, roughness: 0.94, metalness: 0.0,
     normalMap: makeDetailNormal(),
   });
-  mat.normalScale.set(0.5, 0.5);
+  mat.normalScale.set(0.85, 0.85);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;
   mesh.name = 'terrain';

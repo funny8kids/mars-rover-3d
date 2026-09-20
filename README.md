@@ -47,7 +47,7 @@ npm run assets     # = blender --background --python tools/blender/build_assets.
 
 想直达某个演示，加查询参数：`?auto=low|med|high|ultra`、`?demo=warp|launch|storm|night`。
 
-> 线上演示：尚未部署。部署是可选交付项，需要仓库所有者确认后执行。
+> 线上演示：https://red-starbase-wgmag3xoh66.qoder.website/ （公开可访问，无需登录；实测 58–64 FPS、零控制台错误）。
 
 ---
 
@@ -178,7 +178,7 @@ tools/               无头验证脚本（CDP），见 docs/VERIFICATION.md
 
 1. **桌面独显 60 FPS 未验证**——本机只有 AMD Radeon 610M 核显：`高` 档实测 22–27 FPS 并触发自动降档（降级链路可用），
    但「高端设备 60 FPS」需要你在本地跑 `npm run dev` 后用右上角状态条自查。
-2. **线上部署未执行**——发布需要仓库所有者确认后执行；`dist/` 需在改造后用 `npm run build` 重新生成再验证。
+2. **线上部署已执行**——`dist/`（`npm run build` 产物）已发布为公开站点（见上方线上演示链接）；后续改动源码后需重新 `npm run build` 并发布新版本。
 3. **KTX2 / DRACO 不适用**——零贴图；Blender 资产为未压缩 `.glb`，总量约 550 kB，引入压缩的收益小于复杂度；**Web Worker 未使用**——地形与设施几何在加载阶段一次性构建，运行期靠 InstancedMesh、按档位预算与视锥剔除，没有多级 LOD 网格。
 4. **WebGPU 路径未实现**——当前为 WebGL2，优先保证可部署与可降级。
 

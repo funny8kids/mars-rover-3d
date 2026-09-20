@@ -32,7 +32,8 @@ export class Environment {
     // real-time environment reflections (steel ship / tanks)
     this.cubeRT = new THREE.WebGLCubeRenderTarget(256, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
     this.cubeCam = new THREE.CubeCamera(1, 8000, this.cubeRT);
-    this.cubeCam.position.set(-260, 45, 0);
+    // hover over the plaza so the 300 m diorama — sky, dunes and the ship — fills all six faces
+    this.cubeCam.position.set(0, 40, 0);
     scene.add(this.cubeCam);
     this.envTimer = 0;
 
@@ -77,10 +78,10 @@ export class Environment {
     // ambient
     // a dust storm is a giant diffuse light box: the key dims but the wrap-around fill rises.
     // Without that fill every shadowed face in the frame collapses into a black void.
-    this.hemi.intensity = THREE.MathUtils.lerp(0.22, 0.30, dayF) * (1 + stormMix * 1.5) + nightF * 0.14;
+    this.hemi.intensity = THREE.MathUtils.lerp(0.42, 0.58, dayF) * (1 + stormMix * 1.5) + nightF * 0.14;
     this._c.sky.setRGB(0.55, 0.33, 0.2).lerp(new THREE.Color(0.75, 0.55, 0.4), dayF);
     this._c.sky.lerp(new THREE.Color(0.08, 0.10, 0.20), nightF);
-    this.amb.intensity = 0.07 + nightF * 0.06 + stormMix * 0.30;
+    this.amb.intensity = 0.13 + nightF * 0.06 + stormMix * 0.30;
 
     // fog mood
     const fogC = this._c.fog.setRGB(0.38, 0.175, 0.085).lerp(new THREE.Color(0.045, 0.05, 0.075), nightF);
@@ -90,7 +91,8 @@ export class Environment {
     // shadow-side fill tinted by the actual haze colour, so dark scarp reads as dust-lit rock
     this.hemi.color.copy(this._c.sky).lerp(fogC, stormMix * 0.85);
     this.amb.color.copy(fogC);
-    this.fog.density = THREE.MathUtils.lerp(0.00040, 0.00020, dayF) + nightF * 0.00030 + stormMix * 0.00360;
+    // densities sized for a 300 m island: the far rim should always sit in soft haze
+    this.fog.density = THREE.MathUtils.lerp(0.0026, 0.0014, dayF) + nightF * 0.0016 + stormMix * 0.0095;
     renderer.setClearColor(fogC, 1);
 
     this.sky.setSun(dir, dayF * (1 - stormMix * 0.75), stormMix, elapsed);

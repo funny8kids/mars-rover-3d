@@ -48,6 +48,98 @@ const race = { active: false, idx: 0, t: 0, gates: [], rings: [] };
 const photo = { on: false, yaw: 0, pitch: 0.25, dist: 14, dragging: false, lx: 0, ly: 0 };
 let degradeLevel = 0;
 
+// ───────────────────────── teleport network ─────────────────────────
+let padHere = null, teleOpen = false, teleEl = null, teleMap = null, teleHint = null;
+let lastPadShown = false;
+function buildTeleportUI() {
+  teleEl = document.createElement('div');
+  teleEl.id = 'teleport-ui'; teleEl.className = 'hidden';
+  teleEl.innerHTML = `
+    <div class="tp-head"><span class="tp-title">✦ 传送网络 · TELEPORT NETWORK</span>
+      <button class="tp-close" aria-label="close">✕</button></div>
+    <div class="tp-body"><canvas class="tp-map" width="252" height="252"></canvas><div class="tp-list"></div></div>
+    <div class="tp-tip">数字键 1-6 直接跃迁 · 按 G 在光台上就地开启 · M 全区地图</div>`;
+  document.body.appendChild(teleEl);
+  teleMap = teleEl.querySelector('.tp-map');
+  teleEl.querySelector('.tp-close').onclick = closeTeleport;
+  teleHint = document.createElement('div');
+  teleHint.id = 'tele-hint'; teleHint.className = 'hidden';
+  document.body.appendChild(teleHint);
+  const fab = document.createElement('button');
+  fab.id = 'tele-fab'; fab.className = 'hidden'; fab.textContent = '✦ 传送 · MAP';
+  fab.onclick = () => { if (teleOpen) closeTeleport(); else openTeleport(); };
+  document.body.appendChild(fab);
+  teleHint._fab = fab;
+  const mute = document.createElement('button');
+  mute.id = 'mute-fab'; mute.className = 'hidden';
+  const draw = () => { mute.textContent = audio.muted ? '音效 关' : '音效 开'; };
+  draw(); mute._draw = draw;
+  mute.onclick = () => { audio.setMuted(!audio.muted); draw(); };
+  document.body.appendChild(mute);
+  teleHint._mute = mute;
+  teleMap.addEventListener('click', e => {
+    const r = teleMap.getBoundingClientRect();
+    const mx = (e.clientX - r.left) / r.width * 2 - 1, mz = (e.clientY - r.top) / r.height * 2 - 1;
+    let best = null, bd = 0.22;
+    for (const tp of base.teleports) {
+      const d = Math.hypot(tp.x / 132 - mx, tp.z / 132 - mz);
+      if (d < bd) { bd = d; best = tp; }
+    }
+    if (best) teleportTo(best);
+  });
+}
+function openTeleport() {
+  if (teleOpen) return;
+  teleOpen = true;
+  teleEl.classList.remove('hidden');
+  const list = teleEl.querySelector('.tp-list');
+  list.innerHTML = '';
+  base.teleports.forEach((tp, i) => {
+    const b = document.createElement('button');
+    b.className = 'tp-item';
+    const dist = Math.hypot(phys.x - tp.x, phys.z - tp.z);
+    const onPad = padHere === tp;
+    b.innerHTML = `<kbd>${i + 1}</kbd><span class="tp-name">${tp.name}</span><span class="tp-dist">${onPad ? '你在这里' : Math.round(dist) + ' m'}</span>`;
+    b.disabled = onPad;
+    b.onclick = () => teleportTo(tp);
+    list.appendChild(b);
+  });
+}
+function closeTeleport() { teleOpen = false; teleEl?.classList.add('hidden'); }
+function teleportTo(tp) {
+  const x = tp.x + 4.6, z = tp.z + 4.6;
+  phys.x = x; phys.z = z; phys.y = platformAt(base.colliders, x, z) + 0.9;
+  phys.vx = phys.vy = phys.vz = 0; phys.speed = 0; phys.trauma = 0.3;
+  phys.yaw = Math.atan2(tp.x - x, tp.z - z);
+  demoPin = null;
+  closeTeleport();
+  const fl = document.createElement('div'); fl.className = 'tp-flash';
+  document.body.appendChild(fl);
+  setTimeout(() => fl.remove(), 620);
+  UI.toast(`✦ 跃迁完成 — ${tp.name}`);
+  if (audio.play) audio.play('warp', 0.4); else audio.radio('good');
+}
+function drawTeleMap() {
+  const g = teleMap.getContext('2d'), W = 252, c = W / 2, k = (W / 2 - 10) / 132;
+  g.clearRect(0, 0, W, W);
+  g.fillStyle = 'rgba(255,150,90,.08)';
+  g.beginPath(); g.arc(c, c, 118 * k, 0, 7); g.fill();
+  g.strokeStyle = 'rgba(255,170,110,.35)'; g.lineWidth = 1.5; g.stroke();
+  g.strokeStyle = 'rgba(255,255,255,.14)'; g.lineWidth = 5;
+  for (const tp of base.teleports) {
+    g.beginPath(); g.moveTo(c, c); g.lineTo(c + tp.x * k, c + tp.z * k); g.stroke();
+  }
+  for (const tp of base.teleports) {
+    const x = c + tp.x * k, y = c + tp.z * k;
+    g.fillStyle = padHere === tp ? '#7df2ff' : '#38c7e0';
+    g.beginPath(); g.arc(x, y, 6, 0, 7); g.fill();
+    g.fillStyle = '#e9e4da'; g.font = '11px sans-serif'; g.textAlign = 'center';
+    g.fillText(tp.name, x, y - 10);
+  }
+  g.fillStyle = '#ffbe5c';
+  g.beginPath(); g.arc(c + phys.x * k, c + phys.z * k, 4, 0, 7); g.fill();
+}
+
 // ───────────────────────── loading ─────────────────────────
 function setBar(p, text) {
   $('load-bar').style.width = `${p}%`;
@@ -76,10 +168,10 @@ function autoDetect() {
 async function boot() {
   setBar(4, '校准地形高度场…'); await raf(); await raf();
   sky = createSky(scene);
-  setBar(22, ' sculpting 火星地表 · 2600km² 程序化沙丘…'); await raf();
+  setBar(22, ' sculpting 火星孤岛 · 300m 程序化沙丘…'); await raf();
   createTerrain(scene);
   setBar(44, '撞击坑与岩石风化场…'); await raf();
-  createRocks(scene);
+  await createRocks(scene);
   setBar(56, '载入 Blender 建模的星舰基地资产…'); await raf();
   base = await buildBase(scene, { particles: 1 });
   setBar(74, '装配漫游车 RD-6 …'); await raf();
@@ -92,6 +184,7 @@ async function boot() {
   chase.setColliders(base.colliders.map(c => ({ x: c.x, z: c.z, r: c.r, y: surfaceAt(c.x, c.z), top: c.top })));
   buildGates();
   addVolumetricCones();
+  buildTeleportUI();
   setBar(92, '链路就绪 · 等待指令');
   await raf();
   $('loader').classList.add('hidden');
@@ -131,16 +224,16 @@ function applyQuality() {
 
 // ───────────────────────── race gates & cones ─────────────────────────
 function buildGates() {
-  const pts = [
-    [ZONES.watch.pos, ZONES.tanks.pos], [ZONES.tanks.pos, ZONES.production.pos],
-    [ZONES.production.pos, ZONES.launch.pos], [ZONES.launch.pos, ZONES.watch.pos],
-    [ZONES.watch.pos, ZONES.habitat.pos],
-  ].map(([a, b]) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
+  const ring = ['launch', 'watch', 'comms', 'industry', 'science', 'habitat'].map(k => ZONES[k].pos);
+  const pts = ring.map((a, i) => {
+    const b = ring[(i + 1) % ring.length];
+    return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  });
   const mat = new THREE.MeshBasicMaterial({ color: 0x33ff99, transparent: true, opacity: 0.65 });
   for (const [x, z] of pts) {
     const g = new THREE.Group();
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(6, 0.35, 8, 30), mat.clone());
-    g.add(ring);
+    const rin = new THREE.Mesh(new THREE.TorusGeometry(6, 0.35, 8, 30), mat.clone());
+    g.add(rin);
     g.position.set(x, surfaceAt(x, z) + 6.5, z);
     g.rotation.y = Math.random() * 3;
     g.visible = false;
@@ -153,8 +246,8 @@ const cones = [];
 function addVolumetricCones() {
   const [px, pz] = ZONES.launch.pos;
   const mat = new THREE.MeshBasicMaterial({ color: 0xa8c8ff, transparent: true, opacity: 0.0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-  for (const [x, z, h, r] of [[px + 42, pz - 14, 145, 26], [px + 42, pz + 14, 145, 26], [ZONES.watch.pos[0], ZONES.watch.pos[1], 12, 5]]) {
-    const c = new THREE.Mesh(new THREE.CylinderGeometry(0.6, r, h, 20, 1, true), mat.clone());
+  for (const [x, z, h, r] of [[px + 11, pz - 6, 44, 7], [px + 11, pz + 6, 44, 7], [ZONES.watch.pos[0], ZONES.watch.pos[1], 9, 4]]) {
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(0.4, r, h, 20, 1, true), mat.clone());
     c.position.set(x, h / 2, z);
     scene.add(c); cones.push(c);
   }
@@ -202,7 +295,7 @@ function updateLaunch(dt) {
     if (n <= 0) { UI.countdown('升空'); audio.radio('good'); launch.phase = 'ignition'; launch.t = 0; }
   } else if (launch.phase === 'ignition' || launch.phase === 'ascent' || launch.phase === 'fly') {
     launch.t += dt;
-    const prox = THREE.MathUtils.clamp(1 - Math.hypot(phys.x - base.launchPadPos.x, phys.z - base.launchPadPos.z) / 500, 0.12, 1);
+    const prox = THREE.MathUtils.clamp(1 - Math.hypot(phys.x - base.launchPadPos.x, phys.z - base.launchPadPos.z) / 140, 0.12, 1);
     if (launch.phase === 'ignition') {
       launch.intensity = Math.min(1, launch.t / 2.2);
       if (launch.t > 4.2 && !launch.shockDone) {
@@ -216,15 +309,15 @@ function updateLaunch(dt) {
         UI.countdown(null);
       }
     } else if (launch.phase === 'ascent') {
-      launch.vy += (7.2 - launch.vy * 0.045) * dt;
+      launch.vy += (14 - launch.vy * 0.05) * dt;
       launch.y += launch.vy * dt;
       launch.intensity = 1;
-      if (launch.y > 130) launch.tilt = Math.min(0.42, launch.tilt + dt * 0.09);
-      if (launch.y > 2400) launch.phase = 'fly';
+      if (launch.y > 34) launch.tilt = Math.min(0.42, launch.tilt + dt * 0.09);
+      if (launch.y > 420) launch.phase = 'fly';
     } else if (launch.phase === 'fly') {
-      launch.vy += 4 * dt; launch.y += launch.vy * dt;
+      launch.vy += 22 * dt; launch.y += launch.vy * dt;
       launch.intensity = Math.max(0.35, launch.intensity - dt * 0.08);
-      if (launch.y > 14000) { ship.visible = false; launch.phase = 'done'; launch.doneAt = elapsed; UI.toast('✦ 星舰已离开大气层 — 「愿它在群星间找到家」', 6000); missions[3].done = true; renderMissions(); audio.radio('good'); }
+      if (launch.y > 2600) { ship.visible = false; launch.phase = 'done'; launch.doneAt = elapsed; UI.toast('✦ 星舰已离开大气层 — 「愿它在群星间找到家」', 6000); missions[3].done = true; renderMissions(); audio.radio('good'); }
     }
     if (launch.phase !== 'done') {
       ship.position.y = 2.2 + launch.y;
@@ -238,15 +331,15 @@ function updateLaunch(dt) {
       for (let s = 0; s < steps; s++) {
         const ey = ship.position.y - climb * (1 - s / steps);
         for (let i = 0; i < n; i++) {
-          const a = Math.random() * 6.283, r = 0.6 + Math.random() * 4.1;
+          const a = Math.random() * 6.283, r = 0.3 + Math.random() * 2.2;
           fx.flame.emit(
             ship.position.x + Math.cos(a) * r, ey + 0.5, ship.position.z + Math.sin(a) * r,
-            Math.cos(a) * 5, -34 - Math.random() * 18, Math.sin(a) * 5,
-            0.7 + Math.random() * 0.5, 5 + Math.random() * 5
+            Math.cos(a) * 3, -15 - Math.random() * 8, Math.sin(a) * 3,
+            0.7 + Math.random() * 0.5, 3 + Math.random() * 3
           );
           if (Math.random() < 0.5) fx.smoke.emit(
-            ship.position.x + Math.cos(a) * (6 + Math.random() * 8), ey + Math.random() * 3, ship.position.z + Math.sin(a) * (6 + Math.random() * 8),
-            Math.cos(a) * 12, 2 + Math.random() * 3, Math.sin(a) * 12, 3.4 + Math.random() * 2, 8 + Math.random() * 9
+            ship.position.x + Math.cos(a) * (3 + Math.random() * 4), ey + Math.random() * 2, ship.position.z + Math.sin(a) * (3 + Math.random() * 4),
+            Math.cos(a) * 6, 2 + Math.random() * 2.5, Math.sin(a) * 6, 2.6 + Math.random() * 2, 6 + Math.random() * 6
           );
         }
       }
@@ -362,6 +455,7 @@ let lastInfoZone = null;
 function update(dt) {
   elapsed += dt;
   const inp = input.read();
+  if (teleOpen) { inp.gas = inp.brake = inp.steer = inp.drift = inp.interact = 0; }
   // drive physics
   phys.update(dt, { gas: inp.gas, brake: inp.brake, steer: inp.steer, drift: inp.drift }, base.colliders);
   // a demo warp parks the rover for the cinematic shot; the moment someone touches the
@@ -496,15 +590,24 @@ function update(dt) {
     }
   }
   // E at ship at night = light show
-  if (inp.interact > 0 && st.nightF > 0.5 && Math.hypot(phys.x - ZONES.launch.pos[0], phys.z - ZONES.launch.pos[1]) < 90 && showOn <= 0 && launch.phase === 'idle') {
+  if (inp.interact > 0 && st.nightF > 0.5 && Math.hypot(phys.x - ZONES.launch.pos[0], phys.z - ZONES.launch.pos[1]) < 42 && showOn <= 0 && launch.phase === 'idle' && !padHere) {
     if (!photo.on) { showOn = 14; UI.toast('✦ 星舰灯光秀开始'); audio.radio('good'); }
   }
 
+  // teleport pad presence — the pads are the map's fast-travel skeleton
+  padHere = base.teleports.find(tp => Math.hypot(phys.x - tp.x, phys.z - tp.z) < 3.9) || null;
+  const padHint = !!padHere && phys.speed < 2.5 && !teleOpen;
+  teleHint.classList.toggle('hidden', !padHint);
+  if (padHint) teleHint.innerHTML = `◈ ${padHere.name} 光台已就绪 — 按 <kbd>G</kbd> 跃迁（<kbd>M</kbd> 全区地图）`;
+  teleHint._fab.classList.toggle('hidden', teleOpen || photo.on);
+  teleHint._mute.classList.toggle('hidden', photo.on);
+  if (teleOpen) drawTeleMap();
+
   // environment
   env.update(dt, rover.group.position, elapsed, renderer);
-  const localStorm = 1 - THREE.MathUtils.clamp((Math.hypot(phys.x - ZONES.storm.pos[0], phys.z - ZONES.storm.pos[1]) - 60) / 200, 0, 1);
+  const localStorm = 1 - THREE.MathUtils.clamp((Math.hypot(phys.x - ZONES.storm.pos[0], phys.z - ZONES.storm.pos[1]) - 26) / 70, 0, 1);
   const stormF = Math.max(st.stormF, localStorm * 0.85);
-  env.fog.density += localStorm * 0.0022;
+  env.fog.density += localStorm * 0.010;
   const windT = elapsed * 0.4;
   // particles
   updateStorm(fx, dt, { x: pose.x, y: pose.y + 2, z: pose.z }, stormF, windT, aLvl);
@@ -539,21 +642,21 @@ function update(dt) {
       const sp = base.shipGroup.position;
       const padX = base.launchPadPos.x, padZ = base.launchPadPos.z;
       // Two-stage launch rig. A: a crane station pulled back off the deck, so the rover, the
-      // tower and the whole 120 m stack share one frame. B: an aerial chase that climbs WITH
-      // the ship, so it stops shrinking into the haze. `climb` cross-fades A into B.
-      const climb = THREE.MathUtils.clamp((launch.y - 120) / 240, 0, 1);
+      // tower and the whole stack share one frame. B: an aerial chase that climbs WITH
+      // the ship. `climb` cross-fades A into B.
+      const climb = THREE.MathUtils.clamp((launch.y - 30) / 90, 0, 1);
       const az = Math.atan2(pose.x - padX, pose.z - padZ);
       const s = Math.sin(az), cz = Math.cos(az);
       const gy = surfaceAt(pose.x, pose.z);
-      const d = 250 + climb * 130;
-      const ax = pose.x + s * 48, ay = gy + 13, az2 = pose.z + cz * 48;
+      const d = 52 + climb * 70;
+      const ax = pose.x + s * 26, ay = gy + 8.5, az2 = pose.z + cz * 26;
       const bx = sp.x + s * d, bz = sp.z + cz * d;
-      const by = Math.max(surfaceAt(bx, bz) + 12, sp.y - 0.30 * d);
+      const by = Math.max(surfaceAt(bx, bz) + 6, sp.y - 0.22 * d);
       launchAir.x = ax + (bx - ax) * climb;
       launchAir.y = ay + (by - ay) * climb;
       launchAir.z = az2 + (bz - az2) * climb;
       launchAir.w = launchCamW;
-      launchAim.set(sp.x, sp.y + 18 + 15 * climb, sp.z);
+      launchAim.set(sp.x, sp.y + 15 - 6 * climb, sp.z);
       chase.aim = launchAim;
       chase.aimW = launchCamW;
       chase.fovAdd = 12 * launchCamW + 8 * climb;
@@ -561,7 +664,7 @@ function update(dt) {
       // aim at the lit booster section: high enough that the stack reads as the subject,
       // low enough that the rover still sits at the bottom of the frame
       const sp = base.shipGroup.position;
-      launchAim.set(sp.x, sp.y + 46, sp.z);
+      launchAim.set(sp.x, sp.y + 15, sp.z);
       chase.aim = launchAim;
       chase.aimW = 0.82 * launchCamW;
       launchAir.w = Math.max(0, launchAir.w - dt * 1.1);
@@ -654,6 +757,13 @@ addEventListener('resize', () => {
 
 addEventListener('keydown', e => {
   if (!started) return;
+  if (teleOpen && /^Digit[1-6]$/.test(e.code)) { const tp = base.teleports[+e.code.slice(5) - 1]; if (tp) teleportTo(tp); return; }
+  if (e.code === 'KeyG') {
+    if (teleOpen) closeTeleport();
+    else if (padHere) openTeleport();
+    else UI.toast('驶上传送光台后再按 G — 或按 M 打开全区地图直接跃迁');
+  }
+  if (e.code === 'KeyM' && !photo.on) { if (teleOpen) closeTeleport(); else openTeleport(); }
   if (e.code === 'KeyP') togglePhoto();
   if (e.code === 'KeyC' && photo.on) shoot();
   if (e.code === 'KeyT') { env.toggleWeather(); UI.toast(env.weather === 'storm' ? '⚠ 沙尘暴来袭…' : '沙尘消散 · 天空恢复'); }
@@ -666,6 +776,7 @@ addEventListener('keydown', e => {
     race.active = false; UI.raceShow(false); race.rings.forEach(r => r.visible = false);
   }
   if (e.code === 'Escape') {
+    if (teleOpen) { closeTeleport(); return; }
     paused = !paused;
     UI.toast(paused ? '⏸ 已暂停（Esc 继续）' : '▶ 继续');
   }
@@ -679,6 +790,8 @@ $('start-btn').onclick = async () => {
   await raf();
   applyQuality();
   try { await Promise.race([audio.init(), new Promise(r => setTimeout(r, 2000))]); } catch { /* audio unavailable */ }
+  try { if (localStorage.getItem('rsb_muted') === '1') { audio.setMuted(true); } } catch { /* private mode */ }
+  teleHint._mute._draw();
   // autoplay policy can leave the context suspended even after init resolved
   const unlock = () => { if (audio.ctx?.state === 'suspended') audio.ctx.resume().catch(() => { }); };
   addEventListener('pointerdown', unlock, { once: true });
@@ -692,7 +805,7 @@ $('start-btn').onclick = async () => {
   audio.radio('beep');
 };
 
-boot();
+boot().catch(e => { console.error('BOOT_FAIL', e); $('load-text').textContent = '启动失败：' + (e && e.message || e); });
 renderer.setAnimationLoop(tick);
 
 // ───────────────────────── test / demo hooks (URL params) ─────────────────────────
@@ -705,6 +818,10 @@ window.__RSB = {
   warp: (x, z, face, search) => warpTo(x, z, face, search ?? 8),
   sampleList: () => (base?.samples || []).map(s => [Math.round(s.x), Math.round(s.z), !!s.taken]),
   post: () => post,
+  camera: () => camera,
+  scene: () => scene,
+  // run one full game frame by hand — lets QA drive the sim while the tab is hidden
+  frame: (dt = 1 / 60) => update(dt),
   audio: () => ({ ready: audio.ready, state: audio.ctx?.state || 'none', lp: Math.round(audio.lowpass?.frequency.value || 0), lvl: +(audio.level?.() || 0).toFixed(3), eng: +(audio.engineG?.gain.value || 0).toFixed(3) }),
   audioCtx: () => audio.ctx,
   hold: (v) => { input.inp.keys[v ? 'add' : 'delete']('KeyE'); },
@@ -815,7 +932,7 @@ window.__RSB = {
         // terms never show up in a frame — and the storm one has to face the wreck,
         // otherwise the shot is empty haze with a hull filling the lens from behind
         if (demo === 'storm') { warpTo(base.wreckPos.x + 62, base.wreckPos.z, [base.wreckPos.x, base.wreckPos.z]); window.__RSB.startStorm(); }
-        if (demo === 'night') { warpTo(-442, 375, true); window.__RSB.startNight(); }
+        if (demo === 'night') { warpTo(ZONES.night.pos[0] - 12, ZONES.night.pos[1] + 10, [ZONES.night.pos[0], ZONES.night.pos[1]]); window.__RSB.startNight(); }
         if (demo === 'warp') warpTo(dwx + 6, dwz - 4, true);
       }, 3000);
     };

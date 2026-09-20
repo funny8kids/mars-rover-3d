@@ -114,3 +114,32 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 /* the touch pad stack owns the bottom-right corner, so the speedo moves out of its way */
 body.touch #speedo{top:38px;bottom:auto;right:12px;transform:scale(.78);transform-origin:top right}
 body.no-ui #hud,body.no-ui #photo-ui .photo-tip{opacity:0}
+
+/* ─── teleport network ─── */
+#tele-fab{position:fixed;left:18px;bottom:18px;z-index:36;background:var(--panel);border:1px solid var(--cyan);
+  color:var(--cyan);border-radius:999px;padding:9px 18px;letter-spacing:.2em;font-size:12px;backdrop-filter:blur(6px)}
+#tele-fab:hover{background:rgba(60,200,225,.14)}
+#teleport-ui{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:45;width:min(620px,92vw);
+  background:rgba(10,8,14,.9);border:1px solid var(--line);border-radius:14px;padding:0 0 14px;backdrop-filter:blur(10px)}
+.tp-head{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--line)}
+.tp-title{color:var(--cyan);font-size:13px;letter-spacing:.28em}
+.tp-close{background:none;border:1px solid var(--line);color:#c9beac;border-radius:6px;width:26px;height:26px}
+.tp-body{display:flex;gap:18px;padding:16px 20px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
+.tp-map{width:252px;height:252px;border-radius:50%;border:1px solid var(--line);background:radial-gradient(circle at 50% 50%,rgba(255,150,90,.10),rgba(0,0,0,.35) 70%);cursor:pointer}
+.tp-list{display:flex;flex-direction:column;gap:8px;min-width:230px;flex:1}
+.tp-item{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.04);border:1px solid var(--line);
+  border-radius:8px;padding:9px 12px;color:#e8dcc8;font-size:13px;letter-spacing:.06em;text-align:left}
+.tp-item:hover:not(:disabled){border-color:var(--cyan);background:rgba(60,200,225,.1)}
+.tp-item:disabled{opacity:.45;cursor:default}
+.tp-item kbd{flex:none}
+.tp-name{flex:1}
+.tp-dist{font-family:var(--mono);font-size:11px;color:#9a9184}
+.tp-tip{padding:0 20px;font-size:11px;color:#8a8478;letter-spacing:.08em}
+#tele-hint{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:37;background:rgba(8,14,20,.8);
+  border:1px solid var(--cyan);border-radius:999px;padding:9px 22px;color:#bff2fb;font-size:13px;letter-spacing:.08em;
+  box-shadow:0 0 24px rgba(60,200,225,.25)}
+.tp-flash{position:fixed;inset:0;z-index:60;pointer-events:none;background:radial-gradient(circle,rgba(150,240,255,.95),rgba(120,200,255,.4) 60%,transparent);animation:tpflash .6s ease-out forwards}
+@keyframes tpflash{0%{opacity:0}12%{opacity:1}100%{opacity:0}}
+#mute-fab{position:fixed;left:18px;bottom:60px;z-index:36;background:var(--panel);border:1px solid var(--line);
+  color:#c9beac;border-radius:999px;padding:7px 16px;letter-spacing:.15em;font-size:11px}
+#mute-fab:hover{border-color:var(--amber);color:var(--amber)}

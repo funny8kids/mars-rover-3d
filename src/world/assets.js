@@ -1,11 +1,13 @@
-// glTF asset registry — every landmark model here is authored in
-// tools/blender/build_assets.py (Blender Python) and exported to public/assets/*.glb.
+// glTF asset registry — hero pieces authored in Blender
+// (tools/blender/build_heroes.py, tools/blender/build_assets.py) plus the CC0
+// Kenney Space Kit / Nature Kit packs vendored under public/assets/kenney/.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const loader = new GLTFLoader();
 const cache = new Map();
 
+// name may carry a subfolder prefix, e.g. 'kenney/space/hangar_largeA'
 export function loadModel(name) {
   if (!cache.has(name)) {
     cache.set(name, loader.loadAsync(`./assets/${name}.glb`).then((gltf) => {

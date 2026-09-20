@@ -1,7 +1,8 @@
 # three.js Showcase — submission draft (English)
 
-> Paste-ready for https://discourse.threejs.org/c/showcase. Replace `LIVE-DEMO-URL`
-> and `REPO-URL` once the site is deployed and the overhaul is pushed.
+> Paste-ready for https://discourse.threejs.org/c/showcase. `LIVE-DEMO-URL` is filled
+> in; replace `REPO-URL` with the GitHub address once the overhaul is pushed
+> (the remote currently still serves the pre-Blender code).
 
 ---
 
@@ -40,7 +41,7 @@ Everything is self-contained:
 - Zero build step required: three.js is vendored, an import map resolves `three`
   natively, so the repo itself is the site.
 
-Built with three.js r169 (WebGL2). Live demo: LIVE-DEMO-URL · Source: REPO-URL
+Built with three.js r169 (WebGL2). Live demo: https://red-starbase-wgmag3xoh66.qoder.website/ · Source: REPO-URL
 
 Controls: W/S accelerate-brake, A/D steer, Space hand-brake drift, E interact,
 P photo mode, T storm, N night, R time trial.
@@ -49,8 +50,8 @@ P photo mode, T storm, N night, R time trial.
 
 ## Pre-submission checklist
 
-- [ ] Deploy static site (repo is portable: `base: './'`, relative import map) and verify on mobile + desktop GPU
-- [ ] Push the Blender overhaul to GitHub (currently uncommitted on `main`)
+- [x] Deploy static site and verify — live at the URL above (public, 58–64 FPS, zero console errors); desktop-dGPU and mobile checks still open
+- [ ] Push the Blender overhaul to GitHub (committed locally as `657b6c6` on `main`, not yet pushed)
 - [ ] Record a 30–60 s capture video (launch sequence + storm + night light show) — showcase posts with video get far more traction
-- [ ] Replace the two placeholder URLs above
+- [ ] Replace `REPO-URL` above after the push
 - [ ] Post to discourse.threejs.org/c/showcase (requires your account)

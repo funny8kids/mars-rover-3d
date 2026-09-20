@@ -688,6 +688,33 @@ function update(dt) {
     chase.update(dt, { x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw, roll: pose.roll, lateral: phys.lateral, wheelAngle: phys.wheelAngle, groundY: phys.groundY }, phys.speed, phys.trauma);
   } else updatePhotoCam(dt);
 
+  // Slender masts and lamp posts are not colliders, so the rig still parks behind them and the
+  // whole frame turns into a black slab. Ghost anything sitting on the camera→rover line.
+  {
+    const cp = camera.position, dx = pose.x - cp.x, dz = pose.z - cp.z;
+    const len2 = dx * dx + dz * dz;
+    for (const oc of base.occluders) {
+      let want = 1;
+      if (len2 > 1) {
+        const t = THREE.MathUtils.clamp(((oc.x - cp.x) * dx + (oc.z - cp.z) * dz) / len2, 0, 1);
+        const d = Math.hypot(cp.x + dx * t - oc.x, cp.z + dz * t - oc.z);
+        const camD = Math.hypot(oc.x - cp.x, oc.z - cp.z);
+        if (t > 0.03 && t < 0.97 && camD < 26 && d < oc.r * 2.6) {
+          want = 0.10 + 0.90 * THREE.MathUtils.smoothstep(d, oc.r * 0.5, oc.r * 2.6);
+        }
+      }
+      oc.f += (want - oc.f) * Math.min(1, dt * 7);
+      if (Math.abs(oc.f - (oc.shown ?? 2)) < 0.004) continue;
+      oc.shown = oc.f;
+      oc.inst.visible = oc.f > 0.03;
+      for (const m of oc.mats) {
+        m.transparent = oc.f < 0.995;
+        m.opacity = oc.f;
+        m.depthWrite = oc.f > 0.5;
+      }
+    }
+  }
+
   // audio
   audio.update(dt, {
     speed01: Math.min(1, phys.speed / 28), rpm: 0.3 + phys.enginePower * 0.7, power: phys.enginePower,

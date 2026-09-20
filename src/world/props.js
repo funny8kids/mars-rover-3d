@@ -543,10 +543,43 @@ export async function buildBase(scene, quality) {
   }
 
   G.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+
+  // Thin masts, lamp posts and stanchions are not colliders, so the chase camera happily parks
+  // itself directly behind one and the shot becomes a black slab. Give every slender vertical
+  // instance its own materials so the rig can fade it out while it sits on the camera→rover line.
+  const occluders = [];
+  {
+    const box = new THREE.Box3(), sz = new THREE.Vector3(), ctr = new THREE.Vector3();
+    // cloning a material the per-frame rig still animates would silently disconnect it
+    const animated = new Set([...padGlow, ...beacons.map(b => b.material), ...lightStrips, ...lightRings.map(r => r.material), ...showBeamMats, ...shipMats]);
+    G.updateMatrixWorld(true);
+    for (const inst of G.children) {
+      if (!inst.isGroup || inst.children.length === 0) continue;
+      box.setFromObject(inst);
+      box.getSize(sz); box.getCenter(ctr);
+      if (sz.y < 2.2 || Math.max(sz.x, sz.z) > 2.0) continue;
+      let blocked = false;
+      inst.traverse(o => {
+        if (!o.isMesh) return;
+        for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (animated.has(m)) blocked = true;
+      });
+      if (blocked) continue;
+      const mats = [];
+      inst.traverse(o => {
+        if (!o.isMesh) return;
+        const list = Array.isArray(o.material) ? o.material : [o.material];
+        const cl = list.map(m => m.clone());
+        o.material = Array.isArray(o.material) ? cl : cl[0];
+        mats.push(...cl);
+      });
+      occluders.push({ inst, mats, x: ctr.x, z: ctr.z, r: Math.max(0.9, Math.hypot(sz.x, sz.z) * 0.5), f: 1 });
+    }
+  }
+
   scene.add(G);
   const flamePoint = new THREE.Vector3(SHIP_POS[0], 1.6, SHIP_POS[1]);
   return {
-    group: G, colliders, infoZones, samples, sparkPoints, beacons, lightStrips, lightRings, showBeams, showBeamMats, shipMats, shipGroup, teleports, padGlow,
+    group: G, colliders, infoZones, samples, sparkPoints, beacons, lightStrips, lightRings, showBeams, showBeamMats, shipMats, shipGroup, teleports, padGlow, occluders,
     leakPoint: new THREE.Vector3(LEAK_POS[0], surfaceAt(LEAK_POS[0], LEAK_POS[1]) + 1.8, LEAK_POS[1]),
     flamePoint,
     launchPadPos: new THREE.Vector3(...ZONES.launch.pos),

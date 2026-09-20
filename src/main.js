@@ -931,10 +931,10 @@ function update(dt) {
   post.bloom.strength = (quality.bloomStrength + (launch.audioLevel || 0) * 0.5) * (1 - st.nightF * 0.35);
   // Bloom threshold is read against raw linear radiance. By day sunlit hull sits near 3.0
   // and must stay under it; by night the lamps are the whole picture and must clear it.
-  post.bloom.threshold = THREE.MathUtils.lerp(1.75, 0.42, st.nightF) * (1 - stormF * 0.45);
+  post.bloom.threshold = THREE.MathUtils.lerp(2.05, 0.42, st.nightF) * (1 - stormF * 0.45);
   // Daylight frames were crushing to 43% near-black silhouette; night was already balanced
   // at 0.97 by the lamp pass, so the lift tracks the sun rather than the whole clock.
-  renderer.toneMappingExposure = 1.24 - st.nightF * 0.27;
+  renderer.toneMappingExposure = 1.04 - st.nightF * 0.20;
 
   // HUD
   UI.setSpeed(phys.speed * 3.6);

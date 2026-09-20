@@ -41,11 +41,14 @@ export function makeDetailNormal(size = 512) {
   return t;
 }
 
-const SAND_A = new THREE.Color(0.80, 0.44, 0.31);   // warm coral toy sand
-const SAND_B = new THREE.Color(0.70, 0.35, 0.24);   // deeper terracotta in troughs
-const SAND_C = new THREE.Color(0.88, 0.58, 0.40);   // sun-lit crest
-const PAVE   = new THREE.Color(0.82, 0.76, 0.68);   // cream regolith pavement
-const GRAVEL = new THREE.Color(0.46, 0.26, 0.19);   // dark scree drifts
+// These are linear values, so 0.8 read as sRGB 230 — pale coral that a 3.4 sun blew straight to
+// cream and cost the island its hue. Real Mars regolith is iron-oxide rust: dark, saturated, and
+// it only looks sun-bleached where the crest faces the light.
+const SAND_A = new THREE.Color(0.300, 0.095, 0.048);  // rust dune field
+const SAND_B = new THREE.Color(0.200, 0.058, 0.032);  // deeper terracotta in troughs
+const SAND_C = new THREE.Color(0.440, 0.165, 0.080);  // sun-lit crest
+const PAVE   = new THREE.Color(0.260, 0.185, 0.145);  // dust-covered pads & roads
+const GRAVEL = new THREE.Color(0.115, 0.050, 0.032);  // dark scree drifts
 
 export function createTerrain(scene) {
   const { size, seg } = TERRAIN;

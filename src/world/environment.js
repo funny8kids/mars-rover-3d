@@ -86,10 +86,10 @@ export class Environment {
     // Without that fill every shadowed face in the frame collapses into a black void.
     // The day value had to come up too: a 3.4 sun against 0.58 hemi put shadowed stone at 1/6 of
     // the lit side, so the settlement's unlit faces read as flat black cut-outs.
-    this.hemi.intensity = THREE.MathUtils.lerp(0.42, 0.95, dayF) * (1 + stormMix * 1.5) + nightF * 0.34;
+    this.hemi.intensity = THREE.MathUtils.lerp(0.42, 0.62, dayF) * (1 + stormMix * 1.5) + nightF * 0.34;
     this._c.sky.setRGB(0.55, 0.33, 0.2).lerp(new THREE.Color(0.75, 0.55, 0.4), dayF);
     this._c.sky.lerp(new THREE.Color(0.10, 0.13, 0.26), nightF);
-    this.amb.intensity = 0.13 + dayF * 0.13 + nightF * 0.12 + stormMix * 0.30;
+    this.amb.intensity = 0.13 + dayF * 0.09 + nightF * 0.12 + stormMix * 0.30;
 
     // fog mood
     const fogC = this._c.fog.setRGB(0.38, 0.175, 0.085).lerp(new THREE.Color(0.045, 0.05, 0.075), nightF);

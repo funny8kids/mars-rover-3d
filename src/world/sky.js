@@ -53,7 +53,9 @@ void main(){
   // sun disc + glow
   float sdot = max(dot(d, uSunDir), 0.0);
   float disc = smoothstep(0.9993, 0.99965, sdot);
-  float glow = pow(sdot, 220.0) * 0.9 + pow(sdot, 14.0) * 0.30 + pow(sdot, 3.0) * 0.10;
+  // The old corona spread 0.30 out to a 20-degree radius on top of a 0.10 hemisphere-wide wash,
+  // so the sun read as a white hole rather than a disc with a rim.
+  float glow = pow(sdot, 220.0) * 0.9 + pow(sdot, 26.0) * 0.22 + pow(sdot, 3.0) * 0.055;
   vec3 sunCol = mix(vec3(1.0, 0.55, 0.28), vec3(1.0, 0.87, 0.72), dayF);
   sky += sunCol * (disc * 22.0 + glow) * (0.12 + dayF * 0.9) * (1.0 - duskF * 0.15);
 

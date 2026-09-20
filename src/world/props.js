@@ -51,6 +51,22 @@ export async function buildBase(scene, quality) {
   };
   const k = (name, x, z, ry, sc = 1) => put(name, x, z, S * sc, ry);
 
+  // A wide deck seated on the centre height buries its downslope rim in the dune, so seat it on
+  // the highest ground inside its own footprint instead.
+  const rimY = (x, z, r) => {
+    let y = surfaceAt(x, z);
+    for (let i = 0; i < 12; i++) {
+      const a = i * Math.PI / 6;
+      y = Math.max(y, surfaceAt(x + Math.cos(a) * r, z + Math.sin(a) * r));
+    }
+    return y;
+  };
+  const putDeck = (name, x, z, s, ry, bias = 0) => {
+    const o = put(name, x, z, s, ry, 0);
+    o.position.y = rimY(x, z, 2.7 * s) + bias;
+    return o;
+  };
+
   const M = {
     dark: new THREE.MeshStandardMaterial({ color: 0x33302c, roughness: 0.7, metalness: 0.4 }),
     struct: new THREE.MeshStandardMaterial({ color: 0x6b655c, roughness: 0.55, metalness: 0.7 }),
@@ -105,7 +121,7 @@ export async function buildBase(scene, quality) {
     cyl(0.12, 0.16, 7, M.white, hx + 5.5, my + 3.5, hz + 4, 8);
     box(2.2, 1.3, 0.06, M.hazard, hx + 6.7, my + 6.3, hz + 4);
     k('barrel', hx - 6, hz + 6, 0.4); k('barrel', hx + 7, hz - 5, 1.2);
-    put('teleport_pad', hx - 8.5, hz + 11, 1.25, 0, -0.08);
+    putDeck('teleport_pad', hx - 8.5, hz + 11, 1.25, 0, -0.08);
     teleports.push({ key: 'hub', name: ZONES.hub.name, x: hx - 8.5, z: hz + 11 });
     k('astronautA', hx + 3, hz + 6, 2.4);
     k('craft_speederA', hx + 10, hz + 1, 0.9);
@@ -206,7 +222,7 @@ export async function buildBase(scene, quality) {
     }
     G.add(showBeams);
     // teleport pad, clear of the blast ring
-    put('teleport_pad', px + 4, pz + 17, 1.1, 0, -0.08);
+    putDeck('teleport_pad', px + 4, pz + 17, 1.1, 0, -0.08);
     teleports.push({ key: 'launch', name: ZONES.launch.name, x: px + 4, z: pz + 17 });
 
     infoZones.push({
@@ -235,7 +251,7 @@ export async function buildBase(scene, quality) {
     k('barrel', vx - 2, vz - 8, 1.1);
     k('astronautA', vx + 7, vz + 15, -0.9);
     k('alien', vx - 13, vz + 14, 2.1);
-    put('teleport_pad', vx + 15, vz - 6, 1.05, 0, -0.08);
+    putDeck('teleport_pad', vx + 15, vz - 6, 1.05, 0, -0.08);
     teleports.push({ key: 'habitat', name: ZONES.habitat.name, x: vx + 15, z: vz - 6 });
     const vy = zoneY(ZONES.habitat);
     beacons.push(cyl(0.35, 0.35, 0.5, M.beacon, vx - 7, vy + 8.3, vz - 4, 10));   // seated on the hangar drum
@@ -271,7 +287,7 @@ export async function buildBase(scene, quality) {
     k('barrels', ix - 12, iz - 2, 2.0);               // crate of drums by the rail
     colliders.push({ x: ix - 12, z: iz - 2, r: 2.8 });
     k('rover', ix - 1, iz + 3, 1.8);                   // parked work rover
-    put('teleport_pad', ix - 3, iz + 20, 1.05, 0, -0.08);
+    putDeck('teleport_pad', ix - 3, iz + 20, 1.05, 0, -0.08);
     teleports.push({ key: 'industry', name: ZONES.industry.name, x: ix - 3, z: iz + 20 });
     infoZones.push({
       key: 'highbay', pos: [ix, iz], r: 26, tag: 'INDUSTRY · FAB & CRYO FARM',
@@ -326,7 +342,7 @@ export async function buildBase(scene, quality) {
     k('rail', cx2 - 3, cz2 + 10, 0.35);
     k('astronautA', cx2 - 4, cz2 + 7, 2.6);                 // whoever is on shift, listening to Earth
     colliders.push({ x: cx2 - 1, z: cz2, r: 5 }, { x: cx2 + 9, z: cz2 - 6, r: 3 }, { x: cx2 + 4, z: cz2 + 9, r: 2.6 }, { x: cx2 - 10, z: cz2 + 11, r: 5 });
-    put('teleport_pad', cx2 - 9, cz2 - 8, 1.0, 0, -0.08);
+    putDeck('teleport_pad', cx2 - 9, cz2 - 8, 1.0, 0, -0.08);
     teleports.push({ key: 'comms', name: ZONES.comms.name, x: cx2 - 9, z: cz2 - 8 });
     const cy = zoneY(ZONES.comms);
     beacons.push(cyl(0.3, 0.3, 0.45, M.beacon, cx2 + 4.6, cy + 4.4, cz2 + 1.5, 10));  // on the big dish's rim
@@ -353,7 +369,7 @@ export async function buildBase(scene, quality) {
     k('desk_computer', sx + 9, sz - 4, 2.2);
     k('craft_speederA', sx - 11, sz - 2, 1.1, 0.8);
     k('craterLarge', sx + 14, sz + 12, 0.7, 1.3);
-    put('teleport_pad', sx + 4, sz + 10, 1.0, 0, -0.08);
+    putDeck('teleport_pad', sx + 4, sz + 10, 1.0, 0, -0.08);
     teleports.push({ key: 'science', name: ZONES.science.name, x: sx + 4, z: sz + 10 });
     infoZones.push({
       key: 'science', pos: [sx, sz], r: 20, tag: 'FIELD SCIENCE · ANOMALY 07',

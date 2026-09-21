@@ -216,6 +216,9 @@ async function boot() {
     const done = new Set();
     scene.traverse(o => {
       if (!o.isMesh) return;
+      // noMerge already means "this branch is authored on purpose" (animated rigs, the telescope's
+      // matte lens) — the same escape hatch must exempt it here or every deliberate near-black lifts to brown
+      for (let a = o; a; a = a.parent) if (a.userData.rsbNoMerge) return;
       for (const mt of (Array.isArray(o.material) ? o.material : [o.material])) {
         if (!mt || !mt.color || mt.transparent || done.has(mt.uuid)) continue;
         done.add(mt.uuid);

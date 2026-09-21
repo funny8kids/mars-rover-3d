@@ -1276,7 +1276,14 @@ export async function buildBase(scene, quality) {
     }
     cyl(0.3, 0.45, 1.8, M.struct, nx - 7, ny + 0.9, nz - 6, 10);
     const scope = cyl(0.45, 0.62, 2.8, M.white, nx - 7, ny + 2.8, nz - 6, 12);
+    // The merge pass bakes shared-material meshes into batches and removes the originals, which
+    // would orphan this scope's lens child along with it (AF1 forensics: the lens simply vanished).
+    noMerge(scope);
     scope.rotation.x = -0.7;
+    // The muzzle otherwise draws as a flat sunlit beige disc — a matte black lens must sit ON TOP
+    // of the cylinder's own opaque cap (recessing below it hides nothing, and a metallic lens
+    // mirrors the noon sun — AC1/AD1 forensics).
+    scope.add(cyl(0.43, 0.43, 0.06, new THREE.MeshStandardMaterial({ color: 0x101216, roughness: 0.85, metalness: 0.05 }), 0, 1.43, 0, 12));
     colliders.push({ x: nx - 7, z: nz - 6, r: 1.6 });
     infoZones.push({
       key: 'night', pos: [nx, nz], r: 18, tag: 'OBSERVATION HILL',

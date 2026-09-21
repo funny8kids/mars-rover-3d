@@ -128,11 +128,33 @@ function openTeleport() {
   });
 }
 function closeTeleport() { teleOpen = false; teleEl?.classList.add('hidden'); }
+// Writing phys.x/z by hand is a claim that nothing is standing there, and until now nothing checked
+// it. The physics loop pads every collider by the rover's half-width, so an unchecked pose lands the
+// rover *inside* a wall and the very next substep fires it out — the hub charger sat 0.87 m buried
+// in a service deck, and the battery tow threw the rover 62 m across the plaza on the frame it
+// "saved" it. So every pose the game writes now goes through the same body-ring oracle the unstick
+// glide already used.
+function freeLanding(x, z, maxR = 6) {
+  const solids = (base?.colliders || []).filter(c => c.floor === undefined);
+  const ok = (px, pz) => gapFrom(solids, px, pz) >= 0.3;
+  if (ok(x, z)) return [x, z];
+  for (let r = 0.75; r <= maxR; r += 0.75) {
+    for (let i = 0; i < 16; i++) {
+      const a = i * Math.PI / 8;
+      const px = x + Math.sin(a) * r, pz = z + Math.cos(a) * r;
+      if (ok(px, pz)) return [px, pz];
+    }
+  }
+  return [x, z];
+}
 function teleportTo(tp, opt = {}) {
-  const x = tp.x + 4.6, z = tp.z + 4.6;
+  // atPad ends up standing on the charger (the battery tow has to leave the rover connected to it);
+  // a normal warp arrives just off it and faces back, so the node reads as a place you came to.
+  const aim = opt.atPad ? [tp.x, tp.z] : [tp.x + 4.6, tp.z + 4.6];
+  const [x, z] = freeLanding(aim[0], aim[1], opt.atPad ? 3.4 : 6);
   phys.x = x; phys.z = z; phys.y = platformAt(base.colliders, x, z) + 0.9;
   phys.vx = phys.vy = phys.vz = 0; phys.speed = 0; phys.trauma = 0.3;
-  phys.yaw = Math.atan2(tp.x - x, tp.z - z);
+  if (Math.hypot(tp.x - x, tp.z - z) > 1) phys.yaw = Math.atan2(tp.x - x, tp.z - z);
   demoPin = null;
   closeTeleport();
   const fl = document.createElement('div'); fl.className = 'tp-flash';
@@ -402,10 +424,11 @@ function updateGrid(dt, st) {
     grid.recover -= dt;
     if (grid.recover <= 0) {
       const hub = base.teleports.find(tp => tp.key === 'hub') || base.teleports[0];
-      teleportTo(hub, { silent: true });
-      // teleportTo parks the rover beside the pad; a towed rover has to end up on the charger
-      phys.x = hub.x; phys.z = hub.z; phys.y = platformAt(base.colliders, hub.x, hub.z) + 0.9;
-      phys.vx = phys.vy = phys.vz = 0; phys.speed = 0;
+      // atPad because a towed rover has to end up *on* the charger, not 6.5 m past it. The pose
+      // itself is validated inside teleportTo now, so the old raw phys.x/z write — which dropped
+      // the rover blind onto the pad centre, 0.87 m inside a service deck, and let the collision
+      // solver evict it 62 m across the plaza on the frame it "saved" it — is gone.
+      teleportTo(hub, { silent: true, atPad: true });
       grid.battery = 0.38; grid.dead = false;
       UI.toast('◂ 拖回中央广场 — 光台补电中，电量 38%');
     }
@@ -565,10 +588,14 @@ const launchAir = { x: 0, y: 0, z: 0, w: 0 };   // held camera station for the a
 // park the rover somewhere flat — used by the demo URLs and by the headless checks
 function warpTo(wx, wz, facePad = false, search = 8) {
   let bx = wx, bz = wz, bs = Infinity;
+  const solids = (base?.colliders || []).filter(c => c.floor === undefined);
   for (let dx = -search; dx <= search; dx += 2) for (let dz = -search; dz <= search; dz += 2) {
-    const s = surfaceSlope(wx + dx, wz + dz);
+    // Flatness alone used to pick the pose: a demo URL asking for the launch apron could be parked
+    // inside a gantry, and the rover then had no controls left to push itself out with.
+    const s = surfaceSlope(wx + dx, wz + dz) + (gapFrom(solids, wx + dx, wz + dz) >= 0.3 ? 0 : 9);
     if (s < bs) { bs = s; bx = wx + dx; bz = wz + dz; }
   }
+  [bx, bz] = freeLanding(bx, bz);
   phys.x = bx; phys.z = bz; phys.y = platformAt(base.colliders, bx, bz) + 0.8;
   phys.vx = phys.vz = phys.vy = 0;
   // facePad: true → look at the launch pad, [x,z] → look at that landmark
@@ -1442,6 +1469,11 @@ window.__RSB = {
         prevPos: [phys.x, phys.z], prevDead: grid.dead,
         markT: 0, markX: phys.x, markZ: phys.z, recoverUntil: -9, aim: phys.yaw, turnDir: 0,
         runFrames: 0,
+        // the acceptance bar wants "zero clipping" measured, not eyeballed: how deep the body ring
+        // ever sat inside a solid, and how far the hull ever sank under its own surface
+        loop: !!opts.loop, laps: 1, worstPen: 0, penPos: null, penFrames: 0,
+        worstSink: 0, sinkPos: null, sinkFrames: 0, maxStep: 0, visited: new Set(),
+        clipLog: [],
       };
     }
     const NONE = [];
@@ -1449,6 +1481,18 @@ window.__RSB = {
       const list = s.cells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) || NONE;
       for (const c of list) if (Math.hypot(x - c.x, z - c.z) < c.r + CLEAR) return true;
       return false;
+    };
+    // How far the 1.6 m body ring is buried in a solid right now — 0 means clean contact. This is
+    // the "穿模" the acceptance bar forbids, so it has to be sampled every frame, not guessed from
+    // a screenshot taken after the rover has already been pushed out.
+    const penAt = (x, z) => {
+      const list = s.cells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) || NONE;
+      let p = 0, who = null;
+      for (const c of list) {
+        const v = c.r + 1.6 - Math.hypot(x - c.x, z - c.z);
+        if (v > p) { p = v; who = c; }
+      }
+      return { p, who };
     };
     const rangeOf = (x, z, a, max = 18) => {
       const sx = Math.sin(a), sz = Math.cos(a);
@@ -1485,7 +1529,7 @@ window.__RSB = {
     const wall = performance.now();
     const frames = Math.round(Math.min(s.budget - s.t, opts.chunk ?? 100) / dt);
     let f = 0;
-    for (; f < frames && s.wp < s.route.length; f++) {
+    for (; f < frames && (s.loop || s.wp < s.route.length); f++) {
       const tgt = s.route[s.wp];
       const recovering = s.t < s.recoverUntil;
       if (recovering) {
@@ -1512,8 +1556,22 @@ window.__RSB = {
       update(dt);
       s.t += dt;
       input.inp.brake = recovering ? 1 : 0;     // read() re-derives pedals from the key set
-      s.dist += Math.hypot(phys.x - before[0], phys.z - before[1]);
+      const step = Math.hypot(phys.x - before[0], phys.z - before[1]);
+      s.dist += step;
+      s.maxStep = Math.max(s.maxStep, step);
       s.peakSpeed = Math.max(s.peakSpeed, phys.speed);
+      const pen = penAt(phys.x, phys.z);
+      if (pen.p > 0.05) {
+        s.penFrames++;
+        if (s.clipLog.length < 12) s.clipLog.push({
+          t: +s.t.toFixed(1), pen: +pen.p.toFixed(2), pos: [+phys.x.toFixed(1), +phys.z.toFixed(1)],
+          step: +step.toFixed(2), speed: +phys.speed.toFixed(1), rescue: rescue.phase || null,
+          solid: `${pen.who.prop || pen.who.name || 'disc'}@${pen.who.x.toFixed(1)},${pen.who.z.toFixed(1)}r${pen.who.r.toFixed(1)}` });
+      }
+      if (pen.p > s.worstPen) { s.worstPen = pen.p; s.penPos = [+phys.x.toFixed(1), +phys.z.toFixed(1), tgt.name]; }
+      const sink = phys.y - 0.46 - surfaceAt(phys.x, phys.z);
+      if (sink < -0.1 && !phys.onFloor) s.sinkFrames++;
+      if (sink < s.worstSink) { s.worstSink = sink; s.sinkPos = [+phys.x.toFixed(1), +phys.z.toFixed(1)]; }
       if (teleOpen) s.gated++;
       if (Math.hypot(phys.x - s.prevPos[0], phys.z - s.prevPos[1]) > 8) {
         s.events.push({ t: +s.t.toFixed(1), kind: 'teleport', from: s.prevPos.map(v => +v.toFixed(1)),
@@ -1555,7 +1613,11 @@ window.__RSB = {
         Math.round(phys.yaw * 57.3), Math.round(s.aim * 57.3),
         Math.round(rangeOf(phys.x, phys.z, Math.atan2(tgt.x - phys.x, tgt.z - phys.z))),
         +input.inp.gas.toFixed(2), +input.inp.steer.toFixed(2)]);
-      if (Math.hypot(phys.x - tgt.x, phys.z - tgt.z) < 11) s.wp++;
+      if (Math.hypot(phys.x - tgt.x, phys.z - tgt.z) < 11) { s.visited.add(tgt.name); s.wp++; }
+      // A five-minute run is longer than one lap of the map. Recycling the waypoint list keeps the
+      // rover rolling instead of parking it at the finish line, and it never teleports: the next lap
+      // starts from wherever the last one ended.
+      if (s.loop && s.wp >= s.route.length) { s.wp = 0; s.laps++; }
       if (f % 900 === 899 && performance.now() - wall > 9000) break;  // never outlive the call budget
     }
     // Release the pedal between chunks: the real animation loop keeps running while QA thinks,
@@ -1563,15 +1625,20 @@ window.__RSB = {
     // somewhere chunk 1 never drove it.
     keys.forEach(k => input.inp.keys.delete(k));
     input.inp.gas = 0; input.inp.steer = 0; input.inp.brake = 0;
-    const done = s.wp >= s.route.length || s.t >= s.budget;
+    const done = s.t >= s.budget || (!s.loop && s.wp >= s.route.length);
     if (done) qaDrive = null;
     const stalls = [...s.stallCells.values()].sort((a, b) => b.n - a.n);
-    return { done, simSeconds: +s.t.toFixed(1), metres: Math.round(s.dist),
+    return { done, simSeconds: +s.t.toFixed(1), metres: Math.round(s.dist), laps: s.laps,
+             frames: s.runFrames,
              mps: s.t > 0 ? +(s.dist / s.t).toFixed(2) : 0, peakSpeed: +s.peakSpeed.toFixed(1),
-             reached: s.route.slice(0, s.wp).map(r => r.name), of: s.route.length,
+             reached: [...s.visited], of: s.route.length,
              stuckPockets: stalls.length,
              stuckFrames: stalls.reduce((a, b) => a + b.n, 0),
              inputGatedFrames: s.gated,
+             // zero clipping means both halves of it: never inside a wall, never under the ground
+             clip: { bodyPenMax: +s.worstPen.toFixed(2), bodyPenAt: s.penPos, bodyClipFrames: s.penFrames,
+               sinkMax: +s.worstSink.toFixed(2), sinkAt: s.sinkPos, sinkFrames: s.sinkFrames,
+               maxStepMetres: +s.maxStep.toFixed(2), events: s.clipLog },
              teleports: s.events.filter(e => e.kind === 'teleport').length,
              batteryEvents: s.events.filter(e => /battery/.test(e.kind)).length,
              battery: +grid.battery.toFixed(3), gridOnline: grid.online, realFps: Math.round(fpsAvg),

@@ -202,6 +202,9 @@ export async function buildBase(scene, quality) {
     }
     return y;
   };
+  // Every teleport pad is one authored asset plus one marking decal, and both have to move
+  // together when the pad is re-sited (see the pad-siting pass above the grid).
+  const padMeshes = [];
   const putDeck = (name, x, z, s, ry, bias = 0) => {
     const o = put(name, x, z, s, ry, 0);
     o.position.y = rimY(x, z, 2.7 * s) + bias;
@@ -213,6 +216,7 @@ export async function buildBase(scene, quality) {
       d.position.set(x, o.position.y + 0.366 * s, z);
       noMerge(d);
       G.add(d);
+      padMeshes.push({ o, d, s, bias, x, z });
     }
     return o;
   };
@@ -492,7 +496,8 @@ export async function buildBase(scene, quality) {
   const auditPlan = () => {
     const a = audit(colliders.filter(c => c.floor === undefined)
       .map(c => ({ x: c.x, z: c.z, r: c.r, zone: c.zone, prop: c.prop, id: c.prop })));
-    return { ...a, discs: colliders.length, lots: lots.length, zones: [...new Set(lots.map(l => l.id.split(':')[0]))] };
+    return { ...a, discs: colliders.length, lots: lots.length, zones: [...new Set(lots.map(l => l.id.split(':')[0]))],
+             pads: padAudit.filter(p => p.room < 0 || p.rimRoom < 0 || p.road > 0).length, padItems: padAudit };
   };
   const infoZones = [];
   const sparkPoints = [];
@@ -501,6 +506,7 @@ export async function buildBase(scene, quality) {
   const lightRings = [];
   const showBeamMats = [];
   const teleports = [];
+  const padAudit = [];
   let showBeams = null;
   let shipGroup = null;
 
@@ -1489,6 +1495,64 @@ export async function buildBase(scene, quality) {
         mats.push(...cl);
       });
       occluders.push({ inst, mats, x: ctr.x, z: ctr.z, r: Math.max(0.9, Math.hypot(sz.x, sz.z) * 0.5), f: 1 });
+    }
+  }
+
+  // ══════════ PAD SITING — a charger has to stand on ground the rover can occupy ══════════
+  // Pads took a hand-typed district offset that was checked against nothing. The hub one ended up
+  // 3.20 m from the centre of a service deck carrying an r=2.47 collider, and the physics loop pads
+  // every collider by the rover's 1.6 m half-width — so the charger sat 0.87 m *inside* a wall. When
+  // the battery died the tow wrote that pose verbatim and the collision solver fired the rover out
+  // of the plaza at 62 m per frame. So every pad is now re-sited against the same discs the physics
+  // loop reads, before the reactor taps, UI markers and capture radius take their positions from it.
+  {
+    const BODY = 1.6;          // physics.js: min = c.r + 1.6
+    const MARGIN = 0.35;       // a pad you land on with 5 cm to spare is not a pad
+    const pf = footOf('teleport_pad');
+    const rimOf = Math.max(pf.w, pf.d) / 2;
+    const roomAt = (x, z, r) => {
+      let m = Infinity;
+      for (const c of colliders) {
+        if (c.floor !== undefined) continue;      // decks are driveable, they never shove you
+        m = Math.min(m, Math.hypot(c.x - x, c.z - z) - c.r - r);
+      }
+      return m;
+    };
+    // The body ring must clear every wall, the drawn pad must not underlap one, and a fast-travel
+    // node must not sit in a carriageway.
+    const legal = (x, z, rim) => roomAt(x, z, BODY) >= MARGIN
+      && roomAt(x, z, rim) >= 0 && streetEncroach(x, z, rim) <= 0;
+    for (const tp of teleports) {
+      const m = padMeshes.find(p => p.x === tp.x && p.z === tp.z);
+      if (!m) continue;
+      const ox = tp.x, oz = tp.z, rim = rimOf * m.s;
+      let found = null;
+      if (!legal(ox, oz, rim)) {
+        // Nearest legal approach first — the authored spot encodes the district's arrival line, and
+        // a pad moved 9 m sideways still beats one moved 9 m behind a hangar.
+        for (let rr = 0.5; rr <= 9 && !found; rr += 0.5) {
+          const cands = [];
+          for (let i = 0; i < 24; i++) {
+            const a = i * Math.PI / 12;
+            const x = ox + Math.sin(a) * rr, z = oz + Math.cos(a) * rr;
+            if (legal(x, z, rim)) cands.push({ x, z, body: roomAt(x, z, BODY) });
+          }
+          if (cands.length) found = cands.sort((p, q) => q.body - p.body)[0];
+        }
+      }
+      if (found) {
+        m.o.position.x = tp.x = found.x;
+        m.o.position.z = tp.z = found.z;
+        m.o.position.y = rimY(tp.x, tp.z, 2.7 * m.s) + m.bias;
+        m.d.position.set(tp.x, m.o.position.y + 0.366 * m.s, tp.z);
+      }
+      padAudit.push({
+        id: tp.key,
+        room: +roomAt(tp.x, tp.z, BODY).toFixed(2),
+        rimRoom: +roomAt(tp.x, tp.z, rim).toFixed(2),
+        road: +streetEncroach(tp.x, tp.z, rim).toFixed(2),
+        moved: +Math.hypot(tp.x - ox, tp.z - oz).toFixed(1),
+      });
     }
   }
 

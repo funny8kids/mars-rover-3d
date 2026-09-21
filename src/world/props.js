@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { surfaceAt } from './height.js';
 import { ZONES, SHIP_POS, LEAK_POS, SAMPLE_COUNT } from '../config.js';
+import { createStarship } from './starship.js';
 import { mulberry32, vnoise } from '../utils/noise.js';
-import { loadModel, cloneModel, cloneMaterials } from './assets.js';
+import { loadModel, cloneModel } from './assets.js';
 import { mergeInto, noMerge } from './merge.js';
 import { applySurfaceDetail } from './surface_detail.js';
 import { coverDiscs, discLayout, streetEncroach, STREETS, STREET_HW, CORRIDOR, audit } from './plan.js';
@@ -20,7 +21,7 @@ const G = new THREE.Group();
 
 export async function buildBase(scene, quality) {
   G.clear();
-  const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'starship', 'cryo_tank',
+  const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'cryo_tank',
     'lamp', 'crystal', 'lander', 'teleport_pad', 'gantry_service'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA', 'corridor', 'corridor_corner',
     'corridor_end', 'platform_high', 'platform_low', 'platform_large', 'machine_generator',
@@ -130,7 +131,7 @@ export async function buildBase(scene, quality) {
     acc_orange: [[0.468, 0.144, 0.032], 0.62, 0.12],
     orange: [[0.50, 0.155, 0.038], 0.6, 0.14],
   };
-  const LANDMARKS = new Set(['habitat_dome', 'starship', 'lander']);
+  const LANDMARKS = new Set(['habitat_dome', 'lander']);
   for (const [mname, root] of Object.entries(models)) {
     if (!root || mname === 'rover' || mname === 'crystal') continue;
     const lift = LANDMARKS.has(mname) ? 1.34 : 1;
@@ -943,33 +944,28 @@ export async function buildBase(scene, quality) {
       box(0.24, 0.05, 0.14, ring.material, rx, py + 0.18, rz, G).rotation.y = a;
     }
 
-    // ── Starship, our Blender hull, ~30 m toy-superhero scale ──
+    // ── Starship riding a Super Heavy: 71 m of stainless on the pad ──
+    const stack = createStarship(THREE, { text: 'RED STARBASE' });
+    stack.group.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    // Ninety parts that never move independently, so they collapse to one buffer per finish — the
+    // same deal the rest of the base makes, and the reason a 71 m hero costs eight draw calls.
+    mergeInto(stack.group);
     const ship = new THREE.Group();
-    ship.position.set(px, py + 0.3, pz);
-    const hull = cloneModel(models['starship']);
-    const shipMatMap = cloneMaterials(hull);
-    hull.scale.setScalar(0.65);                       // seated 47.7 m hull → 31 m
-    ship.add(hull);
-    const seen = new Set();
-    hull.traverse(o => {
-      if (!o.isMesh) return;
-      for (const mm of (Array.isArray(o.material) ? o.material : [o.material])) {
-        if (!seen.has(mm)) { seen.add(mm); shipMats.push(mm); }
-      }
-    });
+    // On its mount, not in it: the Raptor field is three metres of bell and the pad deck would
+    // swallow the whole engine section if the stack sat at grade.
+    ship.position.set(px, py + 2.9, pz);
+    ship.add(stack.group);
+    shipMats.push(...stack.mats);
     const RING_HUES = [0x3fd9ff, 0xff8a3c, 0xa05cff, 0x3fffc9, 0xff4d6d, 0xffd166];
-    for (const [i, f] of [0.06, 0.16, 0.3, 0.46, 0.64, 0.85].entries()) {
-      const tr = new THREE.Mesh(new THREE.TorusGeometry(2.45, 0.1, 6, 32), M.shipLightRing.clone());
+    const ringGeo = new THREE.TorusGeometry(stack.radius + 0.1, 0.1, 6, 40);
+    for (const [i, f] of [0.05, 0.18, 0.33, 0.5, 0.68, 0.88].entries()) {
+      const tr = new THREE.Mesh(ringGeo, M.shipLightRing.clone());
       tr.material.color.setHex(RING_HUES[i]); tr.material.emissive.setHex(RING_HUES[i]);
-      tr.rotation.x = Math.PI / 2; tr.position.y = f * 31; tr.visible = false; noMerge(tr); ship.add(tr);
+      tr.rotation.x = Math.PI / 2; tr.position.y = f * stack.height; tr.visible = false; noMerge(tr); ship.add(tr);
       lightStrips.push(tr.material); lightRings.push(tr);
     }
-    for (const mm of shipMatMap.values()) {
-      if (mm.name === 'light_amber' || mm.name === 'light_cyan') lightStrips.push(mm);
-    }
-    ship.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     G.add(ship); shipGroup = ship;
-    lot('starship', px, pz, 10, 10);
+    lot('starship', px, pz, 9.2, 9.2);
 
     // ── Chopstick tower, west of the ship: its six arms reach east to the hull
     // and the "RED STARBASE" board on its south face reads from the teleport pad.
@@ -984,7 +980,7 @@ export async function buildBase(scene, quality) {
 
     // ── Kenney booster on a service stand, the base's cargo rocket ──
     {
-      const bx2 = px - 15, bz2 = pz + 7, by = surfaceAt(bx2, bz2);
+      const bx2 = px - 16, bz2 = pz + 13, by = surfaceAt(bx2, bz2);
       const stack = new THREE.Group(); stack.position.set(bx2, by, bz2);
       const part = (name, y, ry) => { const o = cloneModel(models[name]); o.scale.setScalar(S); o.position.y = y; o.rotation.y = ry; stack.add(o); };
       part('rocket_baseB', 0.05, 0);

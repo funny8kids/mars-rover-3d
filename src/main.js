@@ -1131,6 +1131,29 @@ window.__RSB = {
   audioCtx: () => audio.ctx,
   hold: (v) => { input.inp.keys[v ? 'add' : 'delete']('KeyE'); },
   photo: (v) => togglePhoto(v),
+  // QA frame capture. A hidden tab never runs Environment.update, so the sun stays parked straight
+  // overhead and every vertical face in the base reads black — the shot has to place the sun itself
+  // before it means anything. The histogram comes back with the frame so a blown highlight is
+  // visible in numbers instead of only in taste.
+  shot: async (name, at, look, sunAt = [-150, 120, 95]) => {
+    let sun = null;
+    scene.traverse(o => { if (!sun && o.isDirectionalLight) sun = o; });
+    if (sun) { sun.position.set(...sunAt); sun.target.position.set(0, 0, 0); sun.target.updateMatrixWorld(); }
+    camera.position.set(...at);
+    camera.lookAt(...look);
+    post.composer.render();
+    const cv = renderer.domElement;
+    const c2 = document.createElement('canvas');
+    c2.width = 160; c2.height = 100;
+    const g2 = c2.getContext('2d');
+    g2.drawImage(cv, 0, 0, 160, 100);
+    const q = g2.getImageData(0, 0, 160, 100).data;
+    const bins = new Array(10).fill(0);
+    for (let i = 0; i < q.length; i += 4)
+      bins[Math.min(9, (0.2126 * q[i] + 0.7152 * q[i + 1] + 0.0722 * q[i + 2]) >> 5)]++;
+    const r = await fetch('http://127.0.0.1:8123/' + name, { method: 'POST', body: cv.toDataURL('image/jpeg', 0.85) });
+    return { name, status: r.status, bins: bins.map(b => Math.round(b / 1600 * 100)), clip: +(bins[8] / 16 + bins[9] / 16).toFixed(1) };
+  },
   // what is actually in front of the lens — finds blown-out emitters by screen position
   nearby: (r = 60) => {
     const w = new THREE.Vector3(), out = [];

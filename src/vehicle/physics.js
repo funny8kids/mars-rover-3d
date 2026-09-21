@@ -178,26 +178,36 @@ export class RoverPhysics {
     this.bodyPitch += ((accel * 0.0075) - this.bodyPitch) * Math.min(1, dt * 5);
 
     // collisions (cylinders {x,z,r}); platforms are driveable, so they never shove you aside.
-    // Two props placed closer together than the rover's clearance leave a lens with no legal
-    // position inside it, and a single sweep freezes the rover dead in the middle of that lens —
-    // which is what reads to the player as "WASD stopped working". Three Gauss-Seidel passes walk
-    // the rover out toward the nearest gap instead of holding it there.
+    // Two props standing closer than the rover's clearance leave overlapping clearance rings, and a
+    // rover caught in that band used to be thrown from one ring to the other every substep — 1.3 m
+    // of jitter with the speedometer pinned at zero, which is exactly what reads to the player as
+    // "WASD stopped working". So each pass sums every violated normal into a single correction the
+    // rover can follow, and hands the leftover penetration back as push-out velocity: a nose-in
+    // rover in a crease squeezes itself out under throttle instead of standing still inside it.
     for (let pass = 0; pass < 3; pass++) {
+      let mx = 0, mz = 0, deep = null;
       for (const c of colliders) {
         if (c.floor !== undefined) continue;
         const dx = this.x - c.x, dz = this.z - c.z;
         const d = Math.hypot(dx, dz), min = c.r + 1.6;
         if (d >= min) continue;
-        if (d <= 0.001) { this.x += min; continue; }
-        const push = (min - d);
-        this.x += dx / d * push; this.z += dz / d * push;
-        if (pass > 0) continue;
-        const vn2 = (this.vx * dx + this.vz * dz) / d;
+        if (d <= 0.001) { mx += min; continue; }
+        const push = min - d, nx = dx / d, nz = dz / d;
+        mx += nx * push; mz += nz * push;
+        if (!deep || push > deep.push) deep = { push, nx, nz };
+      }
+      if (!deep && mx === 0) break;
+      this.x += mx; this.z += mz;
+      if (pass > 0) continue;
+      if (deep) {
+        const vn2 = this.vx * deep.nx + this.vz * deep.nz;
         // Restitution 0.18, not 0.6: the old factor handed back more speed than the rover brought,
         // so every contact fired it backwards at 1.6× impact — straight into the slide the
         // throttle then had to recover from. A thud and a slide along the tangent is what reads as
         // solid steel, and it keeps the rover under the player instead of launching it.
-        if (vn2 < 0) { this.vx -= dx / d * vn2 * 1.18; this.vz -= dz / d * vn2 * 1.18; this.trauma = Math.min(1, this.trauma + Math.abs(vn2) * 0.04); }
+        if (vn2 < 0) { this.vx -= deep.nx * vn2 * 1.18; this.vz -= deep.nz * vn2 * 1.18; this.trauma = Math.min(1, this.trauma + Math.abs(vn2) * 0.04); }
+        const l = Math.hypot(mx, mz);
+        if (l > 0.02) { const s = Math.min(3.2, deep.push * 9) / l; this.vx += mx * s; this.vz += mz * s; }
       }
     }
     // world bounds

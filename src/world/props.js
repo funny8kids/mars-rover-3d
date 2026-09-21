@@ -31,7 +31,7 @@ export async function buildBase(scene, quality) {
   G.clear();
   const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
     'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'reactor_tap', 'lox_stand', 'roadster', 'lamp',
-    'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut', 'barrier_kit'];
+    'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut', 'barrier_kit', 'flag_mast'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA', 'corridor', 'corridor_corner',
     'corridor_end', 'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
@@ -696,9 +696,12 @@ export async function buildBase(scene, quality) {
     // structure is not a trap, it is a corner.
     lot('spaceport-gate#0', hx - 5.2, hz - 16.68, 0.36, 8.7);
     lot('spaceport-gate#1', hx + 5.2, hz - 16.68, 0.36, 8.7);
-    // flag mast
-    const my = zoneY(ZONES.hub);
-    cyl(0.12, 0.16, 7, M.white, hx + 5.5, my + 3.5, hz + 4, 8);
+    // flag mast — one Blender asset (tools/blender/build_flagmast.py): bolted boot, winch, cleat,
+    // sectional tube with flanges, sheave truck, halyard and rings. A tapered cylinder with a
+    // sphere on top could not carry any of that, and at 8 m the mast is the tallest thing in the
+    // plaza, so its silhouette is read from every district.
+    const mastY = surfaceAt(hx + 5.5, hz + 4);
+    put('flag_mast', hx + 5.5, hz + 4, 1, 0, 0);
     {
       // A flat quad on a pole is the one prop that guarantees the whole plaza looks like a
       // placeholder. Cloth hanging off a mast has a catenary droop and a wind ripple in it.
@@ -762,19 +765,11 @@ export async function buildBase(scene, quality) {
       const flag = new THREE.Mesh(fg, new THREE.MeshStandardMaterial({
         map: flagTex, roughness: 0.8, metalness: 0, side: THREE.DoubleSide,
       }));
-      flag.position.set(hx + 6.7, my + 6.35, hz + 4); flag.castShadow = true; flag.receiveShadow = true;
+      // The cloth's hoist edge is set to the mast's own halyard line (0.20 m off the pole axis,
+      // where the asset's rings are threaded), so the sleeve hangs on the rings instead of
+      // floating inside the tube the way it did when both were placed by eye.
+      flag.position.set(hx + 6.85, mastY + 6.35, hz + 4); flag.castShadow = true; flag.receiveShadow = true;
       G.add(flag);
-      // halyard rings, so the cloth is attached to something rather than floating beside the pole
-      for (const h of [6.98, 6.35, 5.72]) {
-        const rr = new THREE.Mesh(new THREE.TorusGeometry(0.185, 0.028, 5, 14), M.dark);
-        rr.rotation.y = Math.PI / 2;
-        rr.position.set(hx + 5.5, my + h, hz + 4);
-        rr.castShadow = true;
-        G.add(rr);
-      }
-      cyl(0.05, 0.05, 0.72, M.struct, hx + 5.5, my + 7.32, hz + 4, 8);
-      const finial = new THREE.Mesh(new THREE.SphereGeometry(0.115, 12, 10), M.struct);
-      finial.position.set(hx + 5.5, my + 7.74, hz + 4); finial.castShadow = true; G.add(finial);
     }
     k('barrel', hx - 6, hz + 6, 0.4); k('barrel', hx + 7, hz - 5, 1.2);
     putDeck('teleport_pad', hx - 8.5, hz + 11, 1.25, 0, -0.08);
@@ -783,7 +778,10 @@ export async function buildBase(scene, quality) {
     k('craft_speederA', hx + 10, hz + 1, 0.9);
     // A flag mast is a 16 cm pole. Wrapping it in an r=0.8 disc meant the plaza had an invisible
     // metre-wide column nobody could see, in the exact line the player drives to reach the pad.
-    lot('flagmast', hx + 5.5, hz + 4, 0.45, 0.45);
+    // The rectangle now is the asset's own ground-level extent measured from its bounding box: the
+    // 0.50 m boot plus the winch and crank that overhang its flag-side rim, which is why the centre
+    // sits 30 mm off the pole axis rather than on it.
+    lot('flagmast', hx + 5.53, hz + 4, 0.55, 0.49);
     {
       // The plaza was a handful of props on an empty plain: no skyline in any direction, which is
       // most of why the settlement read as small and cheap. A ring of structures gives every

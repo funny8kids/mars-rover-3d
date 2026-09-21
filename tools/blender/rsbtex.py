@@ -202,11 +202,16 @@ def panel_maps(tag="panel", pm=600.0, tile=0.85, tint=(1.0, 1.0, 1.0), base=236.
 
 
 # ─────────────────────────── precast concrete ───────────────────────────
-def concrete_maps(tag="concrete", pm=400.0, tile=1.80, tint=(1.0, 1.0, 1.0), joints=True):
+def concrete_maps(tag="concrete", pm=400.0, tile=1.80, tint=(1.0, 1.0, 1.0), joints=True,
+                  nrm=9.0):
     """Precast concrete: the board joints a form leaves behind, a form-tie dimple at each
     joint's quarter points, dust in the hollows and fine aggregate standing proud of the
     slurry. Cast steps read as poured work because of the joints and the ties, and nothing
-    else on them says so."""
+    else on them says so.
+
+    `nrm` is how far that relief is pushed into the normal map, and it has to travel with the
+    part's size: 9.0 sells a 40 cm tread two metres away, and the same value on a 300 mm kerb
+    seen from a metre turns the aggregate into stucco."""
     u_m = v_m = tile
     w = h = int(round(tile * pm))
     U, V = _mesh(w, h, pm)
@@ -230,7 +235,7 @@ def concrete_maps(tag="concrete", pm=400.0, tile=1.80, tint=(1.0, 1.0, 1.0), joi
     maps = {"basecolor": _save(np.dstack([tone * tint[0], tone * tint[1] * 0.985,
                                           tone * tint[2] * 0.96]), tag + "_col"),
             "rough": _save(rough, tag + "_rgh"),
-            "normal": _save(height_to_normal(height, 9.0), tag + "_nrm")}
+            "normal": _save(height_to_normal(height, nrm), tag + "_nrm")}
     return maps, u_m, v_m
 
 
@@ -253,6 +258,39 @@ def weave_maps(tag="weave", pm=900.0, tile=0.024, tint=(1.0, 1.0, 1.0), base=150
                                tag + "_col"),
             "rough": _save(rough, tag + "_rgh"),
             "normal": _save(height_to_normal(crown + grit * 0.10, 5.0), tag + "_nrm")}
+    return maps, u_m, v_m
+
+
+# ─────────────────────────── painted hazard stripes ───────────────────────────
+def stripe_maps(tag="stripe", pm=560.0, tile=0.24, ca=(0.865, 0.845, 0.80),
+                cb=(0.70, 0.105, 0.062), slope=(1, 2)):
+    """Road-marking enamel laid over extruded metal. Two things make stripes read as paint
+    rather than as a flag: the band edge is a 100 micron step, so it catches a hard line in
+    the highlight, and the pale bands are the ones that go chalky with dust while the red
+    side keeps its gloss. `slope` is a pair of small integers — the diagonal is (sU*x + sV*y),
+    so the pattern advances by whole bands whenever either axis repeats, and the field tiles
+    seamlessly at any UV scale. A non-integer angle would leave a seam every `tile` metres,
+    which on a 2 m rail shows up as a bar marching along the barrier."""
+    u_m = v_m = tile
+    w = h = int(round(tile * pm))
+    U, V = _mesh(w, h, pm)
+    s = (U * slope[0] + V * slope[1]) % tile
+    half = tile * 0.5
+    red = s < half
+    edge = np.minimum(s, tile - s)                    # distance to the nearest band line
+    film = np.clip(1.0 - edge / 0.0016, 0, 1)         # the bead of enamel at each edge
+    grit = _pnoise(w, h, int(tile / 0.0028), int(tile / 0.0028), 1201) - 0.5
+    chalk = _pnoise(w, h, max(2, int(tile / 0.035)), max(2, int(tile / 0.035)), 733)
+    scuff = _pnoise(w, h, max(2, int(tile / 0.006)), max(2, int(tile / 0.006)), 991)
+    pale = np.where(red, 0.0, 1.0)
+    tone_u = np.clip(1.0 - pale * chalk * 0.17 - scuff * 0.07 - film * 0.05, 0.6, 1.0)
+    base = np.where(red[..., None], np.array(cb, float), np.array(ca, float))
+    col = np.clip(base * (tone_u * 255.0)[..., None], 0, 255)
+    rough = np.clip(150 + pale * 62 + chalk * 30 - film * 26 + grit * 12, 60, 255)
+    height = film * 0.85 + grit * 0.4 - np.where(red, 0.0, chalk * 0.25)
+    maps = {"basecolor": _save(col, tag + "_col"),
+            "rough": _save(rough, tag + "_rgh"),
+            "normal": _save(height_to_normal(height, 8.0), tag + "_nrm")}
     return maps, u_m, v_m
 
 
@@ -339,6 +377,21 @@ ALL = dict(PANELS, **{"steel": steel_maps, "tps": tps_maps,
                                       base=250, rough_base=120, tile=0.30, rivet=0.0),
        "car_rim": lambda: panel_maps(tag="car_rim", tint=(0.545, 0.54, 0.53),
                                      base=250, rough_base=76, tile=0.22, rivet=0.028),
+       # The gate's barrier run: enamel on galvanised steel, and the road-marking bands that
+       # are the only reason a low rail is visible against dune sand at 100 m.
+       "bar_stripe": lambda: stripe_maps(tag="bar_stripe", tile=0.24),
+       "bar_white": lambda: panel_maps(tag="bar_white", tint=(0.795, 0.775, 0.735), base=234,
+                                       rough_base=126, tile=0.55, rivet=0.0),
+       # The barrier's own darkwork and kerb cast at the scale those parts actually are. Reusing
+       # the substation's fields would have been correct and cost 900 kB a kit: `tap_cast` spans
+       # 1.2 m at 400 px/m, so 480 px of grit texture that no PNG will compress — for a fitting
+       # you drive past in under a second. Small parts get small fields.
+       "bar_soot": lambda: panel_maps(tag="bar_soot", tint=(0.245, 0.235, 0.22), base=236,
+                                      rough_base=148, tile=0.34, pm=430, rivet=0.0),
+       # No board joints here on purpose: a kerb bay is one precast unit, and a seam every
+       # 560 mm drew four cracks across it and turned the run into a stack of boxes.
+       "bar_cast": lambda: concrete_maps(tag="bar_cast", tile=0.56, pm=340, joints=False,
+                                         nrm=4.2, tint=(0.635, 0.605, 0.55)),
        })
 
 

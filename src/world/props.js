@@ -31,7 +31,7 @@ export async function buildBase(scene, quality) {
   G.clear();
   const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
     'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'reactor_tap', 'lox_stand', 'roadster', 'lamp',
-    'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut'];
+    'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut', 'barrier_kit'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA', 'corridor', 'corridor_corner',
     'corridor_end', 'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
@@ -188,8 +188,13 @@ export async function buildBase(scene, quality) {
   // template down to one mesh per material fixes every clone placed from it afterwards, and the
   // merged buffers stay shared instead of being duplicated per instance.
   // `crystal` is the exception: the sample pickup spins its own mesh, so it keeps its parts.
+  // `barrier_kit` is the other kind of exception — a *kit* whose child nodes are each cloned out
+  // on their own. Baking would sweep every mesh up into the scene root and leave `post` and `bay`
+  // empty shells; the run that clones them then instals nothing. Its own parts still collapse,
+  // one batch per material, when the assembled barrier run is merged later.
+  const keepsParts = new Set(['crystal', 'barrier_kit']);
   for (const [name, root] of Object.entries(models)) {
-    if (root && name !== 'crystal') mergeInto(root);
+    if (root && !keepsParts.has(name)) mergeInto(root);
   }
   // Cloned packs are already collapsed above; hand-built groups still need their own pass.
   const templateRoots = new Set();
@@ -652,25 +657,37 @@ export async function buildBase(scene, quality) {
     // The pack's `rail` is a flat painted panel: edge-on to a moving camera it vanished, face-on it
     // read as a lane stripe trowelled onto the sand. A barrier has three depths of silhouette —
     // kerb, lower tube, top tube — and posts to interrupt it, so it survives every viewpoint.
+    //
+    // Both runs are instantiated from the two nodes of one Blender kit (tools/blender/
+    // build_barriers.py) into a single group that is deliberately not a `put()` template root, so
+    // the merge pass bakes all eighteen modules into one batch per material instead of eighteen
+    // draws each. Placement stays here because it is the terrain sampling that has to follow the
+    // dune; the geometry is what was missing.
+    const barRun = new THREE.Group();
+    barRun.name = 'gate-barrier-run';
+    G.add(barRun);
+    const barPost = models.barrier_kit?.getObjectByName('post');
+    const barBay = models.barrier_kit?.getObjectByName('bay');
     const barrier = (bx) => {
       const zs = [], ys = [];
       for (let i = 0; i <= 4; i++) { const z = hz - 21.0 + i * 2.16; zs.push(z); ys.push(surfaceAt(bx, z)); }
       for (let i = 0; i < zs.length; i++) {
-        cyl(0.075, 0.095, 1.2, M.white, bx, ys[i] + 0.6, zs[i], 10);
-        cyl(0.105, 0.105, 0.15, M.hazard, bx, ys[i] + 1.06, zs[i], 10);
+        const p = cloneModel(barPost);
+        p.position.set(bx, ys[i], zs[i]);
+        p.traverse(shade);
+        barRun.add(p);
       }
       for (let i = 0; i < zs.length - 1; i++) {
-        const z = (zs[i] + zs[i + 1]) * 0.5, y = (ys[i] + ys[i + 1]) * 0.5;
         const len = zs[i + 1] - zs[i];
+        const z = (zs[i] + zs[i + 1]) * 0.5;
         // seat each segment on its own two posts rather than the run's chord, or the dune curve
         // floats the kerb in air at one end and buries it at the other
         const tilt = Math.atan2(ys[i] - ys[i + 1], len);
-        const kb = box(0.34, 0.30, len, M.struct, bx, y + 0.15, z);
-        kb.rotation.x = tilt;
-        for (const [h, mat, r] of [[0.62, M.dark, 0.055], [0.98, M.white, 0.05]]) {
-          const m = cyl(r, r, len, mat, bx, y + h, z, 8);
-          m.rotation.x = Math.PI / 2 + tilt;
-        }
+        const b = cloneModel(barBay);
+        b.position.set(bx, (ys[i] + ys[i + 1]) * 0.5, z);
+        b.rotation.x = tilt;
+        b.traverse(shade);
+        barRun.add(b);
       }
     };
     barrier(hx - 5.2); barrier(hx + 5.2);

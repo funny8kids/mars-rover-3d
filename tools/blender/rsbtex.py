@@ -313,6 +313,12 @@ ALL = dict(PANELS, **{"steel": steel_maps, "tps": tps_maps,
        "deck_plate": lambda: concrete_maps(tag="deck_plate", tile=1.5, joints=False,
                                            tint=(0.30, 0.275, 0.245)),
        "deck_weave": lambda: weave_maps(tag="deck_weave", tint=(0.34, 0.52, 0.72)),
+       "gate_cast": lambda: concrete_maps(tag="gate_cast", tile=1.55,
+                                          tint=(0.66, 0.635, 0.575)),
+       "gate_metal": lambda: panel_maps(tag="gate_metal", tint=(0.575, 0.565, 0.545),
+                                        base=232, rough_base=132, tile=1.10, rivet=0.055),
+       "gate_dark": lambda: panel_maps(tag="gate_dark", tint=(0.20, 0.198, 0.20),
+                                       base=236, rough_base=150, tile=0.70, rivet=0.0),
        })
 
 

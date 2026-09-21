@@ -21,7 +21,8 @@ const G = new THREE.Group();
 export async function buildBase(scene, quality) {
   G.clear();
   const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
-    'crew_rover', 'optimus_bot', 'watch_deck', 'lamp', 'crystal', 'lander', 'teleport_pad',
+    'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'lamp', 'crystal',
+    'lander', 'teleport_pad',
     'gantry_service', 'astronaut'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA', 'corridor', 'corridor_corner',
     'corridor_end', 'platform_high', 'platform_low', 'platform_large', 'machine_generator',
@@ -599,72 +600,20 @@ export async function buildBase(scene, quality) {
     // painted on both faces.
     {
       beginProp('spaceport-gate');
-      const gx = hx, gz = hz - 13.5, gy = surfaceAt(gx, gz);
-      const legX = (sgn) => gx + sgn * 8.1;
-      const shaftH = 2.35, shaftN = 4, baseY = gy + 0.78;
-      const beamY = baseY + shaftN * shaftH;
-      for (const sgn of [-1, 1]) {
-        const x = legX(sgn);
-        box(4.0, 0.78, 3.3, M.struct, x, gy + 0.39, gz);
-        box(4.3, 0.2, 3.6, M.dark, x, gy + 0.1, gz);          // kerb lip, so the plinth isn't floating
-        for (let i = 0; i < shaftN; i++) {
-          const w = 2.9 - i * 0.22, d = 2.5 - i * 0.16;
-          const y = baseY + i * shaftH + shaftH / 2;
-          box(w, shaftH - 0.14, d, M.concrete, x, y, gz);
-          if (i < shaftN - 1) box(w + 0.16, 0.15, d + 0.16, M.struct, x, y + shaftH / 2, gz);
-        }
-        box(2.2, 0.34, 2.0, M.dark, x, beamY - 0.17, gz);      // bearing pad under the beam
-        // Lane-facing light channel: a recessed strip, not a skin. The old arch lit the whole leg.
-        box(0.14, shaftN * shaftH - 1.1, 0.42, M.cyanLight, x - sgn * (1.32), baseY + (shaftN * shaftH) / 2 - 0.2, gz);
-        for (let i = 0; i < 4; i++) {
-          box(0.3, 0.16, 0.5, M.struct, x - sgn * 1.3, baseY + 0.9 + i * 2.0, gz + 0.0);
-        }
-        cyl(0.13, 0.13, shaftN * shaftH + 0.4, M.struct, x + sgn * 1.35, baseY + (shaftN * shaftH) / 2, gz + 0.95, 8);
-        for (const t of [0.6, 3.1, 5.6, 8.1]) {
-          cyl(0.21, 0.21, 0.18, M.dark, x + sgn * 1.35, baseY + t, gz + 0.95, 8);
-        }
-        for (let i = 0; i < 3; i++) {                          // hazard chevrons on the kerb side
-          const c = box(0.5, 0.62, 0.1, i % 2 ? M.hazard : M.orange, x - sgn * 1.9, gy + 0.42, gz - 1.83);
-          c.rotation.z = 0.62;
-        }
-      }
-      // Box-girder beam: two chords with verticals front and back, so it has depth and shadow instead
-      // of reading as a painted slab.
-      box(20.9, 0.44, 2.0, M.struct, gx, beamY + 0.22, gz);
-      box(20.9, 0.44, 2.0, M.struct, gx, beamY + 2.44, gz);
-      for (let i = 0; i <= 8; i++) {
-        const px = gx - 9.8 + i * 2.45;
-        for (const sgn of [-1, 1]) box(0.28, 1.78, 0.34, M.struct, px, beamY + 1.33, gz + sgn * 0.82);
-      }
-      box(21.2, 0.18, 2.5, M.struct, gx, beamY + 2.75, gz);    // top deck plate
-      // A driver passes under this beam, so the soffit is the face that is actually seen. Left as
-      // an open girder it read as a blank white board hanging in the sky; joisted, panelled and
-      // wired it reads as the underside of an airfield gantry.
-      for (let i = 0; i <= 9; i++) {
-        const px = gx - 10.0 + i * 2.22;
-        box(0.20, 0.46, 2.34, M.struct, px, beamY + 2.44, gz);
-      }
-      box(20.4, 0.10, 1.55, M.dark, gx, beamY + 2.20, gz);      // recessed service panel
-      for (const sgn of [-1, 1]) {
-        cyl(0.07, 0.07, 20.4, M.struct, gx, beamY + 2.32, gz + sgn * 0.95, 6).rotation.z = Math.PI / 2;
-      }
-      for (let i = 0; i <= 6; i++) {                            // downlights over the lane
-        const px = gx - 9.1 + i * 3.04;
-        cyl(0.17, 0.21, 0.16, M.dark, px, beamY + 2.10, gz, 10);
-        cyl(0.15, 0.15, 0.03, M.goldLight, px, beamY + 2.01, gz, 10);
-      }
-      for (let i = 0; i <= 10; i++) {                          // catwalk railing
-        const px = gx - 10.4 + i * 2.08;
-        cyl(0.06, 0.06, 1.05, M.dark, px, beamY + 3.36, gz + 1.12, 6);
-        cyl(0.06, 0.06, 1.05, M.dark, px, beamY + 3.36, gz - 1.12, 6);
-      }
-      for (const sgn of [-1, 1]) {
-        cyl(0.055, 0.055, 20.9, M.dark, gx, beamY + 3.83, gz + sgn * 1.12, 6).rotation.z = Math.PI / 2;
-        cyl(0.055, 0.055, 20.9, M.dark, gx, beamY + 3.28, gz + sgn * 1.12, 6).rotation.z = Math.PI / 2;
-      }
+      const gx = hx, gz = hz - 13.5;
+      const gy = surfaceAt(gx, gz);
+      const beamY = gy + 0.78 + 4 * 2.35;
+      // One authored asset: jointed precast pylons with their bolt bands, a box girder with
+      // chords, verticals, soffit joists and a recessed service panel, a railed catwalk, the
+      // lane light channels set into rebates, and the beam-top kit.
+      const gate = cloneModel(models.spaceport_gate);
+      gate.position.set(gx, gy, gz);
+      gate.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      G.add(gate);
       {
-        // Sign faces are painted on a canvas and mounted on both sides of the beam, each single-sided,
-        // so the name is legible from the approach and from the plaza — never mirrored.
+        // The name is the one part of a gate that has to be legible rather than built, so the
+        // boards are modelled and the lettering stays a painted canvas — mounted on both faces,
+        // each single-sided, so it is never mirrored.
         const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 200;
         const g = cv.getContext('2d');
         g.fillStyle = '#26241f'; g.fillRect(0, 0, 1024, 200);
@@ -682,31 +631,16 @@ export async function buildBase(scene, quality) {
           roughness: 0.52, metalness: 0.08, side: THREE.FrontSide,
         });
         for (const sgn of [-1, 1]) {
-          box(13.4, 2.7, 0.3, M.dark, gx, beamY + 1.4, gz + sgn * 1.15);
           const p = new THREE.Mesh(new THREE.PlaneGeometry(12.6, 1.86), face);
-          p.position.set(gx, beamY + 1.4, gz + sgn * 1.32);
+          p.position.set(gx, beamY + 1.4, gz + sgn * 1.34);
           p.rotation.y = sgn > 0 ? 0 : Math.PI;
           p.castShadow = false; p.receiveShadow = true; G.add(p);
-          for (const bx of [-6.2, 6.2]) cyl(0.09, 0.09, 0.34, M.struct, gx + bx, beamY + 1.4, gz + sgn * 1.4, 8).rotation.x = Math.PI / 2;
         }
       }
-      for (const [bx, bw] of [[gx - 6.4, 3.4], [gx + 6.6, 2.2]]) {   // beam-top equipment
-        box(bw, 1.3, 1.9, M.white, bx, beamY + 3.5, gz);
-        box(bw + 0.18, 0.16, 2.1, M.struct, bx, beamY + 2.86, gz);
-        box(0.14, 1.32, 1.94, M.orange, bx, beamY + 3.5, gz);
-      }
-      cyl(0.09, 0.12, 3.4, M.dark, gx + 9.6, beamY + 4.6, gz, 8);
-      beacons.push(cyl(0.2, 0.2, 0.42, M.beacon, gx + 9.6, beamY + 6.4, gz, 8));
-      for (let i = 0; i < 4; i++) {                            // approach floodlights under the beam
-        const fx = gx - 6.3 + i * 4.2;
-        const h = box(0.62, 0.44, 0.86, M.dark, fx, beamY - 0.24, gz);
-        h.rotation.x = 0.5;
-        const l = cyl(0.24, 0.24, 0.08, M.goldLight, fx, beamY - 0.42, gz - 0.22, 10);
-        l.rotation.x = Math.PI / 2 + 0.5;
-      }
+      const beaconBulb = new THREE.Mesh(new THREE.SphereGeometry(0.21, 12, 10), M.beacon);
+      beaconBulb.position.set(gx + 9.6, beamY + 6.4, gz);
+      G.add(beaconBulb); beacons.push(beaconBulb);
     }
-    // The gate is an arch you drive through, so its collision is its two pylons — never a disc on
-    // the centre line, which is what used to wall off the lane the gate exists to mark.
     endProp({ legs: [[hx - 8.1, hz - 13.5, 4.3, 3.6], [hx + 8.1, hz - 13.5, 4.3, 3.6]] });
     // The pack's `rail` is a flat painted panel: edge-on to a moving camera it vanished, face-on it
     // read as a lane stripe trowelled onto the sand. A barrier has three depths of silhouette —
@@ -926,7 +860,7 @@ export async function buildBase(scene, quality) {
     // that is what they are now. The emissive guard is what keeps the hero lamps lit: their accents
     // carry a real emissive term and are the base's night lighting, not a surface colour.
     for (const [mname, root] of Object.entries(models)) {
-      if (!root || /^(starship_stack|crew_rover|optimus_bot|watch_deck|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad)$/.test(mname)) continue;
+      if (!root || /^(starship_stack|crew_rover|optimus_bot|watch_deck|spaceport_gate|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad)$/.test(mname)) continue;
       const deck = /^platform_/.test(mname);
       // A pipe elbow weathered to flat matte pale grey lost the one thing that says "manufactured":
       // a specular streak along its length. Outdoors it read as a 4 m cream boulder sitting in the

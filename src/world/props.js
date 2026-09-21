@@ -304,7 +304,7 @@ export async function buildBase(scene, quality) {
     orange: new THREE.MeshStandardMaterial({ color: 0xe07a2a, roughness: 0.5, metalness: 0.3 }),
     hazard: new THREE.MeshStandardMaterial({ color: 0x9c4226, roughness: 0.78, metalness: 0.18 }),
     warmWin: new THREE.MeshStandardMaterial({ color: 0xffdca0, emissive: 0xffb050, emissiveIntensity: 1.6 }),
-    beacon: new THREE.MeshStandardMaterial({ color: 0xff3020, emissive: 0xff2010, emissiveIntensity: 4 }),
+    beacon: new THREE.MeshStandardMaterial({ color: 0x3f1712, emissive: 0xff2010, emissiveIntensity: 4 }),
     // A lamp fitting's albedo is its glass and housing, not its bulb. At 0x9ff0ff the plaza's flush
     // studs and bollard lamps drew as blown white discs by day — sixteen of them scattered across
     // every plaza frame, each one a bloom hole with no fixture shape left. The emissive term carries
@@ -319,7 +319,7 @@ export async function buildBase(scene, quality) {
     // inside it: saturated dark teal, near-polished facets, and an emissive that only shows through
     // where the prism is thin. metalness 0.22 gives the faces a hard sun highlight without turning
     // the whole cluster into a mirror.
-    crystal: new THREE.MeshStandardMaterial({ color: 0x1f6d68, emissive: 0x36d8bd, emissiveIntensity: 0.9, roughness: 0.06, metalness: 0.22, flatShading: true }),
+    crystal: new THREE.MeshStandardMaterial({ color: 0x14504d, emissive: 0x36d8bd, emissiveIntensity: 0.9, roughness: 0.16, metalness: 0.22, flatShading: true }),
     // scree is *local regolith that the crystal broke*, so it is rust-dark with a mineral sheen,
     // not the pale grey-green the first pass had — that read as a plastic flowerpot
     crystalRubble: new THREE.MeshStandardMaterial({ color: 0x3d2a20, roughness: 0.9, metalness: 0.16, flatShading: true }),

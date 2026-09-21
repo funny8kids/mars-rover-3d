@@ -774,14 +774,22 @@ function update(dt) {
   // self-light dominated the shading and a 798-triangle faceted cluster drew as three flat mint
   // pillows. By day it is stone catching the sun; only after dark does the light inside show.
   const cnight = Math.max(env.state.nightF, env.state.stormF * 0.6);
-  base.crystalMat.emissiveIntensity = 0.13 + cnight * 1.35 + Math.sin(elapsed * 1.9) * (0.05 + cnight * 0.2);
+  // The 0.13 day floor still failed at mid-range: a ~1 m cluster of #36d8bd at any emissive above
+  // ~0.1 draws as a flat mint chip — pure hue, below bloom, exactly the grid-core lesson. Day now
+  // sits at 0.04 so the dark stone body and the sun highlight carry it; dusk restores the glow.
+  // Night ceiling trimmed 1.48→1.05 so the faceted silhouette survives the bloom instead of
+  // collapsing into a flat white blob (V11 forensics).
+  base.crystalMat.emissiveIntensity = 0.04 + cnight * 1.01 + Math.sin(elapsed * 1.9) * (0.02 + cnight * 0.12);
   // beacon blink + night lamps + light cones
   const st = env.state;
   // An aviation beacon exists to be seen against darkness, so its drive belongs to the night: at a
   // flat 1.5–4.0 it was a hot pink blob on every mast in the day views, the single brightest
   // saturated object in the industry zone. Full blink after dusk, a faint confirmation by day.
+  // The blink is shaped (0.5+0.5·sin) so the value never dips below its floor — the old ± form went
+  // NEGATIVE at the trough (0.06+1.28 − 1.89 < 0) and the lamp drew as a black square in the sky (X3).
   const bnight = Math.max(st.nightF, st.stormF * 0.7);
-  for (const b of base.beacons) b.material.emissiveIntensity = 0.18 + bnight * 1.1 + Math.sin(elapsed * 5) * (0.12 + bnight * 1.9);
+  const blink = 0.5 + 0.5 * Math.sin(elapsed * 5);
+  for (const b of base.beacons) b.material.emissiveIntensity = 0.06 + bnight * (0.22 + 1.55 * blink);
   const spots = rover.group.userData.spots;
   if (spots) for (const sp of spots) sp.intensity = st.nightF * 46 + st.stormF * 22;
   // the lens quads must follow the beam: at full emissive in clear daylight they bloom the whole deck

@@ -1,3 +1,5 @@
+import { t as tx } from './i18n.js';
+
 const $ = id => document.getElementById(id);
 
 export const UI = {
@@ -8,7 +10,8 @@ export const UI = {
     ul.innerHTML = '';
     for (const m of missions) {
       const li = document.createElement('li');
-      li.textContent = m.text + (m.extra ? ` (${m.extra})` : '');
+      // the counter is a hole in the sentence, so the whole line can be translated as one unit
+      li.textContent = tx(m.text).replace('{n}', m.n).replace('{total}', m.total);
       li.className = m.done ? 'done' : m.active ? 'active' : '';
       ul.appendChild(li);
     }
@@ -16,25 +19,34 @@ export const UI = {
   showInfo(zone) {
     const card = $('info-card');
     if (!zone) { card.classList.remove('show'); return; }
+    this.zone = zone;
     if (card.dataset.key !== zone.key) {
       card.dataset.key = zone.key;
-      $('info-tag').textContent = zone.tag;
-      $('info-name').textContent = zone.name;
-      $('info-params').innerHTML = zone.params.join('<br>');
-      $('info-fact').textContent = zone.fact;
+      $('info-tag').textContent = tx(zone.tag);
+      $('info-name').textContent = tx(zone.name);
+      $('info-params').innerHTML = zone.params.map(tx).join('<br>');
+      $('info-fact').textContent = tx(zone.fact);
     }
-    $('info-action').textContent = zone.hudAction || zone.objective || '';
+    $('info-action').textContent = tx(zone.hudAction || zone.objective || '');
     card.classList.add('show');
+  },
+  // The card caches by zone key so it does not rewrite every frame — which also means a language
+  // switch has to drop the cache and repaint the card that is on screen.
+  relabel() {
+    $('info-card').dataset.key = '';
+    if (this.zone) this.showInfo(this.zone);
+    for (const z of this.pipZones || []) this.pips[z.key].title = tx(z.name);
   },
   setSpeed(kmh) { $('speed-val').textContent = Math.round(kmh); },
   gridInit(zones) {
     const row = $('grid-row');
     row.innerHTML = '';
     this.pips = {};
+    this.pipZones = zones;
     for (const z of zones) {
       const d = document.createElement('div');
       d.className = 'grid-pip';
-      d.title = z.name;
+      d.title = tx(z.name);
       row.appendChild(d);
       this.pips[z.key] = d;
     }
@@ -56,14 +68,14 @@ export const UI = {
   },
   setTop(time, weather, quality, fps) {
     $('tb-time').textContent = `LMT ${time}`;
-    $('tb-weather').textContent = weather;
-    $('tb-quality').textContent = `画质 ${quality} · ${fps} FPS`;
+    $('tb-weather').textContent = tx(weather);
+    $('tb-quality').textContent = `${tx('画质')} ${tx(quality)} · ${fps} FPS`;
   },
   toast(msg, ms = 3200) {
-    const t = $('toast');
-    t.textContent = msg; t.classList.add('show');
+    const el = $('toast');
+    el.textContent = tx(msg); el.classList.add('show');
     clearTimeout(this._toastT);
-    this._toastT = setTimeout(() => t.classList.remove('show'), ms);
+    this._toastT = setTimeout(() => el.classList.remove('show'), ms);
   },
   countdown(v) {
     const c = $('countdown');

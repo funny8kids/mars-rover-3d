@@ -28,16 +28,22 @@ button{font-family:var(--sans);cursor:pointer}
 /* ---------- menu ---------- */
 .menu-inner{text-align:center;padding:24px}
 .menu-title{font-size:20px;letter-spacing:.5em;color:var(--amber);margin-bottom:26px;font-weight:600}
-.quality-grid{display:grid;grid-template-columns:repeat(4,minmax(120px,160px));gap:14px;justify-content:center}
-@media(max-width:640px){.quality-grid{grid-template-columns:repeat(2,1fr)}}
+.quality-grid{display:grid;grid-template-columns:repeat(2,minmax(150px,200px));gap:14px;justify-content:center}
+@media(max-width:640px){.quality-grid{grid-template-columns:1fr}}
 .q-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 10px;color:#dcd4c4;
   display:flex;flex-direction:column;gap:6px;transition:.25s}
 .q-card b{font-size:22px;letter-spacing:.2em;color:var(--amber)}
 .q-card span{font-size:12px}.q-card i{font-style:normal;font-size:11px;color:#8a8478;font-family:var(--mono)}
 .q-card:hover{transform:translateY(-3px);border-color:var(--amber)}
 .q-card.sel{border-color:var(--amber);background:rgba(255,120,26,.14);box-shadow:0 0 24px rgba(255,120,26,.25)}
-.q-card.rec::after{content:"推荐";position:absolute;margin:-30px 0 0 88px;font-size:10px;background:var(--cyan);color:#04222e;
+.q-card.rec::after{content:var(--rec-label,"推荐");position:absolute;margin:-30px 0 0 88px;font-size:10px;background:var(--cyan);color:#04222e;
   border-radius:4px;padding:1px 6px;font-weight:700}
+/* the language switch sits in the corner of both the menu and the HUD, so it is positioned
+   against the viewport rather than inside either overlay */
+#lang-btn{position:fixed;top:10px;right:12px;z-index:40;font-family:var(--mono);font-size:11px;
+  letter-spacing:.12em;padding:6px 11px;border-radius:999px;cursor:pointer;
+  background:rgba(24,20,17,.62);border:1px solid var(--line);color:#d9d0be}
+#lang-btn:hover{border-color:var(--amber);color:var(--amber)}
 .auto-tip{margin-top:14px;font-size:12px;color:#8a8478;font-family:var(--mono)}
 .start-btn{margin-top:26px;font-size:18px;letter-spacing:.4em;padding:14px 46px;border-radius:999px;
   border:1px solid var(--amber);background:linear-gradient(180deg,rgba(255,120,26,.22),rgba(255,60,10,.12));color:#ffe1b8;transition:.25s}

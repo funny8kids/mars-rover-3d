@@ -1,10 +1,12 @@
 // maxPixels caps the *framebuffer* area, not the device ratio: a 1.5 ratio on a small window and
 // on a 4K display differ by four times in cost, and it is the area that decides the frame time.
+// Two tiers, because that is the only question a player can actually answer about their machine:
+// "make it run" or "make it look like Mars". The four-way ladder was a guess between four options
+// nobody could tell apart, and the auto-degrade below still works inside either tier — it solves
+// for pixels via renderCap, so it never needs a third button.
 export const QUALITIES = {
-  low:   { label:'低', pixelRatio:0.75, maxPixels:0.6e6, shadow:0,    particles:0.30, ssao:false, bloom:true,  bloomStrength:0.55, godrays:false, envUpdateHz:1.0, stormParticles:900  },
-  med:   { label:'中', pixelRatio:1.0,  maxPixels:1.3e6, shadow:1024, particles:0.60, ssao:true,  bloom:true,  bloomStrength:0.70, godrays:true,  envUpdateHz:2.0, stormParticles:2000 },
-  high:  { label:'高', pixelRatio:1.5,  maxPixels:2.3e6, shadow:2048, particles:1.0,  ssao:true,  bloom:true,  bloomStrength:0.85, godrays:true,  envUpdateHz:2.0, stormParticles:3800 },
-  ultra: { label:'极致',pixelRatio:2.0, maxPixels:4.0e6, shadow:3072, particles:1.6,  ssao:true,  bloom:true,  bloomStrength:0.95, godrays:true,  envUpdateHz:2.0, stormParticles:6000 },
+  std: { label:'标准',  pixelRatio:1.0,  maxPixels:1.6e6, shadow:1024, particles:0.70, ssao:true, bloom:true, bloomStrength:0.74, godrays:true, envUpdateHz:2.0, stormParticles:2400 },
+  hi:  { label:'高质量', pixelRatio:1.75, maxPixels:3.6e6, shadow:3072, particles:1.50, ssao:true, bloom:true, bloomStrength:0.92, godrays:true, envUpdateHz:2.0, stormParticles:6000 },
 };
 
 // Compact art-diorama layout (metres). +X east, +Z south.

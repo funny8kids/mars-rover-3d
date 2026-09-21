@@ -14,6 +14,7 @@ import { createPost } from './fx/post.js';
 import { createSkidMarks } from './fx/skids.js';
 import { GameAudio } from './audio/audio.js';
 import { UI, fmtTime } from './ui.js';
+import { t, mountLangButton, onChange } from './i18n.js';
 
 const $ = id => document.getElementById(id);
 const canvas = $('scene');
@@ -39,14 +40,13 @@ const tmpV = new THREE.Vector3();
 const GRID_COUNT = Object.values(ZONES).filter(z => z.teleport).length - 1;
 // Four steps, one verb each: drive onto a pad, hold E, drive into a glow, drive home. The chain used
 // to carry a fifth — 巡检轨道发射台 — which was a drive with no input in it at all, and players read
-// the silence as the game having frozen. Every line now names the control on its face, so the counter
-// and the instruction can never disagree.
-const gridText = n => `重启基地电网 ${n}/${GRID_COUNT} · 开上各区光台并保持`;
-const sampleText = n => `采集火星样本 ${n}/${SAMPLE_COUNT} · 驶近发光信标`;
+// the silence as the game having frozen. Every line names the control on its face, and the counter is
+// a placeholder inside the sentence rather than a string the code rebuilds, so switching language only
+// has to re-render the list.
 const missions = [
-  { id: 'grid', text: gridText(0), done: false },
+  { id: 'grid', text: '重启基地电网 {n}/{total} · 开上各区光台并保持', n: 0, total: GRID_COUNT, done: false },
   { id: 'leak', text: '修复储罐区泄漏 · 靠近白雾长按 E', done: false },
-  { id: 'samples', text: sampleText(0), done: false },
+  { id: 'samples', text: '采集火星样本 {n}/{total} · 驶近发光信标', n: 0, total: SAMPLE_COUNT, done: false },
   { id: 'watch', text: '返回发射观礼台 · 见证星舰升空', done: false },
 ];
 let activeMission = 0, leakFixed = false, repairHold = 0, samplesTaken = 0;
@@ -120,7 +120,7 @@ function openTeleport() {
     const dist = Math.hypot(phys.x - tp.x, phys.z - tp.z);
     const onPad = padHere === tp;
     const live = tp.online !== false;
-    b.innerHTML = `<kbd>${i + 1}</kbd><span class="tp-name">${live ? '' : '⛔ '}${tp.name}</span><span class="tp-dist">${onPad ? '你在这里' : live ? Math.round(dist) + ' m' : '无电'}</span>`;
+    b.innerHTML = `<kbd>${i + 1}</kbd><span class="tp-name">${live ? '' : '⛔ '}${t(tp.name)}</span><span class="tp-dist">${onPad ? t('你在这里') : live ? Math.round(dist) + ' m' : t('无电')}</span>`;
     b.disabled = onPad || !live;
     b.onclick = () => teleportTo(tp);
     list.appendChild(b);
@@ -166,7 +166,7 @@ function drawTeleMap() {
 // ───────────────────────── loading ─────────────────────────
 function setBar(p, text) {
   $('load-bar').style.width = `${p}%`;
-  if (text) $('load-text').textContent = text;
+  if (text) $('load-text').textContent = t(text);
 }
 // yield one frame, with a timeout fallback so loading never stalls in hidden/background tabs
 const raf = () => Promise.race([
@@ -174,18 +174,19 @@ const raf = () => Promise.race([
   new Promise(r => setTimeout(r, 30)),
 ]);
 
+// Two tiers, so the probe only has one question to answer: does this device have pixels to spare?
+// Anything that can drive 1.75× at 3.6 Mpx gets 高质量; a phone or an older laptop gets 标准, and
+// the auto-degrade inside that tier does the rest.
 function autoDetect() {
   const touch = 'ontouchstart' in window;
   const gl = renderer.getContext();
   const dbg = gl.getExtension('WEBGL_debug_renderer_info');
   const gpu = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '';
   const cores = navigator.hardwareConcurrency || 4;
-  if (touch && cores <= 6) return 'low';
-  if (touch) return 'med';
-  if (/RTX|RX 7|Apple M[2-4]/i.test(gpu)) return 'ultra';
-  if (/GTX|RTX|RX |Apple M/i.test(gpu)) return 'high';
-  if (cores >= 8) return 'high';
-  return 'med';
+  if (touch && cores <= 6) return 'std';
+  if (/RTX 4|RTX 5|RX 7[9]|RX 9|Apple M[3-4]/i.test(gpu)) return 'hi';
+  if (touch) return 'std';
+  return cores >= 8 ? 'hi' : 'std';
 }
 
 async function boot() {
@@ -242,7 +243,7 @@ async function boot() {
   $('loader').classList.add('hidden');
   $('menu').classList.remove('hidden');
   const rec = autoDetect();
-  $('auto-tip').textContent = `已根据设备自动推荐：${QUALITIES[rec].label}画质 · GPU: ${(/NVIDIA|GeForce/i.test('x') ? 'NV' : '自适应')}`;
+  $('auto-tip').textContent = `${t('已根据设备自动推荐：')}${t(QUALITIES[rec].label)} ${t('画质')} · ${t('自适应')}`;
   document.querySelectorAll('.q-card').forEach(b => {
     if (b.dataset.q === rec) b.classList.add('rec');
     b.onclick = () => {
@@ -339,7 +340,7 @@ function addVolumetricCones() {
 
 // ───────────────────────── missions UI ─────────────────────────
 function renderMissions() {
-  const arr = missions.map((m, i) => ({ text: m.text, done: m.done, active: i === activeMission && !m.done, extra: '' }));
+  const arr = missions.map((m, i) => ({ ...m, active: i === activeMission && !m.done }));
   UI.renderMissions(arr);
 }
 function advanceMission() {
@@ -374,7 +375,7 @@ function updateGrid(dt, st) {
   const online = rigs.filter(r => r.online).length;
   if (online !== grid.online) {
     grid.online = online;
-    if (mAct() === 'grid') { missions[0].text = gridText(online); renderMissions(); }
+    if (mAct() === 'grid') { missions[0].n = online; renderMissions(); }
   }
 
   // ── drain: the drivetrain, the lamps and the relay are all the same battery
@@ -440,7 +441,7 @@ function updateGrid(dt, st) {
       }
       shockWave(tgt.x, surfaceAt(tgt.x, tgt.z) + 0.5, tgt.z);
       UI.toast(`✔ ${tgt.name} 已复电 — 光台跃迁解锁（${done}/${GRID_COUNT}）`);
-      if (mAct() === 'grid') { missions[0].text = gridText(done); renderMissions(); }
+      if (mAct() === 'grid') { missions[0].n = done; renderMissions(); }
       if (done >= GRID_COUNT) onGridComplete();
     }
   } else {
@@ -652,7 +653,7 @@ function updateRace(dt) {
     r.children[0].material.opacity = i === race.idx ? 0.9 : 0.15;
     r.rotation.z += dt * (i === race.idx ? 1.2 : 0.2);
   });
-  UI.raceShow(true, fmtTime(race.t), `检查点 ${race.idx}/${race.gates.length}`);
+  UI.raceShow(true, fmtTime(race.t), `${t('检查点')} ${race.idx}/${race.gates.length}`);
 }
 
 // ───────────────────────── main update ─────────────────────────
@@ -721,19 +722,19 @@ function update(dt) {
     for (const s of base.samples) if (!s.taken && Math.hypot(phys.x - s.x, phys.z - s.z) < 10) zone = base.infoZones.find(z => z.key === 'samples');
   }
   if (zone !== lastInfoZone) { lastInfoZone = zone; UI.showInfo(zone); }
-  if (zone?.key === 'tanks' && !leakFixed) zone.hudAction = `靠近白色雾流，按住 ${input.isTouch ? '「交互」' : 'E'} 修复`;
-  if (zone?.key === 'watch' && launchArmed && launch.phase === 'idle') zone.hudAction = '★ 已抵达观礼台 — 发射程序即将启动';
+  if (zone?.key === 'tanks' && !leakFixed) zone.hudAction = `${t('靠近白色雾流，按住')} ${input.isTouch ? t('「交互」') : 'E'} ${t('修复')}`;
+  if (zone?.key === 'watch' && launchArmed && launch.phase === 'idle') zone.hudAction = t('★ 已抵达观礼台 — 发射程序即将启动');
   // The light show was a discoverable-by-accident feature; it is the one thing to do at the pad
   // after dark, so the panel says so in the same slot the repair instruction uses.
   if (zone?.key === 'launch' && st.nightF > 0.5 && showOn <= 0 && launch.phase === 'idle')
-    zone.hudAction = `按住 ${input.isTouch ? '「交互」' : 'E'} 点亮星舰灯光秀`;
+    zone.hudAction = `${t('按住')} ${input.isTouch ? t('「交互」') : 'E'} ${t('点亮星舰灯光秀')}`;
 
   // missions
   const nearLeak = Math.hypot(phys.x - base.leakPoint.x, phys.z - base.leakPoint.z) < 12;
   if (mAct() === 'leak' && !leakFixed) {
     if (nearLeak && inp.interact > 0 && phys.speed < 1.5) {
       repairHold += dt;
-      UI.showInfo({ ...lastInfoZone || base.infoZones.find(z => z.key === 'tanks'), hudAction: `密封中… ${Math.min(100, Math.round(repairHold / 3 * 100))}%`, key: 'tanks' });
+      UI.showInfo({ ...lastInfoZone || base.infoZones.find(z => z.key === 'tanks'), hudAction: `${t('密封中…')} ${Math.min(100, Math.round(repairHold / 3 * 100))}%`, key: 'tanks' });
       if (repairHold >= 3) {
         leakFixed = true; missions[1].done = true;
         UI.toast('✔ 泄漏已封堵 — 推进剂压力恢复'); audio.radio('good'); advanceMission();
@@ -744,7 +745,7 @@ function update(dt) {
     for (const s of base.samples) {
       if (!s.taken && Math.hypot(phys.x - s.x, phys.z - s.z) < 4.2) {
         s.taken = true; s.group.visible = false; samplesTaken++;
-        missions[2].text = sampleText(samplesTaken);
+        missions[2].n = samplesTaken;
         renderMissions(); audio.radio('beep'); UI.toast(`✦ 样本 ${samplesTaken}/${SAMPLE_COUNT} 已入库`);
         for (let i = 0; i < 40; i++) fx.spark.emit(s.x, 1, s.z, (Math.random() - .5) * 8, 3 + Math.random() * 5, (Math.random() - .5) * 8, 0.8, 2);
         if (samplesTaken >= SAMPLE_COUNT) { missions[2].done = true; advanceMission(); }
@@ -846,14 +847,14 @@ function update(dt) {
   teleHint.classList.toggle('hidden', !padHint);
   if (padHint) {
     teleHint.innerHTML = padHere.online
-      ? `◈ ${padHere.name} 光台已就绪 — 按 <kbd>G</kbd> 跃迁（<kbd>M</kbd> 全区地图）`
-      : `⛔ ${padHere.name} 光台无电 — 复电后才能成像跃迁`;
+      ? `◈ ${t(padHere.name)} ${t('光台已就绪 — 按')} <kbd>G</kbd> ${t('跃迁')}（<kbd>M</kbd> ${t('全区地图')}）`
+      : `⛔ ${t(padHere.name)} ${t('光台无电 — 复电后才能成像跃迁')}`;
   } else if (grid.target && phys.speed < 1.6 && !teleOpen) {
     teleHint.classList.remove('hidden');
     const pct = Math.round(grid.target.power * 100);
     teleHint.innerHTML = grid.battery > LINK_MIN
-      ? `◈ 并网中 · ${grid.target.name} <b>${pct}%</b> — 保持停车直到反应桩亮起`
-      : `⚡ 电量不足（${Math.round(grid.battery * 100)}%）— 无法为 ${grid.target.name} 并网，先回光台补电`;
+      ? `◈ ${t('并网中')} · ${t(grid.target.name)} <b>${pct}%</b> — ${t('保持停车直到反应桩亮起')}`
+      : `⚡ ${t('电量不足')}（${Math.round(grid.battery * 100)}%）— ${t('无法并网，先回光台补电')}`;
   }
   teleHint._fab.classList.toggle('hidden', teleOpen || photo.on);
   teleHint._mute.classList.toggle('hidden', photo.on);
@@ -1007,7 +1008,10 @@ function update(dt) {
   // HUD
   UI.setSpeed(phys.speed * 3.6);
   if (Math.floor(elapsed * 2) !== Math.floor((elapsed - dt) * 2)) {
-    UI.setTop(st.clock, stormF > 0.5 ? '沙尘暴' : st.nightF > 0.5 ? '夜晚' : '晴朗', quality.label, Math.round(fpsAvg));
+    UI.setTop(st.clock, stormF > 0.5 ? '沙尘暴' : st.nightF > 0.5 ? '夜晚' : '晴朗',
+      // A tier name that no longer describes what is on screen is a lie in the corner of the HUD,
+      // so the auto-degrade says so where the player chose the tier.
+      quality.label + (degradeLevel ? ' · 已降档' : ''), Math.round(fpsAvg));
   }
 }
 
@@ -1101,7 +1105,7 @@ $('start-btn').onclick = async () => {
   audio.radio('beep');
 };
 
-boot().catch(e => { console.error('BOOT_FAIL', e); $('load-text').textContent = '启动失败：' + (e && e.message || e); });
+boot().catch(e => { console.error('BOOT_FAIL', e); $('load-text').textContent = t('启动失败：') + (e && e.message || e); });
 renderer.setAnimationLoop(tick);
 
 // ───────────────────────── test / demo hooks (URL params) ─────────────────────────
@@ -1111,8 +1115,8 @@ window.__RSB = {
     base.gridRigs.forEach(r => { r.online = true; r.power = 1; r.tp.online = true; });
     grid.online = GRID_COUNT; grid.battery = 1; grid.dead = false;
     missions.forEach(m => { if (m.id !== 'watch') m.done = true; });
-    missions[0].text = gridText(GRID_COUNT);
-    samplesTaken = SAMPLE_COUNT; missions[2].text = sampleText(SAMPLE_COUNT);
+    missions[0].n = GRID_COUNT;
+    samplesTaken = SAMPLE_COUNT; missions[2].n = SAMPLE_COUNT;
     advanceMission();
   },
   startStorm: () => { env?.toggleWeather(); },
@@ -1247,12 +1251,18 @@ window.__RSB = {
   },
   cam: () => ({ pos: camera.position.toArray().map(n => +n.toFixed(1)), rover: rover ? rover.group.position.toArray().map(n => +n.toFixed(1)) : null, dist: rover ? +camera.position.distanceTo(rover.group.position).toFixed(1) : null, scale: rover ? rover.group.scale.x : null, vis: rover ? rover.group.visible : null, rot: rover ? rover.group.rotation.toArray().slice(0, 3).map(n => +(n * 57.3).toFixed(1)) : null }),
 };
+// The language control lives outside the scene, so it is reachable on the menu, before the world
+// finishes building, and after a boot failure. Everything it changes is re-rendered rather than
+// reloaded — the base took sixteen seconds to build and none of it is language-dependent.
+mountLangButton();
+onChange(() => { renderMissions(); UI.relabel(); });
+
 {
   const qp = new URLSearchParams(location.search);
   if (qp.get('auto')) {
     const tryStart = () => {
       if (document.getElementById('menu').classList.contains('hidden')) { setTimeout(tryStart, 120); return; }
-      qKey = qp.get('auto') === '1' ? (autoDetect()) : qp.get('auto');
+      qKey = QUALITIES[qp.get('auto')] ? qp.get('auto') : autoDetect();
       $('start-btn').onclick();
       const demo = qp.get('demo');
       setTimeout(() => {

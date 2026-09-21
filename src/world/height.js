@@ -1,5 +1,6 @@
 import { fbm, vnoise, ridge, mulberry32, smoothstep, lerp, clamp } from '../utils/noise.js';
 import { TERRAIN, ZONES, ISLAND } from '../config.js';
+import { STREETS, STREET_HW } from './plan.js';
 
 // ---- shallow decorative craters (outside the playfield, for silhouette) ----
 const crater = (x, z, r, depth) => ({ x, z, r, depth: Math.min(depth, r * 0.12) });
@@ -21,11 +22,12 @@ const pads = [];
 for (const zn of Object.values(ZONES)) {
   if (zn.padHeight !== undefined) pads.push({ x: zn.pos[0], z: zn.pos[1], r: zn.radius, h: zn.padHeight });
 }
-const H = ZONES.hub.pos;
-const roads = [
-  [H, ZONES.habitat.pos, 7], [H, ZONES.industry.pos, 7], [H, ZONES.comms.pos, 7],
-  [H, ZONES.launch.pos, 7], [H, ZONES.science.pos, 7],
-];
+// The carriageway the rover actually rolls on: the street grid from the site plan, flattened to the
+// same engineered level as the pads. It used to be five spokes from the hub to each district, which
+// is why every district ended up with its buildings arranged radially around a centre they shared
+// with the plaza — a spoke layout gives you no intersections, no frontage and no block to sit a
+// building on.
+const roads = STREETS.map(s => [s.a, s.b, STREET_HW]);
 function distToSeg(px, pz, a, b) {
   const ax = a[0], az = a[1], bx = b[0], bz = b[1];
   const dx = bx - ax, dz = bz - az;

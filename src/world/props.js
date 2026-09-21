@@ -5,6 +5,7 @@ import { mulberry32, vnoise } from '../utils/noise.js';
 import { loadModel, cloneModel, cloneMaterials } from './assets.js';
 import { mergeInto, noMerge } from './merge.js';
 import { applySurfaceDetail } from './surface_detail.js';
+import { coverDiscs, discLayout, streetEncroach, STREETS, STREET_HW, CORRIDOR, audit } from './plan.js';
 
 // ─── RED STARBASE · compact diorama ───
 // One ~110 m island, six readable landmarks, everything hand-placed.
@@ -186,7 +187,7 @@ export async function buildBase(scene, quality) {
     o.scale.setScalar(s);
     o.position.set(x, surfaceAt(x, z) + dy, z);
     o.rotation.y = ry || 0;
-    G.add(o); return o;
+    CUR.add(o); return o;
   };
   const k = (name, x, z, ry, sc = 1) => put(name, x, z, S * sc, ry);
 
@@ -370,19 +371,128 @@ export async function buildBase(scene, quality) {
       m.castShadow = true; m.receiveShadow = true;
       grp.add(m);
     }
-    (parent || G).add(grp); return grp;
+    (parent || CUR).add(grp); return grp;
   };
   const box = (w, h, d, mat, x, y, z, parent) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
-    (parent || G).add(m); return m;
+    (parent || CUR).add(m); return m;
   };
   const cyl = (rt, rb, h, mat, x, y, z, seg = 18, parent) => {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
     m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
-    (parent || G).add(m); return m;
+    (parent || CUR).add(m); return m;
   };
   const colliders = [];
+  // ─── footprints ───
+  // A prop's collision discs used to be typed by hand in the line below the code that drew it, and
+  // the two drifted apart: an r=3.4 disc around a deck whose furniture spanned 6 m, an r=1.6 disc
+  // around a 0.6 m telescope, and three gantry legs 3.6 m apart wearing r=5.0 armour — which is how
+  // the base ended up with 43 pairs of overlapping discs and pockets the rover could enter but never
+  // leave. So props are now drawn inside an authoring scope, and their collision comes from the lot
+  // rectangle they occupy: measured off the geometry by default, authored where the measurement
+  // would be wrong (an arch you drive under, a rotated gantry). Discs are then the fewest that cover
+  // that rectangle, which is why a long low building no longer carries one absurd central balloon.
+  let CUR = G;
+  let ZONE = '?';                       // the district being composed; the audit's grouping key
+  const lots = [];
+  const isDecal = m => m.isMesh && Math.abs(m.rotation.x + Math.PI / 2) < 0.02;
+  const measured = () => {
+    CUR.updateMatrixWorld(true);
+    const b = new THREE.Box3(), t = new THREE.Box3();
+    let n = 0;
+    CUR.traverse(m => {
+      if (!m.isMesh || isDecal(m) || !m.geometry) return;
+      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+      t.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld);
+      b.union(t); n++;
+    });
+    return n ? b : null;
+  };
+  // one rectangle → the discs that hold it, placed in world space
+  const lot = (id, cx, cz, w, d, ry = 0) => {
+    const cos = Math.cos(ry), sin = Math.sin(ry);
+    for (const p of coverDiscs(w, d)) {
+      colliders.push({ x: cx + p.dx * cos + p.dz * sin, z: cz - p.dx * sin + p.dz * cos,
+                       r: p.r, prop: `${ZONE}:${id}`, zone: ZONE });
+    }
+    lots.push({ id: `${ZONE}:${id}`, x: cx, z: cz, w: +w.toFixed(1), d: +d.toFixed(1) });
+    return id;
+  };
+  // A model template's own XZ outline, measured once and reused for every clone. The hand-typed
+  // radius it used to be replaced with is what drifted: an r=1.6 disc around a 0.62 m telescope,
+  // an r=0.8 disc around a flag mast, an r=3.4 disc around 6 m of deck furniture.
+  const tplBox = new Map();
+  const footOf = name => {
+    let b = tplBox.get(name);
+    if (!b) {
+      const root = models[name];
+      root.updateMatrixWorld(true);
+      const t = new THREE.Box3().setFromObject(root);
+      b = { w: t.max.x - t.min.x, d: t.max.z - t.min.z,
+            cx: (t.min.x + t.max.x) / 2, cz: (t.min.z + t.max.z) / 2 };
+      tplBox.set(name, b);
+    }
+    return b;
+  };
+  // place a model and give it the collision its geometry actually occupies
+  const kSolid = (name, x, z, ry, sc = 1, id) => {
+    putSolid(name, x, z, S * sc, ry, id);
+  };
+  const putSolid = (name, x, z, s, ry, id) => {
+    put(name, x, z, s, ry);
+    const b = footOf(name), cos = Math.cos(ry || 0), sin = Math.sin(ry || 0);
+    lot(id || name, x + (b.cx * cos + b.cz * sin) * s, z - (b.cx * sin - b.cz * cos) * s,
+        b.w * s, b.d * s, ry || 0);
+    return id;
+  };
+  // A gantry portal is four stanchions carrying a girder. The bay under it is driveable ground, so
+  // the collision is the feet and nothing else — a disc on the centre would wall off the very space
+  // the portal is built to enclose, and one oversized disc per foot eats 3.2 m of daylight each.
+  const GANTRY_FEET = [[-5.6, -1.9], [5.6, -1.9], [-5.6, 1.9], [5.6, 1.9]];
+  const portal = (id, x, z, s, ry) => {
+    beginProp(id);
+    put('gantry_service', x, z, s, ry, 0);
+    endProp({ legs: GANTRY_FEET.map(([a, b]) => [a * s, b * s, 1.5, 1.5]), at: [x, z], ry });
+  };
+  const beginProp = id => { CUR = new THREE.Group(); CUR.name = id; G.add(CUR); return CUR; };
+  // opts: w/d/ry override the measurement; legs [[dx,dz,w,d],...] replaces it entirely (a prop you
+  // drive under or between); platform makes the whole footprint driveable deck instead of a wall.
+  const endProp = (opts = {}) => {
+    const id = CUR.name;
+    const b = measured();
+    if (opts.platform) {
+      const cx = (b.min.x + b.max.x) / 2, cz = (b.min.z + b.max.z) / 2;
+      for (const p of coverDiscs(b.max.x - b.min.x, b.max.z - b.min.z)) {
+        colliders.push({ x: cx + p.dx, z: cz + p.dz, r: p.r, prop: `${ZONE}:${id}`, zone: ZONE,
+                         floor: opts.platform, top: opts.deck });
+      }
+      lots.push({ id: `${ZONE}:${id}`, x: cx, z: cz, w: +(b.max.x - b.min.x).toFixed(1), d: +(b.max.z - b.min.z).toFixed(1) });
+    } else if (opts.legs) {
+      // legs are given in the prop's own local metres, so an open portal can be authored as
+      // "its four stanchions" wherever it stands instead of re-solving the rotation per call site
+      const ox = opts.at ? opts.at[0] : 0, oz = opts.at ? opts.at[1] : 0;
+      const c = Math.cos(opts.ry || 0), si = Math.sin(opts.ry || 0);
+      for (const [i, [dx, dz, w, d]] of opts.legs.entries())
+        lot(`${id}#${i}`, ox + dx * c + dz * si, oz - dx * si + dz * c, w, d, opts.ry);
+    } else if (opts.w) {
+      lot(id, opts.x ?? (b.min.x + b.max.x) / 2, opts.z ?? (b.min.z + b.max.z) / 2, opts.w, opts.d ?? opts.w, opts.ry);
+    } else if (b) {
+      lot(id, (b.min.x + b.max.x) / 2, (b.min.z + b.max.z) / 2, b.max.x - b.min.x, b.max.z - b.min.z);
+    }
+    if (opts.expose) lots[lots.length - 1] = { ...lots[lots.length - 1], ...opts.expose };
+    for (const c of [...CUR.children]) { CUR.remove(c); G.add(c); }
+    G.remove(CUR);
+    CUR = G;
+    return id;
+  };
+  // The report the old layout could not produce: which districts touch each other, which ones are
+  // standing in a carriageway, and how much of the drawn geometry is actually collision-bearing.
+  const auditPlan = () => {
+    const a = audit(colliders.filter(c => c.floor === undefined)
+      .map(c => ({ x: c.x, z: c.z, r: c.r, zone: c.zone, prop: c.prop, id: c.prop })));
+    return { ...a, discs: colliders.length, lots: lots.length, zones: [...new Set(lots.map(l => l.id.split(':')[0]))] };
+  };
   const infoZones = [];
   const sparkPoints = [];
   const beacons = [];
@@ -399,6 +509,7 @@ export async function buildBase(scene, quality) {
   // ══════════ HUB — plaza, arch gate, flagpole, teleport ══════════
   {
     const [hx, hz] = ZONES.hub.pos;
+    ZONE = 'hub';
     const deckBox = (o) => { o.updateMatrixWorld(true); return new THREE.Box3().setFromObject(o); };
     {
       // A 24 m blank slab in the middle of the player's arrival shot was the loudest "nothing has
@@ -459,13 +570,14 @@ export async function buildBase(scene, quality) {
       }
     }
     const deckTopY = (o) => deckBox(o).max.y;
-    for (const [pl, sgn] of [[k('platform_high', hx - 11, hz + 9, 0.6), -1],
-                             [k('platform_high', hx + 11, hz + 9, -0.6), 1]]) {
+    for (const sgn of [-1, 1]) {
       // A raised deck with nothing on it is a modelling leftover, and there were two framing the
       // plaza. `dy` is an offset from terrain height, so carrying the deck's own top through it
       // seats equipment on the platform without a second placement function.
-      const dy = deckTopY(pl) - surfaceAt(pl.position.x, pl.position.z);
-      const cx = pl.position.x, cz = pl.position.z;
+      const cx = hx + sgn * 11, cz = hz + 9;
+      beginProp(`service-deck-${sgn > 0 ? 'east' : 'west'}`);
+      const pl = k('platform_high', cx, cz, -sgn * 0.6);
+      const dy = deckTopY(pl) - surfaceAt(cx, cz);
       put('machine_generator', cx - sgn * 1.4, cz - 1.3, 2.0, 0.35, dy);
       put('desk_computer', cx + sgn * 1.9, cz - 1.5, 1.5, sgn * 2.4, dy);
       put('barrels', cx + sgn * 2.1, cz + 1.6, 1.6, 0.8, dy);
@@ -473,7 +585,11 @@ export async function buildBase(scene, quality) {
       // What actually lives on a raised service deck is a comms mast and its feeder pillar.
       put('machine_wireless', cx - sgn * 1.7, cz + 1.5, 0.5, -0.4, dy);
       box(0.7, 0.9, 0.5, M.struct, cx - sgn * 2.5, deckTopY(pl) + 0.45, cz + 0.6);
-      colliders.push({ x: cx, z: cz, r: 3.4 });
+      // The deck is the obstacle; everything standing on it is 2 m above the rover's roof and needs
+      // no collider. Measuring the authoring group instead swept the mast's own wide geometry into
+      // the footprint and gave a 6 m platform a 16 m solid peanut that swallowed the ring buildings.
+      const df = footOf('platform_high');
+      endProp({ w: df.w * S, d: df.d * S, x: cx, z: cz });
     }
     // Spaceport Gate 01 spans the south approach, i.e. the first thing in frame at spawn. The Blender
     // `arch` pack wrapped both legs in an emissive cyan skin and hung the name in front of them on a
@@ -482,6 +598,7 @@ export async function buildBase(scene, quality) {
     // airfield, so it is built as one — jointed pylons carrying a box-girder beam with the sign
     // painted on both faces.
     {
+      beginProp('spaceport-gate');
       const gx = hx, gz = hz - 13.5, gy = surfaceAt(gx, gz);
       const legX = (sgn) => gx + sgn * 8.1;
       const shaftH = 2.35, shaftN = 4, baseY = gy + 0.78;
@@ -588,13 +705,15 @@ export async function buildBase(scene, quality) {
         l.rotation.x = Math.PI / 2 + 0.5;
       }
     }
-    colliders.push({ x: hx - 8.1, z: hz - 13.5, r: 2.5 }, { x: hx + 8.1, z: hz - 13.5, r: 2.5 });
+    // The gate is an arch you drive through, so its collision is its two pylons — never a disc on
+    // the centre line, which is what used to wall off the lane the gate exists to mark.
+    endProp({ legs: [[hx - 8.1, hz - 13.5, 4.3, 3.6], [hx + 8.1, hz - 13.5, 4.3, 3.6]] });
     // The pack's `rail` is a flat painted panel: edge-on to a moving camera it vanished, face-on it
     // read as a lane stripe trowelled onto the sand. A barrier has three depths of silhouette —
     // kerb, lower tube, top tube — and posts to interrupt it, so it survives every viewpoint.
     const barrier = (bx) => {
       const zs = [], ys = [];
-      for (let i = 0; i <= 5; i++) { const z = hz - 23.0 + i * 2.16; zs.push(z); ys.push(surfaceAt(bx, z)); }
+      for (let i = 0; i <= 4; i++) { const z = hz - 21.0 + i * 2.16; zs.push(z); ys.push(surfaceAt(bx, z)); }
       for (let i = 0; i < zs.length; i++) {
         cyl(0.075, 0.095, 1.2, M.white, bx, ys[i] + 0.6, zs[i], 10);
         cyl(0.105, 0.105, 0.15, M.hazard, bx, ys[i] + 1.06, zs[i], 10);
@@ -614,6 +733,8 @@ export async function buildBase(scene, quality) {
       }
     };
     barrier(hx - 5.2); barrier(hx + 5.2);
+    lot('gate-barriers', hx - 5.2, hz - 16.68, 0.36, 8.7);
+    lot('gate-barriers', hx + 5.2, hz - 16.68, 0.36, 8.7);
     // flag mast
     const my = zoneY(ZONES.hub);
     cyl(0.12, 0.16, 7, M.white, hx + 5.5, my + 3.5, hz + 4, 8);
@@ -699,40 +820,50 @@ export async function buildBase(scene, quality) {
     teleports.push({ key: 'hub', name: ZONES.hub.name, x: hx - 8.5, z: hz + 11 });
     k('astronautA', hx + 3, hz + 6, 2.4);
     k('craft_speederA', hx + 10, hz + 1, 0.9);
-    colliders.push({ x: hx + 5.5, z: hz + 4, r: 0.8 });
+    // A flag mast is a 16 cm pole. Wrapping it in an r=0.8 disc meant the plaza had an invisible
+    // metre-wide column nobody could see, in the exact line the player drives to reach the pad.
+    lot('flagmast', hx + 5.5, hz + 4, 0.45, 0.45);
     {
       // The plaza was a handful of props on an empty plain: no skyline in any direction, which is
-      // most of why the settlement read as small and cheap. A service ring at r≈22 gives every
-      // sightline a back wall. The south gate channel stays open so the approach still leads in.
+      // most of why the settlement read as small and cheap. A ring of structures gives every
+      // sightline a back wall — but it has to obey the block. The old version swept r=22-30, which
+      // put buildings in the carriageways on all four sides, and it used 18 slots on that circle:
+      // 5.9 m of arc apiece, narrower than any hangar in the pack, so no matter how each disc was
+      // drawn they had to overlap. Eight slots on the building line get 13.4 m of arc, and each one
+      // is turned long-side to the square so the shallow dimension is the one that runs out at the
+      // street. The gate channel stays open so the approach still leads in.
+      const FRONT = 18.5;                       // the hub block's building line
       const RING = [
-        ['hangar_smallA', 1.05], ['gantry_service', 0.95], ['satelliteDish_detailed', 0.9],
-        ['machine_generatorLarge', 0.9], ['hangar_roundA', 0.55], ['machine_wireless', 1.0],
-        ['satelliteDish', 0.95], ['gantry_service', 1.0], ['gantry_service', 0.95], ['hangar_largeA', 0.42],
+        { n: 'hangar_roundA', k: 0.5, a: 45 },  { n: 'hangar_largeA', k: 0.62, a: 90 },
+        { n: 'machine_generatorLarge', k: 0.9, a: 135 }, { n: 'gantry_service', g: 1.0, a: 180 },
+        { n: 'satelliteDish', k: 0.9, a: 270 },
+        { n: 'machine_wireless', k: 1.1, a: 315 }, { n: 'structure_detailed', k: 0.8, a: 0 },
       ];
-      const rnd = mulberry32(0x5eed1);
-      // An open gantry with nothing standing inside it reads as scaffolding nobody finished, and
-      // there were six of them framing the plaza. The Blender portal carries its own transformers,
-      // switchgear, conductors and signage, so it needs no cargo.
-      for (let i = 0; i < 18; i++) {
-        const a = i / 18 * Math.PI * 2 + 0.17;
-        if (Math.hypot(Math.cos(a), Math.sin(a) + 1) < 0.8) continue;   // gate approach
-        const [name, sc] = RING[i % RING.length];
-        const r = 22 + rnd() * 8;
-        const x = hx + Math.cos(a) * r, z = hz + Math.sin(a) * r;
-        if (name === 'gantry_service') {
-          // 13.2 m of portal with legs at ±5.6 / ±1.9 — a ring collider on the centre would let a
-          // rover drive straight through a girder, so box the four feet.
-          const ry = a + rnd() * 0.6;
-          put('gantry_service', x, z, sc, ry, 0);
-          for (const [lx, lz] of [[-5.6, -1.9], [5.6, -1.9], [-5.6, 1.9], [5.6, 1.9]]) {
-            const px = lx * sc, pz = lz * sc;
-            colliders.push({ x: x + px * Math.cos(ry) + pz * Math.sin(ry),
-                             z: z - px * Math.sin(ry) + pz * Math.cos(ry), r: 1.6 });
-          }
-          continue;
+      for (const slot of RING) {
+        const a = slot.a * Math.PI / 180;
+        const s = slot.k !== undefined ? S * slot.k : slot.g;
+        const b = footOf(slot.n);
+        // Which side of the footprint faces the street is decided by the turn: at ry = a + 90° the
+        // pack's local x runs radially, at ry = a it is local z. Every slot is turned so the shallow
+        // dimension is the radial one — that is what keeps a deep hangar out of the carriageway.
+        const ry = b.w <= b.d ? a + Math.PI / 2 : a;
+        const radial = Math.min(b.w, b.d) * s;
+        const cos = Math.cos(ry), si = Math.sin(ry);
+        // A model's footprint is not centred on its origin, and `lot` knows it; the street test has
+        // to read the same discs the physics loop will, or the audit disagrees with the placement.
+        const ox = (b.cx * cos + b.cz * si) * s, oz = -(b.cx * si - b.cz * cos) * s;
+        let x = hx + Math.cos(a) * (FRONT - radial / 2), z = hz + Math.sin(a) * (FRONT - radial / 2);
+        for (let g = 0; g < 6; g++) {
+          const over = Math.max(...discLayout(b.w * s, b.d * s, x + ox, z + oz, ry)
+            .map(o => streetEncroach(o.x, o.z, o.r)));
+          if (over <= 0) break;
+          x -= Math.cos(a) * over; z -= Math.sin(a) * over;
         }
-        k(name, x, z, a + rnd() * 1.2, sc);
-        colliders.push({ x, z, r: 3.0 * sc });
+        if (slot.n === 'gantry_service') { portal(`ring-gantry-${slot.a}`, x, z, s, ry); continue; }
+        if (slot.n === 'gantry_service') { portal(`ring-gantry-${slot.a}`, x, z, s, ry); continue; }
+        // An open gantry with nothing standing inside it reads as scaffolding nobody finished; the
+        // Blender portal carries its own transformers, switchgear, conductors and signage.
+        kSolid(slot.n, x, z, ry, s / S, `ring-${slot.a}`);
       }
       // An ungated lamp ring dropped a post dead-centre in the carriageway, i.e. directly in the
       // rover's path at spawn. Same south exclusion as the structures, plus two lamps squared up on
@@ -740,7 +871,7 @@ export async function buildBase(scene, quality) {
       for (let i = 0; i < 10; i++) {
         const a = i / 10 * Math.PI * 2 + 0.31;
         if (Math.hypot(Math.cos(a), Math.sin(a) + 1) < 0.95) continue;
-        const lx = hx + Math.cos(a) * 15.5, lz = hz + Math.sin(a) * 15.5;
+        const lx = hx + Math.cos(a) * 13.8, lz = hz + Math.sin(a) * 13.8;
         // A 5.7 m mast landing 1.8 m off the pad centre grew straight up through the teleport disc
         // and hid the markings from the approach. Fast-travel nodes keep their own clear envelope.
         if (Math.hypot(lx - (hx - 8.5), lz - (hz + 11)) < 5.4) continue;
@@ -760,6 +891,7 @@ export async function buildBase(scene, quality) {
   // ══════════ LAUNCH — pad, tower, starship & rocket stack ══════════
   {
     const [px, pz] = ZONES.launch.pos;
+    ZONE = 'launch';
     k('platform_high', px, pz, 0, 2.4);               // raised launch deck
     k('platform_low', px + 13, pz + 9, 0.8);
     // A 33 m disc of injection-moulded white plastic was the brightest surface in the scene and it
@@ -837,13 +969,15 @@ export async function buildBase(scene, quality) {
     }
     ship.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     G.add(ship); shipGroup = ship;
-    colliders.push({ x: px, z: pz, r: 7 });
+    lot('starship', px, pz, 10, 10);
 
     // ── Chopstick tower, west of the ship: its six arms reach east to the hull
     // and the "RED STARBASE" board on its south face reads from the teleport pad.
     // Blender asset is 20.7 x 6.9 x 54.4 m with the flame trench 2.5 m below datum.
     put('launch_tower', px - 11, pz, 0.55, 0, 1.1);
-    colliders.push({ x: px - 12.5, z: pz, r: 4 });
+    // The tower is a 40 m chopstick whose six arms reach out over the vehicle. Its measured box
+    // would therefore wall off the whole pad, so the lot is the two rails it actually stands on.
+    lot('chopstick-tower', px - 12.5, pz, 6.5, 6.5);
     const towerBeacon = new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 8), M.beacon);
     towerBeacon.position.set(px - 11, py + 29.4, pz);
     G.add(towerBeacon); beacons.push(towerBeacon);
@@ -859,7 +993,7 @@ export async function buildBase(scene, quality) {
       part('rocket_sidesA', S * 1.9, 0.2);
       part('rocket_topA', S * 2.9, 0);
       G.add(stack);
-      colliders.push({ x: bx2, z: bz2, r: 4.5 });
+      lot('cargo-booster', bx2, bz2, 6.2, 6.2);
       sparkPoints.push({ x: bx2 + 3, y: by + 2.2, z: bz2 + 1.5, rate: 0.5 });
     }
     // support gantries + FATO tanks around the pad
@@ -892,13 +1026,12 @@ export async function buildBase(scene, quality) {
       const line = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 26, 0.075, 6), M.dark);
       line.castShadow = true; G.add(line);
       k('barrels', sx - 2.4, sz + 1.6, 0.5);
-      colliders.push({ x: sx, z: sz, r: 2.1 });
+      lot('lox-stand', sx, sz, 3.5, 3.5);
       sparkPoints.push({ x: sx, y: sy + 2.4, z: sz, rate: 0.22 });
     }
-    k('machine_generatorLarge', px - 8, pz - 10, 1.9);
-    put('gantry_service', px + 16, pz + 10, 1.0, 2.6, 0);   // umbilical portal for the cargo rocket
-    k('barrels', px - 14, pz + 14, 0.7);
-    colliders.push({ x: px - 8, z: pz - 10, r: 4 }, { x: px + 16, z: pz + 10, r: 4.5 }, { x: px - 14, z: pz + 14, r: 2.6 });
+    kSolid('machine_generatorLarge', px - 8, pz - 10, 1.9, 0.35, 'pad-diesel');
+    portal('cargo-umbilical', px + 15, pz + 12, 1.0, 2.6);   // umbilical portal for the cargo rocket
+    kSolid('barrels', px - 14, pz + 14, 0.7, 0.5, 'pad-drums');
 
     // pad wash ring for the light show — guaranteed in-frame from the trigger distance
     const wash = new THREE.Mesh(new THREE.TorusGeometry(13.5, 0.22, 8, 56), M.shipLightRing.clone());
@@ -936,24 +1069,21 @@ export async function buildBase(scene, quality) {
   // ══════════ HABITAT — round hangar, domes, corridors, greenhouse ══════════
   {
     const [vx, vz] = ZONES.habitat.pos;
-    k('hangar_roundA', vx - 7, vz - 4, 0.5, 1.4);     // the big living drum
-    colliders.push({ x: vx - 7, z: vz - 4, r: 8 });
+    ZONE = 'habitat';
+    // The settlement reads as a place, not a pile, because everything is on the block: the drum
+    // backs onto the interior, the dwelling domes and the glasshouse take the two frontages that
+    // face the avenue and the north street, and nothing is allowed further out than the building
+    // line — which is what used to put dome A's 8.5 m disc three metres into the carriageway.
     // The seated 14.4 m domes used to sit where the corridors and the round hangar drum are;
     // coincident shells z-fight into a torn black blob, so the settlement is spread out.
-    put('habitat_dome', vx + 18, vz + 14, 1.15, 0.6);      // seated 14.4 x 12.3 x 10.3 m
-    put('habitat_dome', vx - 2, vz + 22, 0.85, 2.3);
-    put('greenhouse', vx - 16, vz + 10, 1.25, -0.5, 0.05); // 13.7 x 12.0 x 5.0 m glasshouse
-    // the greenhouse is a rectangle, not a disc — three overlapping circles keep
-    // the rover out of the glass instead of letting it cut a corner off
-    const ghA = -0.5, ghux = Math.cos(ghA), ghuz = -Math.sin(ghA);
-    colliders.push({ x: vx + 18, z: vz + 14, r: 8.5 }, { x: vx - 2, z: vz + 22, r: 6.5 });
-    for (const t of [-3.6, 0, 3.6]) {
-      colliders.push({ x: vx - 16 + ghux * t, z: vz + 10 + ghuz * t, r: t === 0 ? 5.0 : 4.2 });
-    }
+    kSolid('hangar_roundA', vx - 7, vz - 5, 0.5, 1.3, 'drum');   // the big living drum
+    putSolid('habitat_dome', vx + 13, vz + 15, 1.1, 0.6, 'dome-a');   // seated 14.4 x 12.3 x 10.3 m
+    putSolid('habitat_dome', vx - 5, vz + 18, 0.85, 2.3, 'dome-b');
+    putSolid('greenhouse', vx - 17, vz + 5, 1.25, -0.5, 'glasshouse');  // 13.7 x 12.0 x 5.0 m
     // pressurised corridors linking drum → domes → greenhouse
-    k('corridor', vx + 3, vz + 3, 0.62, 1.1);
-    k('corridor_corner', vx + 9, vz + 12, 1.35);
-    k('corridor_end', vx - 8, vz + 9, 0.9);
+    kSolid('corridor', vx + 3, vz + 3, 0.62, 1.0, 'corridor-a');
+    kSolid('corridor_corner', vx + 9, vz + 11, 1.35, 1.0, 'corridor-b');
+    kSolid('corridor_end', vx - 8, vz + 9, 0.9, 1.0, 'corridor-c');
     // front step, awning planters, life
     k('stairs', vx + 11, vz - 10, 0.1);
     k('barrel', vx - 2, vz - 8, 1.1);
@@ -962,7 +1092,7 @@ export async function buildBase(scene, quality) {
     putDeck('teleport_pad', vx + 15, vz - 6, 1.05, 0, -0.08);
     teleports.push({ key: 'habitat', name: ZONES.habitat.name, x: vx + 15, z: vz - 6 });
     const vy = zoneY(ZONES.habitat);
-    beacons.push(cyl(0.35, 0.35, 0.5, M.beacon, vx - 7, vy + 8.3, vz - 4, 10));   // seated on the hangar drum
+    beacons.push(cyl(0.35, 0.35, 0.5, M.beacon, vx - 7, vy + 8.3, vz - 5, 10));   // seated on the hangar drum
     infoZones.push({
       key: 'habitat', pos: [vx, vz], r: 26, tag: 'SETTLEMENT · MODULE A-D',
       name: '火星生活舱区', params: ['加压体积 4×920 m³ · 气闸 ×2', '温室穹顶生物量 ~2.1 t', '住 here 的有 24 名工程师与植物学家'],
@@ -973,18 +1103,20 @@ export async function buildBase(scene, quality) {
   // ══════════ INDUSTRY — fab, cryo tanks, pipe racks + the leak skid ══════════
   {
     const [ix, iz] = ZONES.industry.pos;
-    k('hangar_largeA', ix - 6, iz - 8, 0.35, 0.35);   // the fab hall
-    colliders.push({ x: ix - 6, z: iz - 8, r: 10 });
-    k('machine_generatorLarge', ix + 11, iz - 4, 1.2);
-    k('machine_generator', ix + 10, iz + 6, 2.6);
-    k('machine_wireless', ix - 14, iz + 8, 0.9);
-    put('gantry_service', ix + 3, iz + 15, 0.86, 1.1, 0);   // fab substation gantry
-    colliders.push({ x: ix + 11, z: iz - 4, r: 4 }, { x: ix + 10, z: iz + 6, r: 4 }, { x: ix - 14, z: iz + 8, r: 4 }, { x: ix + 3, z: iz + 14, r: 4.5 });
-    // cryo row: three Blender tanks with hazard stripes
+    ZONE = 'industry';
+    // The works yard keeps its heavy end — fab hall and generator block — off the two frontages and
+    // puts the light stuff, the masts and the drum crates, on the street side, so the block reads
+    // from the avenue as a skyline with a base line rather than four boxes dropped at random.
+    kSolid('hangar_largeA', ix - 6, iz + 6, 0.35, 0.35, 'fab-hall');
+    kSolid('machine_generatorLarge', ix + 11, iz - 2, 1.0, 1.2, 'genset-a');
+    kSolid('machine_generator', ix + 12, iz + 7, 2.6, 1.4, 'genset-b');
+    kSolid('machine_wireless', ix - 14, iz + 14, 0.9, 1.1, 'yard-mast');
+    portal('fab-substation', ix + 2, iz + 16, 0.86, 1.1);   // fab substation gantry, an open portal
+    // cryo row: three Blender tanks with hazard stripes, stringed along the yard's north edge on
+    // their own skid pads so a rover can walk between the drums and the fab wall.
     for (let i = 0; i < 3; i++) {
-      const tx = ix + 17 - i * 0, tz = iz - 14 + i * 6.5;
-      put('cryo_tank', tx + (i === 1 ? 3 : 0), tz, 0.95, 0.5 + i, 0.24);
-      colliders.push({ x: tx + (i === 1 ? 3 : 0), z: tz, r: 3.0 });
+      const tx = ix + 17, tz = iz - 14 + i * 6.5;
+      putSolid('cryo_tank', tx + (i === 1 ? 3 : 0), tz, 0.95, 0.5 + i, `cryo-${i}`);
       sparkPoints.push({ x: tx, y: surfaceAt(tx, tz) + 1.8, z: tz - 1.6, rate: 0.45 + i * 0.1 });
     }
     // pipe rack from tanks toward the fab
@@ -992,8 +1124,7 @@ export async function buildBase(scene, quality) {
       k('pipe_straight', ix + 10 - 6 * i, iz - 4 + 6 * i, 0.75, 0.9 + i * 0.1);
     }
     k('pipe_corner', ix + 6, iz - 10, 0.4);
-    k('barrels', ix - 12, iz - 2, 2.0);               // crate of drums by the rail
-    colliders.push({ x: ix - 12, z: iz - 2, r: 2.8 });
+    kSolid('barrels', ix - 13, iz + 6, 2.0, 1.1, 'drum-crate');   // crate of drums by the rail
     k('rover', ix - 1, iz + 3, 1.8);                   // parked work rover
     putDeck('teleport_pad', ix - 3, iz + 20, 1.05, 0, -0.08);
     teleports.push({ key: 'industry', name: ZONES.industry.name, x: ix - 3, z: iz + 20 });
@@ -1007,11 +1138,11 @@ export async function buildBase(scene, quality) {
   // ── leak skid at LEAK_POS — the repair mission's focal point ──
   {
     const [mx, mz] = LEAK_POS;
+    ZONE = 'leak';
     const my2 = surfaceAt(mx, mz);
-    k('machine_generator', mx, mz + 2.5, 1.4, 0.8);   // the valve housing
+    kSolid('machine_generator', mx, mz + 2.5, 1.4, 0.8, 'valve-housing');   // the valve housing
     k('pipe_straight', mx - 5, mz - 1.5, 0.2);
     k('pipe_corner', mx + 4.5, mz - 2.5, 2.4);
-    colliders.push({ x: mx, z: mz + 2.5, r: 3.6 });
     // hazard ring + red beacon on a hooded mast
     for (let i = 0; i < 10; i++) {
       const a = i / 10 * Math.PI * 2;
@@ -1038,22 +1169,25 @@ export async function buildBase(scene, quality) {
   // ══════════ COMMS — dish knoll ══════════
   {
     const [cx2, cz2] = ZONES.comms.pos;
+    ZONE = 'comms';
+    // The listening post is laid out as an antenna farm should be: the big ear on its own deck at
+    // the centre of the block, the secondaries fanned out to the north frontage at the spacing their
+    // own dish spans require, and the huts and the feed portal set back off the avenue.
     k('platform_high', cx2, cz2, 0.2, 1.6);
     k('platform_low', cx2 - 6, cz2 + 8, 1.1, 1.2);
-    k('satelliteDish_detailed', cx2 - 1, cz2, 0.15, 2.3);   // the big ear
-    k('satelliteDish', cx2 + 9, cz2 - 6, 1.2);
-    k('satelliteDish', cx2 + 4, cz2 + 9, 2.9, 0.75);
-    k('machine_wireless', cx2 - 9, cz2 + 6, 0.5);
-    put('gantry_service', cx2 + 11, cz2 + 4, 0.78, 0.9, 0);  // array feed portal
-    k('hangar_smallA', cx2 - 10, cz2 + 11, 2.4);            // the listening post
+    kSolid('satelliteDish_detailed', cx2 - 1, cz2 - 1, 0.15, 1.6, 'main-ear');
+    kSolid('satelliteDish', cx2 + 10, cz2 - 9, 1.2, 0.85, 'dish-b');
+    kSolid('satelliteDish', cx2 + 2, cz2 + 13, 2.9, 0.7, 'dish-c');
+    kSolid('machine_wireless', cx2 - 12, cz2 + 4, 0.5, 1.1, 'array-mast');
+    portal('array-feed', cx2 + 12, cz2 + 3, 0.78, 0.9);   // array feed portal
+    kSolid('hangar_smallA', cx2 - 12, cz2 + 14, 2.4, 0.9, 'listening-post');
     k('desk_computer', cx2 - 6, cz2 + 8, 1.9);              // outdoor console on the low deck
     k('rail', cx2 - 3, cz2 + 10, 0.35);
     k('astronautA', cx2 - 4, cz2 + 7, 2.6);                 // whoever is on shift, listening to Earth
-    colliders.push({ x: cx2 - 1, z: cz2, r: 5 }, { x: cx2 + 9, z: cz2 - 6, r: 3 }, { x: cx2 + 4, z: cz2 + 9, r: 2.6 }, { x: cx2 - 10, z: cz2 + 11, r: 5 });
     putDeck('teleport_pad', cx2 - 9, cz2 - 8, 1.0, 0, -0.08);
     teleports.push({ key: 'comms', name: ZONES.comms.name, x: cx2 - 9, z: cz2 - 8 });
     const cy = zoneY(ZONES.comms);
-    beacons.push(cyl(0.3, 0.3, 0.45, M.beacon, cx2 + 4.6, cy + 4.4, cz2 + 1.5, 10));  // on the big dish's rim
+    beacons.push(cyl(0.3, 0.3, 0.45, M.beacon, cx2 + 3.6, cy + 4.4, cz2 - 1.5, 10));  // on the big dish's rim
     infoZones.push({
       key: 'comms', pos: [cx2, cz2], r: 22, tag: 'DEEP SPACE NETWORK · NODE M1',
       name: '通讯阵列', params: ['主碟 7.3 m · X 波段', '与地球单程时延 4–24 分钟', '日出日落各一次全星通联'],
@@ -1064,18 +1198,22 @@ export async function buildBase(scene, quality) {
   // ══════════ SCIENCE — crystal grove & field lab ══════════
   {
     const [sx, sz] = ZONES.science.pos;
+    ZONE = 'science';
     k('platform_low', sx, sz + 2, 0.4, 1.7);
     // a big alien growth the whole zone orbits around
     const big = seat(put('crystal', sx - 2, sz - 3, 2.6, 0.5, 0.6), 0.5);
     big.traverse(o => { if (o.isMesh) o.material = M.crystal; });
     scree(sx - 2, sz - 3, 6.2, 0.7);
+    // A crystal is a hard spire in a skirt of loose scree: only the spire is an obstacle, and the
+    // rubble is what the rover drives over. Ringing the footprints at r=1.2 left the grove reading
+    // as invisible bollards in a field of glass.
+    lot('anomaly-07', sx - 2, sz - 3, 4.4, 4.4);
     for (const [dx, dz, cs] of [[7, 4, 1.05], [-9, 5, 0.8], [3, 9, 0.62], [-5, -9, 0.9]]) {
       const c = seat(put('crystal', sx + dx, sz + dz, cs, dx * dz, cs * 0.34), 0.22);
       c.traverse(o => { if (o.isMesh) o.material = M.crystal; });
       scree(sx + dx, sz + dz, cs * 2.0, dx + dz);
-      colliders.push({ x: sx + dx, z: sz + dz, r: 1.2 });
+      lot(`shard-${dx}${dz}`, sx + dx, sz + dz, cs * 1.7, cs * 1.7);
     }
-    colliders.push({ x: sx - 2, z: sz - 3, r: 2.6 });
     k('desk_computer', sx + 9, sz - 4, 2.2);
     k('craft_speederA', sx - 11, sz - 2, 1.1, 0.8);
     k('craterLarge', sx + 14, sz + 12, 0.7, 1.3);
@@ -1091,6 +1229,7 @@ export async function buildBase(scene, quality) {
   // ══════════ WATCH DECK — the grandstand for the launch ══════════
   {
     const [wx, wz] = ZONES.watch.pos;
+    ZONE = 'watch';
     const wy = Math.max(...Array.from({ length: 24 }, (_, i) => {
       const a = i / 24 * 6.283, rr = (i % 3) / 2 * 7;
       return surfaceAt(wx + Math.cos(a) * rr, wz + Math.sin(a) * rr);
@@ -1261,7 +1400,8 @@ export async function buildBase(scene, quality) {
     G.add(board);
 
     // `top` lets the chase camera fly over; the rover parks on the deck
-    colliders.push({ x: wx, z: wz, r: 9, top: deckTop + 0.25, floor: deckTop });
+    colliders.push({ x: wx, z: wz, r: 9, top: deckTop + 0.25, floor: deckTop,
+                     prop: 'watch:deck', zone: 'watch' });
     infoZones.push({
       key: 'watch', pos: [wx, wz], r: 20, tag: 'VIEWING DECK · SAFE DIST 60 m',
       name: '发射观礼台', params: ['视角方位直指 PAD ONE', '点火后 60 m 处会感到大气的轻推'],
@@ -1273,9 +1413,9 @@ export async function buildBase(scene, quality) {
   // ══════════ NIGHT HILL — scope + lantern ring on the rim ══════════
   {
     const [nx, nz] = ZONES.night.pos;
+    ZONE = 'night';
     const ny = surfaceAt(nx, nz);
-    put('habitat_dome', nx + 6, nz - 4, 0.7, 1.7);
-    colliders.push({ x: nx + 6, z: nz - 4, r: 3.6 });
+    putSolid('habitat_dome', nx + 6, nz - 4, 0.7, 1.7, 'dome');
     for (let i = 0; i < 6; i++) {
       const a = i / 6 * 2.6 + 2.4;
       const lx = nx + Math.cos(a) * 9, lz = nz + Math.sin(a) * 9;
@@ -1291,7 +1431,9 @@ export async function buildBase(scene, quality) {
     // of the cylinder's own opaque cap (recessing below it hides nothing, and a metallic lens
     // mirrors the noon sun — AC1/AD1 forensics).
     scope.add(cyl(0.43, 0.43, 0.06, new THREE.MeshStandardMaterial({ color: 0x101216, roughness: 0.85, metalness: 0.05 }), 0, 1.43, 0, 12));
-    colliders.push({ x: nx - 7, z: nz - 6, r: 1.6 });
+    // A 1.2 m pier on a tripod does not need the r=1.6 armour it used to wear — that was a 3.2 m
+    // invisible drum around a 0.9 m column, on a hill the player walks around to find the scope.
+    lot('telescope', nx - 7, nz - 6, 1.0, 1.0);
     infoZones.push({
       key: 'night', pos: [nx, nz], r: 18, tag: 'OBSERVATION HILL',
       name: '夜空观赏丘', params: ['夜晚：按 N 快进到午夜', '灯光秀：夜晚靠近星舰按 E'],
@@ -1303,14 +1445,16 @@ export async function buildBase(scene, quality) {
   let wreckPos = null;
   {
     const [yx, yz] = ZONES.storm.pos;
+    ZONE = 'storm';
     const wy2 = surfaceAt(yx, yz);
     wreckPos = new THREE.Vector3(yx, wy2, yz);
     const w = put('lander', yx, yz, 1.15, 0.6, 0.45);
     w.rotation.z = 1.45; w.rotation.x = 0.25;         // down on its side
-    colliders.push({ x: yx, z: yz, r: 7 });
+    lot('dawn7', yx, yz, 10, 10);
     k('barrel', yx + 9, yz + 4, 1.9);
     k('barrel', yx + 11, yz + 1, -0.4);
     k('craft_speederA', yx - 8, yz + 8, 0.9, 0.7);    // the rescue craft that found it
+    lot('rescue-speeder', yx - 8, yz + 8, 3.4, 2.2, 0.7);
     for (let i = 0; i < 5; i++) {
       const a = i * 1.7;
       k('terrain_roadStraight', yx - 14 + Math.cos(a) * (i * 3.5), yz - 6 + Math.sin(a) * (i * 2.8), a, 0.7); // scorch debris strip
@@ -1358,7 +1502,7 @@ export async function buildBase(scene, quality) {
     car.add(star);
     car.traverse(o => { if (o.isMesh) o.castShadow = true; });
     G.add(car);
-    colliders.push({ x: rx, z: rz, r: 3.2 });
+    lot('roadster', rx, rz, 2.4, 5.0, 2.55);
     // a small cairn of sample crates so the spot reads as visited
     k('desk_computer', rx + 4, rz - 3, 1.8, 0.7);
     infoZones.push({
@@ -1399,25 +1543,24 @@ export async function buildBase(scene, quality) {
     });
   }
 
-  // ══════════ ROAD SETTING — lamps + centerline tiles between zones ══════════
+  // ══════════ ROAD SETTING — lamps + centerline tiles on the street grid ══════════
   {
-    const pairs = [
-      [ZONES.hub.pos, ZONES.launch.pos], [ZONES.hub.pos, ZONES.habitat.pos],
-      [ZONES.hub.pos, ZONES.industry.pos], [ZONES.hub.pos, ZONES.comms.pos],
-      [ZONES.hub.pos, ZONES.science.pos], [ZONES.launch.pos, ZONES.watch.pos],
-      [ZONES.watch.pos, ZONES.comms.pos],
-    ];
-    for (const [a, b] of pairs) {
-      const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz);
-      const n = Math.max(3, Math.round(l / 13));
+    // The road used to be painted along hand-picked zone-to-zone lines, which is why the carriageway
+    // you could see did not match the carriageway the terrain shader flattened. Now the same STREETS
+    // list that height.js compacts and plan.js audits is what gets tiled and lit.
+    const TILE = S * 1.7;                       // one kit road tile laid across the lane
+    for (const s of STREETS) {
+      const dx = s.b[0] - s.a[0], dz = s.b[1] - s.a[1], l = Math.hypot(dx, dz);
       const yaw = Math.atan2(dx, dz);
-      for (let i = 1; i < n; i++) {
+      const n = Math.round(l / TILE);
+      for (let i = 0; i <= n; i++) {
         const t = i / n;
-        const x = a[0] + dx * t, z = a[1] + dz * t;
-        k('terrain_roadStraight', x, z, yaw, 0.9);
-        if (i % 2 === 0) {
-          const ox = dz / l * 4.6, oz = -dx / l * 4.6;
-          const side = (i % 4 === 2) ? 1 : -1;
+        const x = s.a[0] + dx * t, z = s.a[1] + dz * t;
+        k('terrain_roadStraight', x, z, yaw, 1.7);
+        if (i % 3 === 1) {
+          // lamps stand on the shoulder, clear of the trafficable width but inside the setback
+          const ox = dz / l * 8.2, oz = -dx / l * 8.2;
+          const side = (i % 6 < 3) ? 1 : -1;
           put('lamp', x + ox * side, z + oz * side, 1.05, yaw + (side > 0 ? Math.PI / 2 : -Math.PI / 2), 0);
         }
       }
@@ -1477,9 +1620,36 @@ export async function buildBase(scene, quality) {
   {
     const iron = new THREE.MeshStandardMaterial({ color: 0x5a544b, roughness: 0.44, metalness: 0.86 });
     const soot = new THREE.MeshStandardMaterial({ color: 0x2a2825, roughness: 0.72, metalness: 0.5 });
+    ZONE = 'grid';
+    // A tap has to stand beside its pad, out of the carriageway, and clear of everything the
+    // district already owns. It used to wear a hand-typed 4.4 m offset, which in the habitat put
+    // the rig four metres inside a hangar. So it asks the plan for a free lot instead.
+    const siteFor = (px, pz, away, w, d) => {
+      const legal = [], best = [];
+      for (const rr of [3.9, 5.0, 6.3, 7.8, 9.5, 11.5]) {
+        for (let i = 0; i < 16; i++) {
+          const b = away + i * Math.PI / 8 - Math.PI;
+          const x = px + Math.sin(b) * rr, z = pz + Math.cos(b) * rr;
+          const ds = discLayout(w, d, x, z, b);
+          if (ds.some(o => streetEncroach(o.x, o.z, o.r) > 0)) continue;
+          let clear = Infinity;
+          for (const c of colliders) {
+            if (c.floor !== undefined) continue;
+            for (const o of ds) clear = Math.min(clear, Math.hypot(c.x - o.x, c.z - o.z) - c.r - o.r);
+          }
+          (clear >= CORRIDOR ? legal : best).push({ x, z, yaw: b, rr, clear });
+        }
+      }
+      // Hugging the pad beats a wide but distant lot — the tap is meant to be seen from the pad —
+      // so legal sites rank by radius first. If the district owns every one of the 96 candidates the
+      // emptiest loser is used, which is never as bad as the blind 4.4 m offset it replaced.
+      const pick = (legal.length ? legal : best).sort((p, q) => p.rr - q.rr || q.clear - p.clear)[0];
+      return pick || { x: px, z: pz, yaw: away };
+    };
     for (const tp of teleports) {
       const rad = Math.hypot(tp.x, tp.z) || 1;
-      const rx = tp.x + (tp.x / rad) * 4.4, rz = tp.z + (tp.z / rad) * 4.4;
+      const site = siteFor(tp.x, tp.z, Math.atan2(tp.x / rad, tp.z / rad), 2.6, 2.6);
+      const rx = site.x, rz = site.z;
       const rig = new THREE.Group();
       rig.position.set(rx, rimY(rx, rz, 2.05) - 0.06, rz);
       rig.rotation.y = Math.atan2(tp.x - rx, tp.z - rz);
@@ -1559,7 +1729,9 @@ export async function buildBase(scene, quality) {
       for (const o of rig.children) if (o !== beam && o !== plate) { o.castShadow = true; o.receiveShadow = true; }
 
       gridRigs.push({ key: tp.key, name: tp.name, tp, x: rx, z: rz, power: 0, shown: -1, core, beam, plate, mats: [coreMat, plateMat, beamMat] });
-      colliders.push({ x: rx, z: rz, r: 2.2 });
+      // The tap plate is 1.35 m across; the r=2.2 drum it used to wear was wide enough to keep the
+      // rover out of the very stand it had to park in.
+      lot('grid-rig', rx, rz, 2.6, 2.6);
     }
   }
 
@@ -1579,6 +1751,7 @@ export async function buildBase(scene, quality) {
   const flamePoint = new THREE.Vector3(SHIP_POS[0], 1.6, SHIP_POS[1]);
   return {
     group: G, colliders, infoZones, samples, sparkPoints, beacons, lightStrips, lightRings, showBeams, showBeamMats, shipMats, shipGroup, teleports, padGlow, heroLights, occluders, gridRigs, crystalMat: M.crystal,
+    plan: auditPlan, lots,
     leakPoint: new THREE.Vector3(LEAK_POS[0], surfaceAt(LEAK_POS[0], LEAK_POS[1]) + 1.8, LEAK_POS[1]),
     flamePoint,
     launchPadPos: new THREE.Vector3(...ZONES.launch.pos),

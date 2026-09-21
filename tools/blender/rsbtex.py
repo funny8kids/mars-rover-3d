@@ -18,6 +18,7 @@ import math, os, numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 TEXDIR = "/tmp/rsb_tex"
+TAU = math.tau
 PITCH_WELD = 1.25            # the pitch stainless ring segments actually arrive on
 TILE_TPS = 0.30              # thermal tile, flat edge to flat edge
 SQ3 = math.sqrt(3.0)
@@ -200,6 +201,61 @@ def panel_maps(tag="panel", pm=600.0, tile=0.85, tint=(1.0, 1.0, 1.0), base=236.
     return maps, u_m, v_m
 
 
+# ─────────────────────────── precast concrete ───────────────────────────
+def concrete_maps(tag="concrete", pm=400.0, tile=1.80, tint=(1.0, 1.0, 1.0), joints=True):
+    """Precast concrete: the board joints a form leaves behind, a form-tie dimple at each
+    joint's quarter points, dust in the hollows and fine aggregate standing proud of the
+    slurry. Cast steps read as poured work because of the joints and the ties, and nothing
+    else on them says so."""
+    u_m = v_m = tile
+    w = h = int(round(tile * pm))
+    U, V = _mesh(w, h, pm)
+    du = np.minimum(U % tile, tile - U % tile)
+    dv = np.minimum(V % tile, tile - V % tile)
+    if joints:
+        seam = np.clip(1.0 - du / 0.010, 0, 1) + np.clip(1.0 - dv / 0.010, 0, 1)
+        seam = np.clip(seam, 0, 1)
+        tie = np.exp(-(((du - tile / 4) / 0.020) ** 2 + (np.minimum(dv, tile - dv) / 0.020) ** 2)) \
+            + np.exp(-(((tile / 2 - du) / 0.020) ** 2 + (np.minimum(dv, tile - dv) / 0.020) ** 2)) \
+            + np.exp(-(((du - 3 * tile / 4) / 0.020) ** 2 + (np.minimum(dv, tile - dv) / 0.020) ** 2))
+        tie = np.clip(tie, 0, 1)
+    else:
+        seam = tie = np.zeros_like(du)
+    grit = _pnoise(w, h, int(tile / 0.0045), int(tile / 0.0045), 505) - 0.5
+    blotch = _pnoise(w, h, max(2, int(tile / 0.55)), max(2, int(tile / 0.55)), 707)
+    dust = _pnoise(w, h, max(2, int(tile / 1.7)), max(2, int(tile / 1.7)), 313)
+    height = -seam * 0.9 - tie * 0.5 + grit * 0.5 + blotch * 0.12
+    tone = np.clip(196 - seam * 34 - tie * 20 + grit * 16 + blotch * 26 + dust * 12, 60, 240)
+    rough = np.clip(206 + grit * 26 - blotch * 16 + seam * 14, 120, 255)
+    maps = {"basecolor": _save(np.dstack([tone * tint[0], tone * tint[1] * 0.985,
+                                          tone * tint[2] * 0.96]), tag + "_col"),
+            "rough": _save(rough, tag + "_rgh"),
+            "normal": _save(height_to_normal(height, 9.0), tag + "_nrm")}
+    return maps, u_m, v_m
+
+
+# ─────────────────────────── woven vinyl ───────────────────────────
+def weave_maps(tag="weave", pm=900.0, tile=0.024, tint=(1.0, 1.0, 1.0), base=150.0):
+    """The mesh a stadium seat is slung on: two sets of strands at right angles, each one
+    rounding over and pinching the other. `tile` is a strand pair, so it is only a few
+    millimetres — which is exactly the scale no modelled geometry could reach."""
+    u_m = v_m = tile
+    w = h = int(round(tile * pm))
+    U, V = _mesh(w, h, pm)
+    a = np.sin(U / tile * TAU) * 0.5 + 0.5
+    b = np.sin(V / tile * TAU) * 0.5 + 0.5
+    over = np.where(a > b, a, -b)                       # which strand is on top
+    crown = np.abs(over)
+    grit = _pnoise(w, h, 3, 3, 909)
+    tone = np.clip(base + crown * 58 + grit * 12, 20, 255)
+    rough = np.clip(178 - crown * 46 + grit * 18, 70, 255)
+    maps = {"basecolor": _save(np.dstack([tone * tint[0], tone * tint[1], tone * tint[2]]),
+                               tag + "_col"),
+            "rough": _save(rough, tag + "_rgh"),
+            "normal": _save(height_to_normal(crown + grit * 0.10, 5.0), tag + "_nrm")}
+    return maps, u_m, v_m
+
+
 # ─────────────────────────── painted lettering ───────────────────────────
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
@@ -252,7 +308,12 @@ PANELS = {
 
 ALL = dict(PANELS, **{"steel": steel_maps, "tps": tps_maps,
        "tps_dark": lambda: tps_maps(tag="tps_dark", tint=0.055), "burnt": burnt_maps,
-       "wordmark": lambda: decal_maps("STARBASE", "wordmark", 7.3, 5.0)})
+       "wordmark": lambda: decal_maps("STARBASE", "wordmark", 7.3, 5.0),
+       "deck_cast": lambda: concrete_maps(tag="deck_cast", tint=(0.615, 0.585, 0.525)),
+       "deck_plate": lambda: concrete_maps(tag="deck_plate", tile=1.5, joints=False,
+                                           tint=(0.30, 0.275, 0.245)),
+       "deck_weave": lambda: weave_maps(tag="deck_weave", tint=(0.34, 0.52, 0.72)),
+       })
 
 
 if __name__ == "__main__":

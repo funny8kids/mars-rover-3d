@@ -21,7 +21,7 @@ const G = new THREE.Group();
 export async function buildBase(scene, quality) {
   G.clear();
   const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
-    'crew_rover', 'optimus_bot', 'lamp', 'crystal', 'lander', 'teleport_pad',
+    'crew_rover', 'optimus_bot', 'watch_deck', 'lamp', 'crystal', 'lander', 'teleport_pad',
     'gantry_service', 'astronaut'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA', 'corridor', 'corridor_corner',
     'corridor_end', 'platform_high', 'platform_low', 'platform_large', 'machine_generator',
@@ -926,7 +926,7 @@ export async function buildBase(scene, quality) {
     // that is what they are now. The emissive guard is what keeps the hero lamps lit: their accents
     // carry a real emissive term and are the base's night lighting, not a surface colour.
     for (const [mname, root] of Object.entries(models)) {
-      if (!root || /^(starship_stack|crew_rover|optimus_bot|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad)$/.test(mname)) continue;
+      if (!root || /^(starship_stack|crew_rover|optimus_bot|watch_deck|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad)$/.test(mname)) continue;
       const deck = /^platform_/.test(mname);
       // A pipe elbow weathered to flat matte pale grey lost the one thing that says "manufactured":
       // a specular streak along its length. Outdoors it read as a 4 m cream boulder sitting in the
@@ -1327,113 +1327,16 @@ export async function buildBase(scene, quality) {
     // Azimuth the crowd looks down, and the opposite side of the deck where the seating sits.
     const face = Math.atan2(lpx - wx, lpz - wz);
     const back = face + Math.PI;
-    const plate = new THREE.MeshStandardMaterial({ color: 0x3d362e, roughness: 0.93, metalness: 0.05 });
-    const precast = new THREE.MeshStandardMaterial({ color: 0x8a8272, roughness: 0.88, metalness: 0.04 });
-    const webSeat = new THREE.MeshStandardMaterial({ color: 0x2c4560, roughness: 0.66, metalness: 0.16 });
-    const canopy = new THREE.MeshStandardMaterial({ color: 0xc9c2b2, roughness: 0.52, metalness: 0.42 });
-    // M.hazard is a saturated traffic paint that glows like a neon rope under a 3.4 sun. Deck
-    // marking is oxidised iron oxide over a primer, and it is a flat painted band, not a tube.
-    const safetyRed = new THREE.MeshStandardMaterial({ color: 0x6e2a19, roughness: 0.82, metalness: 0.04 });
+    // The whole grandstand is one Blender asset now: a cast drum with its form joints, four
+    // stepped tiers of woven seats, a canopy on tapered columns, a two-rail fence, bollard
+    // lamps and the broadcast camera — 270-odd bevelled parts welded into eleven buffers, with
+    // precast-concrete and woven-vinyl fields carrying the millimetre detail.
+    const deck = cloneModel(models.watch_deck);
+    deck.position.set(wx, wy, wz);          // the asset's own datum is the ground under the drum
+    deck.rotation.y = face;                 // its local +Y is the pad
+    deck.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    G.add(deck);
 
-    // A 16 m puck of injection-moulded white with one bench on it was the flattest thing on the
-    // island, and it sat directly between the rover and the launch pad so it filled every approach
-    // shot. It is now a grandstand: precast drum, dark wearing plate, tiered benches, shade canopy.
-    cyl(8.0, 8.4, 1.0, precast, wx, deckTop - 0.5, wz, 44);
-    cyl(7.94, 7.94, 0.08, plate, wx, deckTop + 0.04, wz, 44);
-    const band = new THREE.Mesh(new THREE.TorusGeometry(7.5, 0.05, 5, 72), safetyRed);
-    band.rotation.x = Math.PI / 2; band.position.set(wx, deckTop + 0.095, wz); G.add(band);
-    // A cast plate this wide is poured in segments, and the joints are the only thing that says so.
-    for (let i = 0; i < 16; i++) {
-      const a = i / 16 * Math.PI * 2 + 0.1;
-      const j = box(0.1, 0.02, 4.6, M.dark, wx + Math.sin(a) * 5.5, deckTop + 0.085,
-        wz + Math.cos(a) * 5.5, G);
-      j.rotation.y = a;
-    }
-    for (const rr of [4.2, 6.0]) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(rr, 0.045, 5, 52), M.dark);
-      ring.rotation.x = Math.PI / 2; ring.position.set(wx, deckTop + 0.088, wz); G.add(ring);
-    }
-    // Four tiered arcs of benches, stepped up away from the pad so every row clears the one ahead.
-    const rows = [[2.5, 0.02, 5], [3.9, 0.2, 7], [5.3, 0.38, 9], [6.6, 0.54, 11]];
-    for (const [r, rise, n] of rows) {
-      for (let i = 0; i < n; i++) {
-        const u = back + (i / (n - 1) - 0.5) * 1.5;
-        const x = wx + Math.sin(u) * r, z = wz + Math.cos(u) * r;
-        box(0.66, 0.1, 0.44, webSeat, x, deckTop + 0.5 + rise, z, G).rotation.y = u;
-        box(0.66, 0.36, 0.08, webSeat, wx + Math.sin(u) * (r + 0.24), deckTop + 0.72 + rise,
-          wz + Math.cos(u) * (r + 0.24), G).rotation.y = u;
-        box(0.62, 0.42 + rise, 0.5, precast, x, deckTop + 0.26 + rise / 2, z, G).rotation.y = u;
-      }
-      // armrest dividers and a foot rail along the front of each tier
-      for (let i = 0; i <= n; i++) {
-        const u = back + (i / n - 0.5) * 1.5 - 0.75 / n;
-        box(0.07, 0.3, 0.5, M.struct, wx + Math.sin(u) * r, deckTop + 0.62 + rise,
-          wz + Math.cos(u) * r, G).rotation.y = u;
-      }
-    }
-    // Shade canopy over the top tier — the only shade on the deck, and the reason the rows are there.
-    {
-      const cx = wx + Math.sin(back) * 6.2, cz = wz + Math.cos(back) * 6.2;
-      for (const u of [-0.72, -0.24, 0.24, 0.72]) {
-        const px2 = wx + Math.sin(back + u) * 7.35, pz2 = wz + Math.cos(back + u) * 7.35;
-        cyl(0.13, 0.19, 3.5, M.struct, px2, deckTop + 1.75, pz2, 10);
-        box(0.5, 0.12, 0.5, M.struct, px2, deckTop + 0.06, pz2, G).rotation.y = back + u;
-      }
-      const roof = box(9.6, 0.18, 4.4, canopy, cx, deckTop + 3.62, cz, G);
-      roof.rotation.y = back; roof.rotation.x = 0.1;
-      box(9.6, 0.34, 0.14, canopy, cx, deckTop + 3.5, cz, G).rotation.y = back;
-      // the front lip carries the house lights, so the grandstand reads as occupied after dark
-      const fascia = box(9.0, 0.1, 0.16, M.warmWin, cx, deckTop + 3.36, cz, G);
-      fascia.rotation.y = back;
-      const fp = new THREE.Vector3(Math.sin(face), 0, Math.cos(face)).multiplyScalar(2.05);
-      fascia.position.x += fp.x; fascia.position.z += fp.z;
-      for (let i = 0; i < 6; i++) {
-        const o = (i / 5 - 0.5) * 8.4;
-        cyl(0.09, 0.09, 0.07, M.warmWin,
-          cx + Math.cos(back) * o, deckTop + 3.42,
-          cz - Math.sin(back) * o, 8);
-      }
-    }
-    // Perimeter: stanchions and a two-rail fence on the open viewing side, bollard lamps on the lip.
-    for (let i = 0; i < 16; i++) {
-      const u = face + (i / 15 - 0.5) * 2.5;
-      const x = wx + Math.sin(u) * 7.62, z = wz + Math.cos(u) * 7.62;
-      cyl(0.05, 0.05, 1.15, M.struct, x, deckTop + 0.62, z, 6);
-      cyl(0.07, 0.07, 0.1, M.dark, x, deckTop + 0.1, z, 8);
-    }
-    for (const [ry, rr] of [[1.16, 7.62], [0.66, 7.62]]) {
-      const arc = new THREE.Mesh(new THREE.TorusGeometry(rr, 0.045, 5, 40, 2.5), M.struct);
-      // A partial torus starts at local +x, so the z-rotation is the azimuth of the arc's first
-      // degree — π/2 − u converts a deck bearing (sin u, cos u) into it.
-      arc.rotation.set(Math.PI / 2, 0, Math.PI / 2 - face + 1.25);
-      arc.position.set(wx, deckTop + ry, wz); G.add(arc);
-    }
-    for (let i = 0; i < 9; i++) {
-      const u = face + (i / 8 - 0.5) * 2.9;
-      const x = wx + Math.sin(u) * 7.1, z = wz + Math.cos(u) * 7.1;
-      cyl(0.1, 0.12, 0.52, M.struct, x, deckTop + 0.3, z, 8);
-      cyl(0.11, 0.11, 0.09, M.warmWin, x, deckTop + 0.6, z, 8);
-    }
-    // Broadcast camera on a tripod at the rail — the shot that films the launch.
-    {
-      const u = face + 1.02;
-      const cx = wx + Math.sin(u) * 6.6, cz = wz + Math.cos(u) * 6.6;
-      const cy = deckTop + 1.5;
-      for (let i = 0; i < 3; i++) {
-        const a = u + i / 3 * Math.PI * 2;
-        const leg = cyl(0.035, 0.035, 1.1, M.dark, cx + Math.sin(a) * 0.3, cy - 0.5,
-          cz + Math.cos(a) * 0.3, 6);
-        leg.rotation.set(Math.cos(a) * 0.32, 0, -Math.sin(a) * 0.32);
-      }
-      box(0.5, 0.3, 0.28, M.dark, cx, cy + 0.12, cz, G).rotation.y = u;
-      box(0.42, 0.24, 0.1, M.white, cx, cy + 0.4, cz, G).rotation.y = u;
-      const lens = cyl(0.11, 0.13, 0.34, M.dark,
-        cx + Math.sin(face) * 0.3, cy + 0.12, cz + Math.cos(face) * 0.3, 12);
-      lens.rotation.set(Math.PI / 2, 0, -face);
-      cyl(0.085, 0.085, 0.05, M.cyanLight,
-        cx + Math.sin(face) * 0.48, cy + 0.12, cz + Math.cos(face) * 0.48, 12)
-        .rotation.set(Math.PI / 2, 0, -face);
-    }
     // seats facing the pad + telemetry board angled back at the crowd
     k('stairs', wx - 3.5, wz + 2, -2.24, 0.9);
     const boardX = wx + Math.sin(back - 1.28) * 5.4, boardZ = wz + Math.cos(back - 1.28) * 5.4;

@@ -18,6 +18,15 @@ const S = 3.5; // Kenney grid → diorama scale
 
 const G = new THREE.Group();
 
+// Shadow flags for a whole hierarchy. Everything here is armed after loadModel()/unstub() has
+// already decided which meshes are glazing, so a plain `castShadow = true` walk used to override
+// that decision and put solid rectangles of shadow under every quarter-opaque pane — the greenhouse
+// blacked out its own crops, and the lamp globes and the cupola did the same on the decks below
+// them. assets.js leaves the verdict on the object itself, and that verdict survives cloneModel().
+const shade = (o) => {
+  if (o.isMesh) { o.castShadow = !o.userData.rsbPane; o.receiveShadow = true; }
+};
+
 export async function buildBase(scene, quality) {
   G.clear();
   const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
@@ -45,11 +54,13 @@ export async function buildBase(scene, quality) {
   for (const root of Object.values(models)) {
     root?.traverse(o => {
       // Glazing must not shadow: an opaque shadow map would black out the crops
-      // the whole greenhouse exists to show off.
-      if (o.isMesh && /glass_pane|_glass$/.test(o.name) ) o.castShadow = false;
+      // the whole greenhouse exists to show off. assets.js already marks the panes it converted
+      // out of KHR transmission; the name test catches the ones authored as plain BLEND glass in
+      // Blender, which arrive at unstub() still opaque enough to pass its filter.
+      if (o.isMesh && /glass_pane|_glass$/.test(o.name)) { o.userData.rsbPane = true; o.castShadow = false; }
       for (const mt of (Array.isArray(o.material) ? o.material : o.material ? [o.material] : [])) {
         const n = mt.name || '';
-        if (n === 'glass_pane') { mt.transparent = true; mt.opacity = 0.30; mt.depthWrite = false; mt.roughness = 0.06; o.castShadow = false; }
+        if (n === 'glass_pane') { mt.transparent = true; mt.opacity = 0.30; mt.depthWrite = false; mt.roughness = 0.06; o.userData.rsbPane = true; o.castShadow = false; }
         // A lamp's clear globe exported at 0.95 albedo is a white block by day — the short pale
         // stubs ringed with cyan in the cryo field are lamp heads whose glass out-shines their
         // bulb. Real smoked glass is dark, hard and reflective, and reads as glass precisely
@@ -531,7 +542,7 @@ export async function buildBase(scene, quality) {
       const pave = cloneModel(models.hub_plaza);
       pave.scale.setScalar((x1 - x0 + 1.1) / 20);
       pave.position.set(hx, top, hz);
-      pave.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      pave.traverse(shade);
       G.add(pave);
       // A landing disc is marked, not painted one flat colour: a painted "H", a threshold band and
       // the four corner markings a pilot actually lines up against.
@@ -604,7 +615,7 @@ export async function buildBase(scene, quality) {
       // lane light channels set into rebates, and the beam-top kit.
       const gate = cloneModel(models.spaceport_gate);
       gate.position.set(gx, gy, gz);
-      gate.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      gate.traverse(shade);
       G.add(gate);
       {
         // The name is the one part of a gate that has to be legible rather than built, so the
@@ -907,7 +918,7 @@ export async function buildBase(scene, quality) {
     const SHIP_H = 71.4, SHIP_R = 5.1;
     const ship = new THREE.Group();
     const stack = cloneModel(models['starship_stack']);
-    stack.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    stack.traverse(shade);
     // On its mount, not in it: the Raptor field is three metres of bell and the pad deck
     // would swallow the whole engine section if the stack sat at grade.
     ship.position.set(px, py + 2.9, pz);
@@ -1191,7 +1202,7 @@ export async function buildBase(scene, quality) {
     const ry0 = Math.PI / 2;
     rover.position.set(mx - 0.6, cradleTop + 0.02, mz - 5.2);
     rover.rotation.y = ry0;
-    rover.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    rover.traverse(shade);
     G.add(rover);
     // (w, d) are the footprint in the model's own axes and the rover is long along local X, so
     // passing them the other way round strung the two cover discs across the hull instead of
@@ -1207,7 +1218,7 @@ export async function buildBase(scene, quality) {
       const bot = cloneModel(models.optimus_bot);
       bot.position.set(bx, pit(bx, bz), bz);
       bot.rotation.y = turn;
-      bot.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      bot.traverse(shade);
       G.add(bot);
       lot(`optimus-0${i + 1}`, bx, bz, 0.62, 0.62);
       // a robot on bare regolith leaves no story; the boot scuff ring and its charge lead do
@@ -1256,7 +1267,7 @@ export async function buildBase(scene, quality) {
     const deck = cloneModel(models.watch_deck);
     deck.position.set(wx, wy, wz);          // the asset's own datum is the ground under the drum
     deck.rotation.y = face;                 // its local +Y is the pad
-    deck.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    deck.traverse(shade);
     G.add(deck);
 
     // seats facing the pad + telemetry board angled back at the crowd
@@ -1464,7 +1475,7 @@ export async function buildBase(scene, quality) {
     });
   }
 
-  G.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  G.traverse(shade);
 
   // Thin masts, lamp posts and stanchions are not colliders, so the chase camera happily parks
   // itself directly behind one and the shot becomes a black slab. Give every slender vertical
@@ -1607,7 +1618,7 @@ export async function buildBase(scene, quality) {
       const tap = cloneModel(models.reactor_tap);
       tap.position.copy(rig.position);
       tap.rotation.y = rig.rotation.y;
-      tap.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      tap.traverse(shade);
       templateRoots.add(tap);          // already baked as a template; re-merging would copy it
       G.add(tap);
       // cable run back to the pad so the two read as one installation — the ground falls away

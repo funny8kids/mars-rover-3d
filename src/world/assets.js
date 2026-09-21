@@ -33,6 +33,7 @@ function desun(mt) {
 function unstub(root) {
   root.traverse((o) => {
     const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+    let pane = false;
     for (const mt of mats) {
       if (!mt) continue;
       if (mt.metalness >= 0.99 && mt.roughness >= 0.99 && !mt.metalnessMap && !mt.roughnessMap) {
@@ -40,9 +41,37 @@ function unstub(root) {
         mt.metalness = b[0];
         mt.roughness = b[1];
       }
+      // KHR_materials_transmission is the most expensive line item in the whole frame. Any material
+      // with transmission > 0 makes three.js draw the entire opaque scene a SECOND time before the
+      // pane itself — at full drawing-buffer size, into a 4x-multisampled target, and then build a
+      // mip chain of it. Measured at 2529x1423 on the hub, shadow refresh pinned out so it is a
+      // clean A/B over the same 7 materials: 2 113 draws / 2.32 M triangles per frame without it,
+      // 3 100 / 3.47 M with it. Seven window meshes were costing half the frame's submitted work to
+      // buy a blurred copy of the scene behind the glass — and every one of them exports thickness
+      // 0, so there was not even any refraction to show for it. The same read — dark, hard,
+      // sky-reflecting — is what the glazing recipe already does with a blend, so blend it.
+      // props.js retints these by name afterwards and stays in charge of colour.
+      if (mt.transmission > 0) {
+        const t = mt.transmission;
+        mt.transmission = 0;
+        mt.transparent = true;
+        mt.opacity = 1 - 0.74 * t;
+        mt.depthWrite = false;
+        if (mt.roughness > 0.2) mt.roughness = 0.08;
+        pane = true;
+      } else if (mt.transparent && mt.opacity < 0.9) {
+        // Authored in Blender as a plain BLEND pane rather than KHR transmission: same mismatch.
+        pane = true;
+      }
       desun(mt);
     }
-    if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
+    // A quarter-opaque pane that drops a fully solid shadow is the shadow/solid mismatch the shadow
+    // pass is glad to produce, because it reads depth and knows nothing about alpha. The hull, frame
+    // and mullions around the glazing are separate opaque meshes and still shade the deck properly.
+    // The flag has to travel on the object, not just set the flag once: props.js re-arms whole
+    // hierarchies with `castShadow = true` after loadModel() returns, and its own glass test is by
+    // mesh name — which misses every cube exported as `Cube_9`. userData survives cloneModel().
+    if (o.isMesh) { o.userData.rsbPane = pane; o.castShadow = !pane; o.receiveShadow = true; }
   });
 }
 

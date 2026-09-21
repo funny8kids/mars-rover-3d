@@ -4,8 +4,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { DepthAOpass } from './depth_ao.js';
 
 // EffectComposer.setSize() re-sizes every pass to the full effective buffer, so a pass that only
 // needs to work in a blurry half-resolution world has to opt out by hand. Without this the
@@ -125,9 +125,19 @@ export function createPost(renderer, scene, camera, quality, w, h) {
   const composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
   if (quality.ssao) {
+    // The beauty pass is now the geometry source for contact darkening, so its render target has to
+    // publish depth as a texture. EffectComposer keeps two buffers and the pass chain ends on an odd
+    // number of swapping passes, so readBuffer alternates between them every frame: both need their
+    // own attachment or half the frames would multiply onto an untouched buffer.
+    for (const buf of [composer.renderTarget1, composer.renderTarget2]) {
+      const d = new THREE.DepthTexture(buf.width, buf.height);
+      d.format = THREE.DepthFormat;
+      d.type = THREE.UnsignedIntType;
+      buf.depthTexture = d;
+    }
     // Contact darkening at half resolution. AO is a low-frequency signal with a blur on top of it,
     // so a full-resolution buffer bought nothing but three million extra samples a frame.
-    const ssao = atScale(new SSAOPass(scene, camera, w, h), 0.5);
+    const ssao = atScale(new DepthAOpass(camera, w, h), 0.5);
     // kernelRadius is in view-space metres; min/maxDistance are normalised over cameraNear..Far,
     // and with a 9 000 m far plane one metre of depth is 1/9000 of the range. The old band (0.00004
     // / 0.0014) was 0.36 m … 12.6 m of linear depth, which a 0.65 m kernel can never reach: the map
@@ -135,22 +145,6 @@ export function createPost(renderer, scene, camera, quality, w, h) {
     // 2 cm … 3 m is what a 1.2 m hemisphere actually produces, and it is the difference between a
     // gate that stands on the plaza and one that floats over it.
     ssao.kernelRadius = 1.2; ssao.minDistance = 0.0000022; ssao.maxDistance = 0.000333;
-    ssao.output = SSAOPass.OUTPUT.Default;
-    // SSAOPass only copies the camera's projection matrices and near/far into its uniforms in the
-    // constructor and in setSize(), but the chase rig re-derives FOV with speed every frame the
-    // rover accelerates (chase.js) and the whole normal/depth prepass is rendered with that live
-    // camera. The shader then unprojects the pixel with yesterday's matrix and looks for occluders
-    // at UVs the current camera never produced, so the AO drifts out of register exactly while
-    // driving. Re-publish them each frame: four copies, against a pass that costs 2-3 ms.
-    const ssaoRender = ssao.render.bind(ssao);
-    ssao.render = (renderer, writeBuffer, readBuffer, deltaTime, maskActive) => {
-      const u = ssao.ssaoMaterial.uniforms;
-      u.cameraNear.value = camera.near;
-      u.cameraFar.value = camera.far;
-      u.cameraProjectionMatrix.value.copy(camera.projectionMatrix);
-      u.cameraInverseProjectionMatrix.value.copy(camera.projectionMatrixInverse);
-      return ssaoRender(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
-    };
     composer.addPass(ssao);
   }
   // Bloom mips are by definition blurry, so the chain starts at a quarter of the frame's pixels
@@ -173,6 +167,17 @@ export function createPost(renderer, scene, camera, quality, w, h) {
       // auto-degrade that changes it has to re-publish it or the buffers stay at the old area.
       composer.setPixelRatio(renderer.getPixelRatio());
       composer.setSize(w, h);
+      // WebGLRenderTarget.setSize() re-sizes the colour texture and leaves depthTexture.image behind
+      // at the old size, and the renderer refuses to bind a depth attachment that disagrees with its
+      // render target. Re-publish it here rather than trusting the renderer to heal the buffer.
+      for (const buf of [composer.renderTarget1, composer.renderTarget2]) {
+        const d = buf.depthTexture;
+        if (d) {
+          d.image.width = buf.width;
+          d.image.height = buf.height;
+          d.needsUpdate = true;
+        }
+      }
       finalPass.uniforms.uRes.value.set(w * composer._pixelRatio, h * composer._pixelRatio);
     },
   };

@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { surfaceAt } from './height.js';
 import { ZONES, SHIP_POS, LEAK_POS, SAMPLE_COUNT } from '../config.js';
-import { createStarship } from './starship.js';
 import { createOptimus, createCrewRover } from './vehicles.js';
 import { mulberry32, vnoise } from '../utils/noise.js';
 import { loadModel, cloneModel } from './assets.js';
@@ -22,15 +21,15 @@ const G = new THREE.Group();
 
 export async function buildBase(scene, quality) {
   G.clear();
-  const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'cryo_tank',
-    'lamp', 'crystal', 'lander', 'teleport_pad', 'gantry_service'];
+  const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
+    'lamp', 'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA', 'corridor', 'corridor_corner',
     'corridor_end', 'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
     'pipe_corner', 'satelliteDish', 'satelliteDish_detailed', 'rocket_baseB', 'rocket_finsA',
     'rover',
     'rocket_fuelA', 'rocket_sidesA', 'rocket_topA', 'barrels', 'barrel', 'craft_speederA',
-    'astronautA', 'alien', 'desk_computer', 'terrain_roadStraight', 'rail', 'stairs',
+    'alien', 'desk_computer', 'terrain_roadStraight', 'rail', 'stairs',
     'supports_high', 'craterLarge'];
   const entries = [...HERO, ...KENNEY.map(K)];
   const models = {};
@@ -132,7 +131,7 @@ export async function buildBase(scene, quality) {
     acc_orange: [[0.468, 0.144, 0.032], 0.62, 0.12],
     orange: [[0.50, 0.155, 0.038], 0.6, 0.14],
   };
-  const LANDMARKS = new Set(['habitat_dome', 'lander']);
+  const LANDMARKS = new Set(['habitat_dome', 'lander', 'astronaut']);
   for (const [mname, root] of Object.entries(models)) {
     if (!root || mname === 'rover' || mname === 'crystal') continue;
     const lift = LANDMARKS.has(mname) ? 1.34 : 1;
@@ -503,7 +502,6 @@ export async function buildBase(scene, quality) {
   const showBeamMats = [];
   const teleports = [];
   let showBeams = null;
-  const shipMats = [];
   let shipGroup = null;
 
   const zoneY = (zz) => surfaceAt(zz.pos[0], zz.pos[1]);
@@ -823,7 +821,7 @@ export async function buildBase(scene, quality) {
     k('barrel', hx - 6, hz + 6, 0.4); k('barrel', hx + 7, hz - 5, 1.2);
     putDeck('teleport_pad', hx - 8.5, hz + 11, 1.25, 0, -0.08);
     teleports.push({ key: 'hub', name: ZONES.hub.name, x: hx - 8.5, z: hz + 11 });
-    k('astronautA', hx + 3, hz + 6, 2.4);
+    put('astronaut', hx + 3, hz + 6, 1, 2.4, -0.02);   // the Blender EMU: 1.85 m, real metres
     k('craft_speederA', hx + 10, hz + 1, 0.9);
     // A flag mast is a 16 cm pole. Wrapping it in an r=0.8 disc meant the plaza had an invisible
     // metre-wide column nobody could see, in the exact line the player drives to reach the pad.
@@ -928,7 +926,7 @@ export async function buildBase(scene, quality) {
     // that is what they are now. The emissive guard is what keeps the hero lamps lit: their accents
     // carry a real emissive term and are the base's night lighting, not a surface colour.
     for (const [mname, root] of Object.entries(models)) {
-      if (!root || /^(starship|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad)$/.test(mname)) continue;
+      if (!root || /^(starship_stack|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad)$/.test(mname)) continue;
       const deck = /^platform_/.test(mname);
       // A pipe elbow weathered to flat matte pale grey lost the one thing that says "manufactured":
       // a specular streak along its length. Outdoors it read as a 4 m cream boulder sitting in the
@@ -968,23 +966,23 @@ export async function buildBase(scene, quality) {
     }
 
     // ── Starship riding a Super Heavy: 71 m of stainless on the pad ──
-    const stack = createStarship(THREE, { text: 'RED STARBASE' });
-    stack.group.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    // Ninety parts that never move independently, so they collapse to one buffer per finish — the
-    // same deal the rest of the base makes, and the reason a 71 m hero costs eight draw calls.
-    mergeInto(stack.group);
+    // Authored in Blender at real vehicle scale, so the only fit numbers here are the ones
+    // the pad itself has to supply: the deck the mount stands on, and the engine bells that
+    // hang three metres below the vehicle's own datum.
+    const SHIP_H = 71.4, SHIP_R = 5.1;
     const ship = new THREE.Group();
-    // On its mount, not in it: the Raptor field is three metres of bell and the pad deck would
-    // swallow the whole engine section if the stack sat at grade.
+    const stack = cloneModel(models['starship_stack']);
+    stack.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    // On its mount, not in it: the Raptor field is three metres of bell and the pad deck
+    // would swallow the whole engine section if the stack sat at grade.
     ship.position.set(px, py + 2.9, pz);
-    ship.add(stack.group);
-    shipMats.push(...stack.mats);
+    ship.add(stack);
     const RING_HUES = [0x3fd9ff, 0xff8a3c, 0xa05cff, 0x3fffc9, 0xff4d6d, 0xffd166];
-    const ringGeo = new THREE.TorusGeometry(stack.radius + 0.1, 0.1, 6, 40);
+    const ringGeo = new THREE.TorusGeometry(SHIP_R + 0.1, 0.1, 6, 40);
     for (const [i, f] of [0.05, 0.18, 0.33, 0.5, 0.68, 0.88].entries()) {
       const tr = new THREE.Mesh(ringGeo, M.shipLightRing.clone());
       tr.material.color.setHex(RING_HUES[i]); tr.material.emissive.setHex(RING_HUES[i]);
-      tr.rotation.x = Math.PI / 2; tr.position.y = f * stack.height; tr.visible = false; noMerge(tr); ship.add(tr);
+      tr.rotation.x = Math.PI / 2; tr.position.y = f * SHIP_H; tr.visible = false; noMerge(tr); ship.add(tr);
       lightStrips.push(tr.material); lightRings.push(tr);
     }
     G.add(ship); shipGroup = ship;
@@ -1109,7 +1107,7 @@ export async function buildBase(scene, quality) {
     // front step, awning planters, life
     k('stairs', vx + 11, vz - 10, 0.1);
     k('barrel', vx - 2, vz - 8, 1.1);
-    k('astronautA', vx + 7, vz + 15, -0.9);
+    put('astronaut', vx + 7, vz + 15, 1, -0.9, -0.02);
     k('alien', vx - 13, vz + 14, 2.1);
     putDeck('teleport_pad', vx + 15, vz - 6, 1.05, 0, -0.08);
     teleports.push({ key: 'habitat', name: ZONES.habitat.name, x: vx + 15, z: vz - 6 });
@@ -1210,7 +1208,7 @@ export async function buildBase(scene, quality) {
     kSolid('hangar_smallA', cx2 - 12, cz2 + 14, 2.4, 0.9, 'listening-post');
     k('desk_computer', cx2 - 6, cz2 + 8, 1.9);              // outdoor console on the low deck
     k('rail', cx2 - 3, cz2 + 10, 0.35);
-    k('astronautA', cx2 - 4, cz2 + 7, 2.6);                 // whoever is on shift, listening to Earth
+    put('astronaut', cx2 - 4, cz2 + 7, 1, 2.6, -0.02);       // whoever is on shift, listening to Earth
     putDeck('teleport_pad', cx2 - 9, cz2 - 8, 1.0, 0, -0.08);
     teleports.push({ key: 'comms', name: ZONES.comms.name, x: cx2 - 9, z: cz2 - 8 });
     const cy = zoneY(ZONES.comms);
@@ -1680,7 +1678,7 @@ export async function buildBase(scene, quality) {
   {
     const box = new THREE.Box3(), sz = new THREE.Vector3(), ctr = new THREE.Vector3();
     // cloning a material the per-frame rig still animates would silently disconnect it
-    const animated = new Set([...padGlow, ...beacons.map(b => b.material), ...lightStrips, ...lightRings.map(r => r.material), ...showBeamMats, ...shipMats]);
+    const animated = new Set([...padGlow, ...beacons.map(b => b.material), ...lightStrips, ...lightRings.map(r => r.material), ...showBeamMats]);
     G.updateMatrixWorld(true);
     for (const inst of G.children) {
       if (!inst.isGroup || inst.children.length === 0) continue;
@@ -1844,7 +1842,7 @@ export async function buildBase(scene, quality) {
   scene.add(G);
   const flamePoint = new THREE.Vector3(SHIP_POS[0], 1.6, SHIP_POS[1]);
   return {
-    group: G, colliders, infoZones, samples, sparkPoints, beacons, lightStrips, lightRings, showBeams, showBeamMats, shipMats, shipGroup, teleports, padGlow, heroLights, occluders, gridRigs, crystalMat: M.crystal,
+    group: G, colliders, infoZones, samples, sparkPoints, beacons, lightStrips, lightRings, showBeams, showBeamMats, shipGroup, teleports, padGlow, heroLights, occluders, gridRigs, crystalMat: M.crystal,
     plan: auditPlan, lots,
     leakPoint: new THREE.Vector3(LEAK_POS[0], surfaceAt(LEAK_POS[0], LEAK_POS[1]) + 1.8, LEAK_POS[1]),
     flamePoint,

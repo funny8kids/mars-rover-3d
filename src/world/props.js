@@ -1245,7 +1245,11 @@ export async function buildBase(scene, quality) {
     mergeInto(rover.group);
     G.add(rover.group);
     heroLights.push(...rover.emissives);
-    lot('crew-rover', mx - 0.6, mz - 5.2, rover.width, rover.length, ry0);
+    // (w, d) are the footprint in the model's own axes and the rover is long along local X, so
+    // passing them the other way round strung the two cover discs across the hull instead of
+    // along it — a collider standing sideways through a 4.1 m vehicle, and a nose-in pin at each
+    // end of it.
+    lot('crew-rover', mx - 0.6, mz - 5.2, rover.length, rover.width, ry0);
     // the stand it docks on: a low cradle the rover's rockers sit in, so it reads parked, not fallen
     for (const dx of [-1.2, 1.2])
       box(0.5, 0.16, 2.5, M.dark, mx - 0.6 + dx, cradleTop + 0.08, mz - 5.2).rotation.y = ry0;

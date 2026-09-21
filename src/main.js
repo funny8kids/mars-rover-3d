@@ -1355,6 +1355,259 @@ window.__RSB = {
              stalls: stalls.slice(0, 8), events: s.events.slice(0, 12),
              samples: s.samples.slice(-40) };
   },
+  // Deadlock scan. The autopilot only reports the wedges it happens to drive into; this one is
+  // exhaustive over the collision map, so a pocket nobody aimed at still shows up. The model is
+  // RoverPhysics.step's own: every solid disc is inflated by the 1.6 m body radius, and the tightest
+  // arc the rover can steer is WHEELBASE/tan(lock) = 4.24 m.
+  // So a slot between two solids is judged twice: wide enough that the body fits (gap >= 2*1.6), too
+  // tight to turn inside (gap < 2*1.6 + 2*4.24). Walking such a pinch from the mouth in both
+  // directions separates the two real cases — a lane that opens up at both ends, which you drive
+  // through, and a slot that closes into a wall, which swallows the rover and gives it back only in
+  // reverse, straight out the way it came. Those are the "跑了一会就卡住" spots.
+  // The (x, z, heading) BFS below is deliberately symmetric, because reverse gear follows the same
+  // arcs: pure geometry can never make a cell "in but not out", and a flood fill that claims
+  // otherwise is measuring the wrong thing. The BFS answers the other question — can the rover drive
+  // from spawn to every interactive point without ever clipping (goal D3).
+  scan: (opts = {}) => {
+    const CLEAR = 1.6, TURN = 2.9 / Math.tan(0.60), CELL = 2, NH = 16, STEP = Math.PI * 2 / NH;
+    const solids = base.colliders.filter(c => c.floor === undefined);
+    const cname = c => c.prop || c.name || `${Math.round(c.x)},${Math.round(c.z)}r${c.r}`;
+    const pois = [...base.teleports.map(p => ({ n: p.key, x: p.x, z: p.z })),
+      ...(base.gridRigs || []).map(r => ({ n: 'tap:' + r.key, x: r.x, z: r.z })),
+      ...(base.samples || []).map((sm, i) => ({ n: 'sample:' + (sm.id ?? i), x: sm.x, z: sm.z }))];
+    const wrapA = v => Math.atan2(Math.sin(v), Math.cos(v));
+
+    // ── clearance oracle: metres between the body's skin and the nearest solid (>0 free, <0 buried)
+    const B = 32, buckets = new Map();
+    const bkey = (i, j) => i * 4096 + j;
+    let maxR = 0;
+    for (const c of solids) {
+      maxR = Math.max(maxR, c.r);
+      const k = bkey(Math.floor(c.x / B), Math.floor(c.z / B));
+      const a = buckets.get(k); if (a) a.push(c); else buckets.set(k, [c]);
+    }
+    const scanDiscs = (x, z, range, cb) => {
+      const bi = Math.floor(x / B), bj = Math.floor(z / B);
+      const reach = Math.ceil((range + Math.max(0, maxR)) / B);
+      for (let i = -reach; i <= reach; i++) for (let j = -reach; j <= reach; j++) {
+        const list = buckets.get(bkey(bi + i, bj + j));
+        if (list) for (const c of list) cb(c);
+      }
+    };
+    const clearAt = (x, z) => {
+      let best = 99;
+      scanDiscs(x, z, CLEAR + TURN, c => {
+        const d = Math.hypot(x - c.x, z - c.z) - c.r - CLEAR;
+        if (d < best) best = d;
+      });
+      return best;
+    };
+
+    // ── pinch wedges: solid pairs whose slot admits the body but not a turn
+    const SLOT = 2 * CLEAR + 2 * TURN;
+    const found = new Map();
+    for (let i = 0; i < solids.length; i++) {
+      const a = solids[i];
+      for (let j = i + 1; j < solids.length; j++) {
+        const b = solids[j];
+        const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
+        if (d > a.r + b.r + SLOT) continue;
+        const gap = d - a.r - b.r;
+        if (gap < 2 * CLEAR || gap >= SLOT) continue;
+        const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
+        const key = Math.round(mx / 4) + ':' + Math.round(mz / 4);
+        const prev = found.get(key);
+        if (prev && gap >= prev.gap) continue;
+        const ux = -dz / d, uz = dx / d;
+        // naming what closes the end is the difference between re-siting one prop and guessing at three
+        const capAt = (x, z) => { let best = 1e9, hit = null; scanDiscs(x, z, CLEAR + TURN, c => {
+          const dd = Math.hypot(x - c.x, z - c.z) - c.r - CLEAR; if (dd < best) { best = dd; hit = c; } });
+          return hit ? `${cname(hit)} r${hit.r.toFixed(1)}` : null; };
+        const run = (sgn) => {
+          for (let k = 1; k <= 40; k++) {
+            const px = mx + ux * sgn * k, pz = mz + uz * sgn * k;
+            const c = clearAt(px, pz);
+            if (c < 0) return { len: k - 1, open: false, cap: capAt(px, pz) };   // dead-end slot
+            if (c >= TURN) return { len: k, open: true };     // room to pivot: a lane, not a trap
+          }
+          return { len: 40, open: true };
+        };
+        const fwd = run(1), back = run(-1);
+        const dead = Math.max(fwd.open ? 0 : fwd.len, back.open ? 0 : back.len);
+        // under 3 m of dead-end there is no slot to swallow the rover, the two discs are merely
+        // neighbours along the same wall; with both ends open it is an ordinary aisle
+        if (dead < 3 || (fwd.open && back.open)) continue;
+        found.set(key, { a: cname(a), b: cname(b), gap: +gap.toFixed(2),
+          margin: +(gap / 2 - CLEAR).toFixed(2),
+          at: [Math.round(mx * 10) / 10, Math.round(mz * 10) / 10],
+          axis: [+ux.toFixed(4), +uz.toFixed(4)],
+          runs: [fwd.len, back.len], dead, caps: [fwd.cap, back.cap] });
+      }
+    }
+    const wedges = [...found.values()].sort((x, y) => x.gap - y.gap);
+
+    // ── grid over the built area (open desert outside it can never trap a rover)
+    let x0 = START.pos[0], x1 = x0, z0 = START.pos[1], z1 = z0;
+    const grow = (x, z, r) => { x0 = Math.min(x0, x - r); x1 = Math.max(x1, x + r); z0 = Math.min(z0, z - r); z1 = Math.max(z1, z + r); };
+    for (const c of solids) grow(c.x, c.z, c.r);
+    for (const p of pois) grow(p.x, p.z, 8);
+    x0 -= TURN + 6; x1 += TURN + 6; z0 -= TURN + 6; z1 += TURN + 6;
+    const W = Math.ceil((x1 - x0) / CELL) + 1, H = Math.ceil((z1 - z0) / CELL) + 1;
+    const GX = i => x0 + i * CELL, GZ = j => z0 + j * CELL;
+    const slack = new Float32Array(W * H);
+    const free = new Uint8Array(W * H);
+    for (let i = 0; i < W; i++) for (let j = 0; j < H; j++) {
+      const c = clearAt(GX(i), GZ(j));
+      slack[i * H + j] = c;
+      free[i * H + j] = c >= 0 ? 1 : 0;
+    }
+
+    // ── configuration-space BFS: one node per (cell, heading), edges are arcs the rover can steer
+    const OFF = [];
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+      if (di || dj) OFF.push([di, dj, Math.atan2(di, dj)]);
+    }
+    const EDGES = [];
+    for (let h = 0; h < NH; h++) {
+      const list = [];
+      for (let dh = -1; dh <= 1; dh++) {
+        const h2 = (h + dh + NH) % NH;
+        // a steered step follows the arc's chord, which points halfway between the two headings.
+        // One 22.5° kink over a 2 m step is a 5.1 m radius — wider than the 4.24 m the rover can
+        // actually hold, so the model never promises a turn the physics would refuse.
+        const chord = (h + dh * 0.5) * STEP;
+        for (const [di, dj, b] of OFF) {
+          if (Math.abs(wrapA(b - chord)) <= STEP / 2 + 1e-6) list.push([di, dj, h2]);
+        }
+      }
+      EDGES.push(list);
+    }
+    const seen = new Uint8Array(W * H * NH);
+    const queue = new Int32Array(W * H * NH);
+    let qh = 0, qt = 0;
+    const si = Math.round((START.pos[0] - x0) / CELL), sj = Math.round((START.pos[1] - z0) / CELL);
+    if (free[si * H + sj]) for (let h = 0; h < NH; h++) {
+      const c = (si * H + sj) * NH + h; seen[c] = 1; queue[qt++] = c;
+    }
+    while (qh < qt) {
+      const c = queue[qh++], h = c % NH, cell = (c - h) / NH;
+      const i = (cell / H) | 0, j = cell % H;
+      for (const [di, dj, h2] of EDGES[h]) {
+        const ni = i + di, nj = j + dj;
+        if (ni < 0 || nj < 0 || ni >= W || nj >= H) continue;
+        const ncell = ni * H + nj;
+        if (!free[ncell]) continue;
+        const n = ncell * NH + h2;
+        if (!seen[n]) { seen[n] = 1; queue[qt++] = n; }
+      }
+    }
+    const reached = new Uint8Array(W * H);
+    for (let c = 0; c < seen.length; c++) if (seen[c]) reached[(c / NH) | 0] = 1;
+    const verdicts = pois.map(p => {
+      const pi = Math.round((p.x - x0) / CELL), pj = Math.round((p.z - z0) / CELL);
+      let best = null, bd = 13;
+      for (let di = -6; di <= 6; di++) for (let dj = -6; dj <= 6; dj++) {
+        const i = pi + di, j = pj + dj;
+        if (i < 0 || j < 0 || i >= W || j >= H) continue;
+        const d = Math.hypot(GX(i) - p.x, GZ(j) - p.z);
+        if (d < bd && free[i * H + j] && reached[i * H + j]) { bd = d; best = [Math.round(GX(i)), Math.round(GZ(j))]; }
+      }
+      return { poi: p.n, at: [Math.round(p.x), Math.round(p.z)],
+        slack: +slack[pi * H + pj].toFixed(2), park: best ? Math.round(bd) : null };
+    });
+
+    // ── terrain: the grade the wheels have to hold, and dune crests that would hang them.
+    // Beyond r=105 the world is the boundary dune ring: too steep to climb is the point of it, so it
+    // is not a defect and is kept out of the report.
+    let maxSlope = 0, maxAt = null, steep = 0;
+    const steepList = [], bumpSeen = new Map();
+    for (let i = 1; i < W - 1; i++) for (let j = 1; j < H - 1; j++) {
+      const cell = i * H + j;
+      if (!free[cell] || !reached[cell]) continue;
+      const x = GX(i), z = GZ(j);
+      if (Math.hypot(x, z) > 105) continue;
+      const s = surfaceSlope(x, z);
+      if (s > maxSlope) { maxSlope = s; maxAt = [Math.round(x), Math.round(z)]; }
+      if (s > 0.70) { steep++; if (steepList.length < 8) steepList.push({ at: [Math.round(x), Math.round(z)], deg: Math.round(Math.atan(s) * 180 / Math.PI) }); }
+      const h0 = surfaceAt(x, z);
+      let ring = -1e9;
+      for (const [ox, oz] of [[1.45, 0], [-1.45, 0], [0, 1.45], [0, -1.45]]) ring = Math.max(ring, surfaceAt(x + ox, z + oz));
+      const crest = h0 - ring;
+      if (crest > 0.2) {
+        const k = Math.round(x / 6) + ':' + Math.round(z / 6);
+        const prev = bumpSeen.get(k);
+        if (!prev || crest > prev.lift) { bumpSeen.set(k, { at: [Math.round(x), Math.round(z)], lift: +crest.toFixed(2) }); }
+      }
+    }
+    const bumpList = [...bumpSeen.values()].sort((a, b) => b.lift - a.lift);
+
+    // A pocket is a defect by how far it makes you back out, not by how tight it is. Reverse gear
+    // works out of every wedge in this world — all 17 were driven into and out of with the real
+    // physics on 2026-09-21, and the tightest of them (0.28 m of side slack, both faces touching)
+    // still walked out under power at 9.6 m/s. The rule this replaced — "tight enough that both
+    // push-out normals cancel ⇒ throttle buys nothing" — was a guess that measurement falsified,
+    // so it is gone. What is left is the thing a player actually reports as stuck: a long blind
+    // alley. Measured reverse speed is 3–6 m/s, so under ALLEY metres of dead run the escape is a
+    // one-second tap on the brake pedal and not worth re-siting a landmark for.
+    const ALLEY = 15;
+    // And an alley has to be walked, not extrapolated. The axis probe above flies straight out of
+    // the pinch, so on a bending aisle it wanders into a wall a driver never touches: three hub
+    // wedges reported 16–19 m of dead run that way, and driving a rover into all three with the
+    // real physics cleared two of them outright — it coasted through into open ground without
+    // ever jamming. So a candidate over the threshold is re-measured along the aisle's spine: step
+    // a metre, then keep whichever of straight-on, left-of-it or right-of-it has the most
+    // daylight, which is what a driver does. Only that number is allowed to call a trap.
+    const spineBlind = (w) => {
+      let worst = 0;
+      for (const sgn of [1, -1]) {
+        let px = w.at[0], pz = w.at[1], ax = w.axis[0] * sgn, az = w.axis[1] * sgn;
+        let len = 0, open = false;
+        while (len <= 40) {
+          let bx = px + ax, bz = pz + az, bc = clearAt(bx, bz);
+          for (const [nx, nz] of [[-az, ax], [az, -ax]]) for (const f of [0.6, 1.2]) {
+            const cx = px + ax + nx * f, cz = pz + az + nz * f, c = clearAt(cx, cz);
+            if (c > bc + 0.05) { bc = c; bx = cx; bz = cz; }
+          }
+          if (bc >= TURN) { open = true; break; }        // room to pivot: the aisle let out
+          if (bc < 0) break;                             // this step is the wall; stop short of it
+          const st = Math.hypot(bx - px, bz - pz);
+          if (st < 0.25) break;                          // no way forward on any bearing
+          ax = (bx - px) / st; az = (bz - pz) / st; px = bx; pz = bz; len += st;
+        }
+        if (!open) worst = Math.max(worst, Math.round(len));
+      }
+      return worst;
+    };
+    for (const w of wedges) {
+      const ci = Math.round((w.at[0] - x0) / CELL), cj = Math.round((w.at[1] - z0) / CELL);
+      let inReach = false;
+      for (let di = -2; di <= 2 && !inReach; di++) for (let dj = -2; dj <= 2; dj++) {
+        const i = ci + di, j = cj + dj;
+        if (i < 0 || j < 0 || i >= W || j >= H) continue;
+        if (reached[i * H + j]) { inReach = true; break; }
+      }
+      w.entered = inReach;
+      w.blind = w.dead >= ALLEY ? spineBlind(w) : w.dead;
+      w.trap = w.entered && w.blind >= ALLEY;
+    }
+    const traps = wedges.filter(w => w.trap);
+    const slivers = [];
+    for (let c = 0; c < free.length; c++) if (free[c] && !reached[c]) {
+      const i = (c / H) | 0, j = c % H;
+      slivers.push([Math.round(GX(i)), Math.round(GZ(j))]);
+    }
+
+    return { cell: CELL, turn: +TURN.toFixed(2), solids: solids.length, pois: pois.length,
+      grid: [W, H], configs: qt, reachedCells: reached.reduce((a, v) => a + v, 0),
+      freeCells: free.reduce((a, v) => a + v, 0),
+      slotCount: wedges.length, trapCount: traps.length, traps,
+      slots: wedges.filter(w => !w.trap && w.entered).slice(0, 12),
+      unreachable: verdicts.filter(v => v.park === null),
+      tight: verdicts.filter(v => v.park && (v.park > 6 || v.slack < 0.6)),
+      slivers: slivers.slice(0, 10),
+      terrain: { maxSlopeDeg: Math.round(Math.atan(maxSlope) * 180 / Math.PI), maxAt,
+        steepCells: steep, steepList, bumpCount: bumpList.length, bumps: bumpList.slice(0, 12) } };
+  },
   audio: () => ({ ready: audio.ready, state: audio.ctx?.state || 'none', lp: Math.round(audio.lowpass?.frequency.value || 0), lvl: +(audio.level?.() || 0).toFixed(3), eng: +(audio.engineG?.gain.value || 0).toFixed(3) }),
   audioCtx: () => audio.ctx,
   hold: (v) => { input.inp.keys[v ? 'add' : 'delete']('KeyE'); },

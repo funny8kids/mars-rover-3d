@@ -762,7 +762,7 @@ export async function buildBase(scene, quality) {
       const FRONT = 18.5;                       // the hub block's building line
       const RING = [
         { n: 'hangar_roundA', k: 0.5, a: 45 },  { n: 'hangar_largeA', k: 0.62, a: 90 },
-        { n: 'machine_generatorLarge', k: 0.9, a: 135 }, { n: 'gantry_service', g: 1.0, a: 180 },
+        { n: 'machine_generatorLarge', k: 0.9, a: 135 }, { n: 'gantry_service', g: 1.0, a: 180, gate: true },
         { n: 'satelliteDish', k: 0.9, a: 270 },
         { n: 'machine_wireless', k: 1.1, a: 315 }, { n: 'structure_detailed', k: 0.8, a: 0 },
       ];
@@ -773,7 +773,13 @@ export async function buildBase(scene, quality) {
         // Which side of the footprint faces the street is decided by the turn: at ry = a + 90° the
         // pack's local x runs radially, at ry = a it is local z. Every slot is turned so the shallow
         // dimension is the radial one — that is what keeps a deep hangar out of the carriageway.
-        const ry = b.w <= b.d ? a + Math.PI / 2 : a;
+        // A portal gantry is the exception, and it is turned the other way on purpose: its girder
+        // must span ACROSS the lane. Two legs of one bent stand 3.8 m apart in the model and their
+        // 2.3 m footings leave 1.5 m of daylight, so a 3.2 m rover can never pass between them —
+        // turned long-side radial it closed the hub's west lane and stopped a nose-first rover
+        // against its own foot (measured 2026-09-21). Turned across it, the lane runs between the
+        // two bents 11.2 m apart, which is the space the thing was built to enclose.
+        const ry = (slot.gate || b.w <= b.d) ? a + Math.PI / 2 : a;
         const radial = Math.min(b.w, b.d) * s;
         const cos = Math.cos(ry), si = Math.sin(ry);
         // A model's footprint is not centred on its origin, and `lot` knows it; the street test has
@@ -805,7 +811,6 @@ export async function buildBase(scene, quality) {
           else if (legal(xi, zi)) { x = xi; z = zi; }
           else break;
         }
-        if (slot.n === 'gantry_service') { portal(`ring-gantry-${slot.a}`, x, z, s, ry); continue; }
         if (slot.n === 'gantry_service') { portal(`ring-gantry-${slot.a}`, x, z, s, ry); continue; }
         // An open gantry with nothing standing inside it reads as scaffolding nobody finished; the
         // Blender portal carries its own transformers, switchgear, conductors and signage.
@@ -925,7 +930,12 @@ export async function buildBase(scene, quality) {
 
     // ── Kenney booster on a service stand, the base's cargo rocket ──
     {
-      const bx2 = px - 16, bz2 = pz + 13, by = surfaceAt(bx2, bz2);
+      // Tucked 1.7 m in toward the chopstick rails from where the two landmarks would otherwise
+      // sit. At the wider spacing their colliders left a 4.5 m slot running 22 m back and closing
+      // on an umbilical mast: an alley the rover drives into, cannot turn in, and has to reverse
+      // the whole 22 m out of again. One solid cluster is both drivable and how a launch stack
+      // actually stands — the cargo rocket beside the tower that services it.
+      const bx2 = px - 15.6, bz2 = pz + 11.4, by = surfaceAt(bx2, bz2);
       const stack = new THREE.Group(); stack.position.set(bx2, by, bz2);
       const part = (name, y, ry) => { const o = cloneModel(models[name]); o.scale.setScalar(S); o.position.y = y; o.rotation.y = ry; stack.add(o); };
       part('rocket_baseB', 0.05, 0);

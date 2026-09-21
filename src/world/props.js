@@ -735,8 +735,11 @@ export async function buildBase(scene, quality) {
       }
     };
     barrier(hx - 5.2); barrier(hx + 5.2);
-    lot('gate-barriers', hx - 5.2, hz - 16.68, 0.36, 8.7);
-    lot('gate-barriers', hx + 5.2, hz - 16.68, 0.36, 8.7);
+    // Each barrier is the kerb of its own gate leg, so it carries that leg's collision id: audited
+    // as a separate prop it reported a −1.7 m crease with the plinth, and a crease inside one
+    // structure is not a trap, it is a corner.
+    lot('spaceport-gate#0', hx - 5.2, hz - 16.68, 0.36, 8.7);
+    lot('spaceport-gate#1', hx + 5.2, hz - 16.68, 0.36, 8.7);
     // flag mast
     const my = zoneY(ZONES.hub);
     cyl(0.12, 0.16, 7, M.white, hx + 5.5, my + 3.5, hz + 4, 8);
@@ -855,11 +858,30 @@ export async function buildBase(scene, quality) {
         // to read the same discs the physics loop will, or the audit disagrees with the placement.
         const ox = (b.cx * cos + b.cz * si) * s, oz = -(b.cx * si - b.cz * cos) * s;
         let x = hx + Math.cos(a) * (FRONT - radial / 2), z = hz + Math.sin(a) * (FRONT - radial / 2);
-        for (let g = 0; g < 6; g++) {
-          const over = Math.max(...discLayout(b.w * s, b.d * s, x + ox, z + oz, ry)
-            .map(o => streetEncroach(o.x, o.z, o.r)));
-          if (over <= 0) break;
-          x -= Math.cos(a) * over; z -= Math.sin(a) * over;
+        // Two constraints pull opposite ways — the kerb line pushes a building inward, a neighbour
+        // it would swallow pushes it outward — so they are resolved one at a time and the slot stops
+        // as soon as neither is violated.
+        for (let g = 0; g < 8; g++) {
+          const ds = discLayout(b.w * s, b.d * s, x + ox, z + oz, ry);
+          const over = Math.max(...ds.map(o => streetEncroach(o.x, o.z, o.r)));
+          if (over > 0) { x -= Math.cos(a) * over; z -= Math.sin(a) * over; continue; }
+          let clash = 0;
+          for (const c of colliders) {
+            if (c.floor !== undefined) continue;
+            for (const o of ds)
+              clash = Math.max(clash, CORRIDOR - (Math.hypot(c.x - o.x, c.z - o.z) - c.r - o.r));
+          }
+          if (clash <= 0) break;
+          // Outward is the natural way clear of a neighbour, but on the hub ring "outward" is also
+          // the way into the street — so both exits are tested and the kerb line wins: a building
+          // that has nowhere legal to stand stays touching its neighbour rather than blocking a lane.
+          const legal = (nx, nz) => Math.max(...discLayout(b.w * s, b.d * s, nx + ox, nz + oz, ry)
+            .map(o => streetEncroach(o.x, o.z, o.r))) <= 0;
+          const xo = x + Math.cos(a) * clash, zo = z + Math.sin(a) * clash;
+          const xi = x - Math.cos(a) * clash, zi = z - Math.sin(a) * clash;
+          if (legal(xo, zo)) { x = xo; z = zo; }
+          else if (legal(xi, zi)) { x = xi; z = zi; }
+          else break;
         }
         if (slot.n === 'gantry_service') { portal(`ring-gantry-${slot.a}`, x, z, s, ry); continue; }
         if (slot.n === 'gantry_service') { portal(`ring-gantry-${slot.a}`, x, z, s, ry); continue; }
@@ -1073,14 +1095,17 @@ export async function buildBase(scene, quality) {
     // line — which is what used to put dome A's 8.5 m disc three metres into the carriageway.
     // The seated 14.4 m domes used to sit where the corridors and the round hangar drum are;
     // coincident shells z-fight into a torn black blob, so the settlement is spread out.
-    kSolid('hangar_roundA', vx - 7, vz - 5, 0.5, 1.3, 'drum');   // the big living drum
+    // One pressurised structure, not four props touching: the drum and the corridors that bolt onto
+    // it are one airtight volume, so they carry one collision id and the audit stops reporting the
+    // joints between them as creases the rover could get stuck in.
+    kSolid('hangar_roundA', vx - 7, vz - 5, 0.5, 1.3, 'hab-module');   // the big living drum
     putSolid('habitat_dome', vx + 13, vz + 15, 1.1, 0.6, 'dome-a');   // seated 14.4 x 12.3 x 10.3 m
     putSolid('habitat_dome', vx - 5, vz + 18, 0.85, 2.3, 'dome-b');
     putSolid('greenhouse', vx - 17, vz + 5, 1.25, -0.5, 'glasshouse');  // 13.7 x 12.0 x 5.0 m
     // pressurised corridors linking drum → domes → greenhouse
-    kSolid('corridor', vx + 3, vz + 3, 0.62, 1.0, 'corridor-a');
-    kSolid('corridor_corner', vx + 9, vz + 11, 1.35, 1.0, 'corridor-b');
-    kSolid('corridor_end', vx - 8, vz + 9, 0.9, 1.0, 'corridor-c');
+    kSolid('corridor', vx + 3, vz + 3, 0.62, 1.0, 'hab-module');
+    kSolid('corridor_corner', vx + 9, vz + 11, 1.35, 1.0, 'hab-module');
+    kSolid('corridor_end', vx - 8, vz + 9, 0.9, 1.0, 'hab-module');
     // front step, awning planters, life
     k('stairs', vx + 11, vz - 10, 0.1);
     k('barrel', vx - 2, vz - 8, 1.1);
@@ -1105,15 +1130,20 @@ export async function buildBase(scene, quality) {
     // puts the light stuff, the masts and the drum crates, on the street side, so the block reads
     // from the avenue as a skyline with a base line rather than four boxes dropped at random.
     kSolid('hangar_largeA', ix - 6, iz + 6, 0.35, 0.35, 'fab-hall');
-    kSolid('machine_generatorLarge', ix + 11, iz - 2, 1.0, 1.2, 'genset-a');
+    // The generator block used to land with its measured footprint right on top of the middle cryo
+    // tank: machine_generatorLarge's geometry sits ~10 m off its own origin, so the placement point
+    // and the obstacle are different places. It is sited by where its discs end up now.
+    kSolid('machine_generatorLarge', ix - 4.2, iz - 10.5, 1.0, 1.2, 'genset-a');
     kSolid('machine_generator', ix + 12, iz + 7, 2.6, 1.4, 'genset-b');
     kSolid('machine_wireless', ix - 14, iz + 14, 0.9, 1.1, 'yard-mast');
     portal('fab-substation', ix + 2, iz + 16, 0.86, 1.1);   // fab substation gantry, an open portal
     // cryo row: three Blender tanks with hazard stripes, stringed along the yard's north edge on
-    // their own skid pads so a rover can walk between the drums and the fab wall.
+    // their own skid pads so a rover can walk between the drums and the fab wall. One facility, one
+    // collision id — a row of drums 0.9 m apart is one long wall to a 3.2 m rover, not a field of
+    // pinches, and auditing it as separate props reported a trap that cannot exist.
     for (let i = 0; i < 3; i++) {
       const tx = ix + 17, tz = iz - 14 + i * 6.5;
-      putSolid('cryo_tank', tx + (i === 1 ? 3 : 0), tz, 0.95, 0.5 + i, `cryo-${i}`);
+      putSolid('cryo_tank', tx, tz, 0.95, 0.5 + i, 'cryo-farm');
       sparkPoints.push({ x: tx, y: surfaceAt(tx, tz) + 1.8, z: tz - 1.6, rate: 0.45 + i * 0.1 });
     }
     // pipe rack from tanks toward the fab
@@ -1176,7 +1206,7 @@ export async function buildBase(scene, quality) {
     kSolid('satelliteDish', cx2 + 10, cz2 - 9, 1.2, 0.85, 'dish-b');
     kSolid('satelliteDish', cx2 + 2, cz2 + 13, 2.9, 0.7, 'dish-c');
     kSolid('machine_wireless', cx2 - 12, cz2 + 4, 0.5, 1.1, 'array-mast');
-    portal('array-feed', cx2 + 12, cz2 + 3, 0.78, 0.9);   // array feed portal
+    portal('array-feed', cx2 + 17, cz2 - 3, 0.78, 0.9);   // array feed portal, clear of the dish rim
     kSolid('hangar_smallA', cx2 - 12, cz2 + 14, 2.4, 0.9, 'listening-post');
     k('desk_computer', cx2 - 6, cz2 + 8, 1.9);              // outdoor console on the low deck
     k('rail', cx2 - 3, cz2 + 10, 0.35);
@@ -1271,7 +1301,7 @@ export async function buildBase(scene, quality) {
 
     // ── the pit: mast, workbench, drums and the second vehicle that still runs on wheels ──
     kSolid('machine_wireless', mx + 6.5, mz - 2.5, 0, 1.15, 'charge-mast');
-    kSolid('desk_computer', mx + 3.4, mz + 4.6, 0.6, 1.5, 'pit-desk');
+    kSolid('desk_computer', mx + 1.6, mz + 6.8, 0.6, 1.5, 'pit-desk');
     kSolid('barrels', mx + 5.6, mz + 4.2, 1.2, 1.3, 'lubricant-drums');
     k('craft_speederA', mx - 6.4, mz + 1.4, 1.1, 1.35);
     lot('utility-speeder', mx - 6.4, mz + 1.4, 2.2, 3.4, 1.1);

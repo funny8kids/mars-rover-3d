@@ -127,6 +127,10 @@ const EN = {
   '✦ 已保存截图': '✦ Screenshot saved',
   '当前浏览器不支持直接分享 · 已下载图片': 'Sharing is unavailable here — the image was downloaded',
   '音效 开': 'Sound on', '音效 关': 'Sound off',  '✦ 传送 · MAP': '✦ Teleport · MAP',
+  '✦ 传送网络 · TELEPORT NETWORK': '✦ Teleport network',
+  '数字键 1-6 直接跃迁 · 按 G 在光台上就地开启 · M 全区地图':
+    'Number keys 1-6 jump directly · press G while on a pad · M for the full map',
+  '暂无记录 · 完成一次环基地计时赛': 'No times yet · finish one lap of the base',
   '「交互」': 'interact', 交互: 'Act', 加速: 'Gas', 刹车: 'Brake', 漂移: 'Drift',
   '密封中…': 'Sealing…',
   '光台已就绪 — 按': 'pad is ready — press',

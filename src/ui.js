@@ -109,7 +109,8 @@ export const UI = {
   },
   boardOpen(scores) {
     $('board-pop').classList.remove('hidden');
-    $('board-list').innerHTML = scores.map(s => `<li>${s.name} — ${s.time}</li>`).join('') || '<li>暂无记录 · 完成一次环基地计时赛</li>';
+    $('board-list').innerHTML = scores.map(s => `<li>${s.name} — ${s.time}</li>`).join('')
+      || `<li>${tx('暂无记录 · 完成一次环基地计时赛')}</li>`;
   },
   boardClose() { $('board-pop').classList.add('hidden'); },
 };

@@ -74,10 +74,10 @@ function buildTeleportUI() {
   teleEl = document.createElement('div');
   teleEl.id = 'teleport-ui'; teleEl.className = 'hidden';
   teleEl.innerHTML = `
-    <div class="tp-head"><span class="tp-title">✦ 传送网络 · TELEPORT NETWORK</span>
+    <div class="tp-head"><span class="tp-title">${t('✦ 传送网络 · TELEPORT NETWORK')}</span>
       <button class="tp-close" aria-label="close">✕</button></div>
     <div class="tp-body"><canvas class="tp-map" width="252" height="252"></canvas><div class="tp-list"></div></div>
-    <div class="tp-tip">数字键 1-6 直接跃迁 · 按 G 在光台上就地开启 · M 全区地图</div>`;
+    <div class="tp-tip">${t('数字键 1-6 直接跃迁 · 按 G 在光台上就地开启 · M 全区地图')}</div>`;
   document.body.appendChild(teleEl);
   teleMap = teleEl.querySelector('.tp-map');
   teleEl.querySelector('.tp-close').onclick = closeTeleport;
@@ -85,13 +85,13 @@ function buildTeleportUI() {
   teleHint.id = 'tele-hint'; teleHint.className = 'hidden';
   document.body.appendChild(teleHint);
   const fab = document.createElement('button');
-  fab.id = 'tele-fab'; fab.className = 'hidden'; fab.textContent = '✦ 传送 · MAP';
+  fab.id = 'tele-fab'; fab.className = 'hidden'; fab.textContent = t('✦ 传送 · MAP');
   fab.onclick = () => { if (teleOpen) closeTeleport(); else openTeleport(); };
   document.body.appendChild(fab);
   teleHint._fab = fab;
   const mute = document.createElement('button');
   mute.id = 'mute-fab'; mute.className = 'hidden';
-  const draw = () => { mute.textContent = audio.muted ? '音效 关' : '音效 开'; };
+  const draw = () => { mute.textContent = t(audio.muted ? '音效 关' : '音效 开'); };
   draw(); mute._draw = draw;
   mute.onclick = () => { audio.setMuted(!audio.muted); draw(); };
   document.body.appendChild(mute);
@@ -157,7 +157,7 @@ function drawTeleMap() {
     g.beginPath(); g.arc(x, y, 6, 0, 7); g.fill();
     g.fillStyle = live ? '#e9e4da' : '#8a7d70';
     g.font = '11px sans-serif'; g.textAlign = 'center';
-    g.fillText(tp.name, x, y - 10);
+    g.fillText(t(tp.name), x, y - 10);
   }
   g.fillStyle = '#ffbe5c';
   g.beginPath(); g.arc(c + phys.x * k, c + phys.z * k, 4, 0, 7); g.fill();
@@ -1255,7 +1255,18 @@ window.__RSB = {
 // finishes building, and after a boot failure. Everything it changes is re-rendered rather than
 // reloaded — the base took sixteen seconds to build and none of it is language-dependent.
 mountLangButton();
-onChange(() => { renderMissions(); UI.relabel(); });
+onChange(() => {
+  renderMissions();
+  UI.relabel();
+  // The teleport panel and the two floating buttons are built once, so a language change has to
+  // rewrite them where they stand — and repaint the map canvas, whose labels are drawn, not DOM.
+  const q = s => document.querySelector(s);
+  if (q('.tp-title')) q('.tp-title').textContent = t('✦ 传送网络 · TELEPORT NETWORK');
+  if (q('.tp-tip')) q('.tp-tip').textContent = t('数字键 1-6 直接跃迁 · 按 G 在光台上就地开启 · M 全区地图');
+  const fab = q('#tele-fab'); if (fab) fab.textContent = t('✦ 传送 · MAP');
+  teleHint?._mute?._draw();
+  if (teleOpen) { closeTeleport(); openTeleport(); }
+});
 
 {
   const qp = new URLSearchParams(location.search);

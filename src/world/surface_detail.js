@@ -99,9 +99,18 @@ export function applySurfaceDetail(root) {
         base?.(shader, renderer);
         shader.vertexShader = shader.vertexShader
           .replace('#include <common>', '#include <common>\n' + VARY)
+          // `transformed` is pre-instance: an instanced buffer holds one clone of the vertices, so
+          // without the instanceMatrix term every copy would sample the panel grid at the ORIGIN's
+          // world position and the whole batch would share one weathering streak.
           .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vRsbW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
-        vRsbN = normalize( mat3( modelMatrix ) * objectNormal );`);
+        vec4 rsbWorld = vec4( transformed, 1.0 );
+        vec3 rsbNormal = objectNormal;
+        #ifdef USE_INSTANCING
+          rsbWorld = instanceMatrix * rsbWorld;
+          rsbNormal = mat3( instanceMatrix ) * rsbNormal;
+        #endif
+        vRsbW = ( modelMatrix * rsbWorld ).xyz;
+        vRsbN = normalize( mat3( modelMatrix ) * rsbNormal );`);
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\n' + VARY + PARS)
           .replace('#include <color_fragment>', '#include <color_fragment>\n' + PATCH)

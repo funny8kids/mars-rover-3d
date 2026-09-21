@@ -15,6 +15,7 @@ import { createSkidMarks } from './fx/skids.js';
 import { GameAudio } from './audio/audio.js';
 import { UI, fmtTime } from './ui.js';
 import { t, mountLangButton, onChange } from './i18n.js';
+import { STREETS } from './world/plan.js';
 
 const $ = id => document.getElementById(id);
 const canvas = $('scene');
@@ -660,6 +661,10 @@ function updateRace(dt) {
 let lastInfoZone = null;
 function update(dt) {
   elapsed += dt;
+  // Read once at the top: the HUD, the lamps and the post pass all need the day/night state, and
+  // an info-zone line that used `st` before its old declaration point threw straight out of
+  // tick() — which skipped the render call and froze the canvas for the rest of the session.
+  const st = env.state;
   const inp = input.read();
   if (teleOpen) { inp.gas = inp.brake = inp.steer = inp.drift = inp.interact = 0; }
   // drive physics — a flat battery kills the motors, and the last 20 % sags so that running
@@ -789,7 +794,7 @@ function update(dt) {
   // collapsing into a flat white blob (V11 forensics).
   base.crystalMat.emissiveIntensity = 0.04 + cnight * 1.01 + Math.sin(elapsed * 1.9) * (0.02 + cnight * 0.12);
   // beacon blink + night lamps + light cones
-  const st = env.state;
+  // `st` was hoisted to the top of update(); re-declaring it here is what froze the canvas.
   // An aviation beacon exists to be seen against darkness, so its drive belongs to the night: at a
   // flat 1.5–4.0 it was a hot pink blob on every mast in the day views, the single brightest
   // saturated object in the industry zone. Full blink after dusk, a faint confirmation by day.
@@ -1016,7 +1021,7 @@ function update(dt) {
 }
 
 // ───────────────────────── loop & degrade ─────────────────────────
-let fpsSamples = [], fpsAvg = 60, lastTs = performance.now(), degradeChecked = 0;
+let fpsSamples = [], fpsAvg = 60, lastTs = performance.now(), degradeChecked = 0, updateFaults = 0;
 function tick() {
   const now = performance.now();
   const dt = Math.min(0.05, (now - lastTs) / 1000);
@@ -1024,7 +1029,12 @@ function tick() {
   fpsSamples.push(1 / Math.max(dt, 1e-4));
   if (fpsSamples.length > 60) fpsSamples.shift();
   fpsAvg = fpsSamples.reduce((a, b) => a + b, 0) / fpsSamples.length;
-  if (started && !paused) update(dt); else { elapsed += 0; }
+  // A thrown HUD line used to escape from here and skip the render call at the bottom of tick,
+  // which froze a perfectly drivable game. The frame is still reported, just never fatal.
+  if (started && !paused) {
+    try { update(dt); }
+    catch (e) { if (updateFaults++ === 0) console.error('UPDATE_FAIL', e); }
+  } else { elapsed += 0; }
   // auto-degrade after 8s of low fps
   if (started && !paused && now - degradeChecked > 8000) {
     degradeChecked = now;
@@ -1109,8 +1119,11 @@ boot().catch(e => { console.error('BOOT_FAIL', e); $('load-text').textContent = 
 renderer.setAnimationLoop(tick);
 
 // ───────────────────────── test / demo hooks (URL params) ─────────────────────────
+// The autopilot audit is longer than any tool call may block for, so its state lives out here
+// between calls rather than inside one.
+let qaDrive = null;
 window.__RSB = {
-  get state() { return { started, paused, bootMs: Math.round(startedAt), pos: [phys?.x, phys?.y, phys?.z], speed: phys?.speed, yaw: phys?.yaw, fps: fpsAvg, mission: activeMission, launch: launch.phase, launchY: launch.y, samples: samplesTaken, leak: leakFixed, quality: qKey, battery: grid.battery, gridOnline: grid.online, gridDead: grid.dead }; },
+  get state() { return { started, paused, bootMs: Math.round(startedAt), pos: [phys?.x, phys?.y, phys?.z], speed: phys?.speed, yaw: phys?.yaw, fps: fpsAvg, mission: activeMission, launch: launch.phase, launchY: launch.y, samples: samplesTaken, leak: leakFixed, quality: qKey, battery: grid.battery, gridOnline: grid.online, gridDead: grid.dead, faults: updateFaults }; },
   skipMissions: () => {
     base.gridRigs.forEach(r => { r.online = true; r.power = 1; r.tp.online = true; });
     grid.online = GRID_COUNT; grid.battery = 1; grid.dead = false;
@@ -1135,6 +1148,213 @@ window.__RSB = {
   scene: () => scene,
   // run one full game frame by hand — lets QA drive the sim while the tab is hidden
   frame: (dt = 1 / 60) => update(dt),
+  input: () => input.inp,
+  // Autopilot audit. The drive-through that decides whether the base is actually playable cannot be
+  // done by eye: a rover that wedges itself at 03:47 in a corner nobody thought to try is exactly
+  // the report a player gives, and no screenshot of a parked rover catches it. So QA holds the real
+  // controls down, steps the real game loop by hand, and files every stretch where throttle was in
+  // and the ground did not move — plus every discontinuity the sim teleports the rover through.
+  // A stall is NET progress over a window, not distance from an anchor. The first version of this
+  // detector re-armed itself every time the rover moved 2.5 m away — which a rover pinning itself
+  // against a collider does in its sleep, thrashing back and forth at 0 m/s average. The audit has
+  // to be stricter than the player's patience, so the bar is "did not get anywhere in 4 seconds".
+  // The driver is also given the collision map: an autopilot that steers into every wall would
+  // report the base as unnavigable when the only thing wedged is the test itself.
+  // Resumable by design. A 5-minute audit cannot be one function call — the harness caps a call at
+  // 15 s but the page carries on looping after the timeout, so a second call would inherit a rover
+  // the first one left face-down in a collider and the trace would be nonsense. So the session lives
+  // in qaDrive: each call advances it, and a fresh session parks the rover back at spawn first.
+  drive: (opts = {}) => {
+    const dt = 1 / 60;
+    const CLEAR = 1.6 + 0.4, CELL = 24;   // body clearance + a little respect, and the hash cell size
+    const cellKey = (cx, cz) => cx * 8192 + cz;
+    const keys = ['KeyW'];
+    let s = qaDrive;
+    if (!s || opts.reset) {
+      const ride = phys.y - phys.groundY;
+      phys.x = START.pos[0]; phys.z = START.pos[1];
+      phys.groundY = surfaceAt(phys.x, phys.z);
+      phys.y = phys.groundY + ride;
+      phys.yaw = START.heading;
+      phys.vx = 0; phys.vz = 0; phys.vy = 0; phys.speed = 0; phys.lateral = 0;
+      phys.wheelAngle = 0; phys.grounded = true; phys.onFloor = false;
+      phys.pitch = 0; phys.roll = 0; phys.susp = 0; phys.suspV = 0;
+
+      // every waypoint a player is ever asked to steer to, plus the carriageway itself walked end
+      // to end: covering the districts proves the shortcuts work, covering the streets proves the
+      // grid has no pinch points between the landmarks.
+      const spots = [...base.teleports.map(p => ({ name: p.key, x: p.x, z: p.z })),
+        ...(base.gridRigs || []).map(r => ({ name: `tap:${r.key}`, x: r.x, z: r.z }))];
+      for (const st of STREETS) {
+        const n = Math.round(Math.hypot(st.b[0] - st.a[0], st.b[1] - st.a[1]) / 40);
+        for (let i = 0; i <= n; i++) {
+          const f = i / n;
+          spots.push({ name: `${st.id}:${i}`, x: st.a[0] + (st.b[0] - st.a[0]) * f, z: st.a[1] + (st.b[1] - st.a[1]) * f });
+        }
+      }
+      const route = [];
+      let at = [phys.x, phys.z];
+      const pending = spots.slice();
+      while (pending.length) {
+        pending.sort((a, b) => Math.hypot(a.x - at[0], a.z - at[1]) - Math.hypot(b.x - at[0], b.z - at[1]));
+        const nxt = pending.shift();
+        route.push(nxt); at = [nxt.x, nxt.z];
+      }
+
+      // clearance oracle over the solid discs, hashed so 18k frames of raycast stays cheap
+      const cells = new Map();
+      for (const c of base.colliders) {
+        if (c.floor !== undefined) continue;
+        const reach = Math.ceil((c.r + CLEAR) / CELL);
+        const cx = Math.floor(c.x / CELL), cz = Math.floor(c.z / CELL);
+        for (let i = -reach; i <= reach; i++) for (let j = -reach; j <= reach; j++) {
+          const k = cellKey(cx + i, cz + j);
+          const a = cells.get(k);
+          if (a) a.push(c); else cells.set(k, [c]);
+        }
+      }
+      s = qaDrive = {
+        route, cells, budget: opts.seconds ?? 300, stallCells: new Map(), events: [], samples: [],
+        wp: 0, dist: 0, t: 0, gated: 0, peakSpeed: 0,
+        prevPos: [phys.x, phys.z], prevDead: grid.dead,
+        markT: 0, markX: phys.x, markZ: phys.z, recoverUntil: -9, aim: phys.yaw, turnDir: 0,
+        runFrames: 0,
+      };
+    }
+    const NONE = [];
+    const blockedAt = (x, z) => {
+      const list = s.cells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) || NONE;
+      for (const c of list) if (Math.hypot(x - c.x, z - c.z) < c.r + CLEAR) return true;
+      return false;
+    };
+    const rangeOf = (x, z, a, max = 18) => {
+      const sx = Math.sin(a), sz = Math.cos(a);
+      for (let d = 1.5; d <= max; d += 1.5) if (blockedAt(x + sx * d, z + sz * d)) return d - 1.5;
+      return max;
+    };
+    const wrap = v => Math.atan2(Math.sin(v), Math.cos(v));
+    const OFF = [24, -24, 48, -48, 72, -72, 100, -100, 135, -135, 180].map(d => d * Math.PI / 180);
+    // Point at the waypoint; only go hunting for another bearing once the carriageway ahead is
+    // actually closing. The first version scored every whisker against a self-referential heading
+    // that it then overwrote, so "straight on" earned a permanent bonus and the audit drove itself
+    // to the rim of the map while chasing a waypoint behind it.
+    const pick = (tx, tz) => {
+      const goal = Math.atan2(tx - phys.x, tz - phys.z);
+      const look = 6 + Math.min(11, phys.speed * 0.7);
+      const rg = rangeOf(phys.x, phys.z, goal);
+      if (rg >= look) return { a: goal, r: rg };
+      let best = null;
+      for (const o of OFF) {
+        const a = goal + o;
+        const r = rangeOf(phys.x, phys.z, a);
+        const score = Math.min(r, 14) - Math.abs(o) * 1.1 - Math.abs(wrap(a - phys.yaw)) * 0.3;
+        if (!best || score > best.score) best = { a, r, score };
+      }
+      return best && best.r > rg ? best : { a: goal, r: rg };
+    };
+    const touched = () => base.colliders
+      .map((c, i) => ({ c, i, d: Math.hypot(phys.x - c.x, phys.z - c.z) }))
+      .filter(o => o.c.floor === undefined && o.d < o.c.r + 1.75)
+      .sort((a, b) => a.d - b.d).slice(0, 4)
+      .map(o => `${o.c.prop || o.i}@${o.c.x.toFixed(1)},${o.c.z.toFixed(1)},r${o.c.r.toFixed(1)} gap${(o.d - o.c.r - 1.6).toFixed(2)}`);
+
+    input.inp.keys.add('KeyW');
+    const wall = performance.now();
+    const frames = Math.round(Math.min(s.budget - s.t, opts.chunk ?? 100) / dt);
+    let f = 0;
+    for (; f < frames && s.wp < s.route.length; f++) {
+      const tgt = s.route[s.wp];
+      const recovering = s.t < s.recoverUntil;
+      if (recovering) {
+        input.inp.gas = 0;
+        input.inp.brake = 1;                    // back out, swinging toward whichever side is open
+        const openLeft = rangeOf(phys.x, phys.z, phys.yaw - Math.PI / 2);
+        const openRight = rangeOf(phys.x, phys.z, phys.yaw + Math.PI / 2);
+        s.turnDir = openLeft >= openRight ? 1 : -1;
+        input.inp.steer = s.turnDir;
+      } else {
+        input.inp.brake = 0;
+        const b = pick(tgt.x, tgt.z);
+        s.aim = b.a;
+        const err = wrap(b.a - phys.yaw);
+        // The wheel model is inverted relative to bearing math: positive steer rotates yaw
+        // downwards, so closing a negative heading error takes positive pedal. Commanding
+        // sign(err) instead makes the autopilot fight its own target and wander off the map.
+        if (Math.abs(err) < 1.6 || !s.turnDir) s.turnDir = -Math.sign(err) || 1;
+        input.inp.steer = s.turnDir * Math.min(1, Math.abs(err) * 1.2);
+        input.inp.gas = b.r < 3 ? 0.3 : Math.abs(err) > 1.2 ? 0.45 : 1;
+      }
+      const before = [phys.x, phys.z];
+      const throttle = input.inp.gas;
+      update(dt);
+      s.t += dt;
+      input.inp.brake = recovering ? 1 : 0;     // read() re-derives pedals from the key set
+      s.dist += Math.hypot(phys.x - before[0], phys.z - before[1]);
+      s.peakSpeed = Math.max(s.peakSpeed, phys.speed);
+      if (teleOpen) s.gated++;
+      if (Math.hypot(phys.x - s.prevPos[0], phys.z - s.prevPos[1]) > 8) {
+        s.events.push({ t: +s.t.toFixed(1), kind: 'teleport', from: s.prevPos.map(v => +v.toFixed(1)),
+                        to: [phys.x, phys.z].map(v => +v.toFixed(1)), battery: +grid.battery.toFixed(3) });
+      }
+      s.prevPos = [phys.x, phys.z];
+      if (grid.dead !== s.prevDead) {
+        s.events.push({ t: +s.t.toFixed(1), kind: grid.dead ? 'battery-dead' : 'battery-restored',
+                        pos: [phys.x, phys.z].map(v => +v.toFixed(1)), battery: +grid.battery.toFixed(3) });
+        s.prevDead = grid.dead;
+      }
+      if (s.t - s.markT >= 4) {
+        const prog = Math.hypot(phys.x - s.markX, phys.z - s.markZ);
+        if (prog < 1.5 && throttle > 0.4 && !grid.dead) {
+          // file by pocket, not by frame: one wedge visited 20 times is one defect, and a 5-minute
+          // run has to fit its whole report in one tool result
+          const ck = `${Math.round(phys.x / 6)},${Math.round(phys.z / 6)}`;
+          const old = s.stallCells.get(ck);
+          if (old) { old.n++; old.lastT = +s.t.toFixed(1); }
+          else s.stallCells.set(ck, { pos: [+phys.x.toFixed(1), +phys.z.toFixed(1)], n: 1, firstT: +s.t.toFixed(1), lastT: +s.t.toFixed(1),
+                        wp: tgt.name, metresIn4s: +prog.toFixed(2),
+                        yaw: +phys.yaw.toFixed(2), speed: +phys.speed.toFixed(2),
+                        vf: +(phys.vx * Math.sin(phys.yaw) + phys.vz * Math.cos(phys.yaw)).toFixed(2),
+                        vxz: [+phys.vx.toFixed(2), +phys.vz.toFixed(2)],
+                        grounded: phys.grounded, onFloor: phys.onFloor,
+                        y: +phys.y.toFixed(2), groundY: +phys.groundY.toFixed(2),
+                        slope: +surfaceSlope(phys.x, phys.z).toFixed(2),
+                        enginePower: +phys.enginePower.toFixed(2),
+                        pickRange: +rangeOf(phys.x, phys.z, phys.yaw).toFixed(1),
+                        touching: touched(), battery: +grid.battery.toFixed(3),
+                        teleOpen, demoPin: !!demoPin });
+          s.recoverUntil = s.t + 1.4;
+        }
+        s.markT = s.t; s.markX = phys.x; s.markZ = phys.z;
+      }
+      if (s.runFrames++ % 120 === 0) s.samples.push([+s.t.toFixed(0), +phys.speed.toFixed(1), s.wp,
+        Math.round(Math.hypot(phys.x - tgt.x, phys.z - tgt.z)),
+        Math.round(Math.atan2(tgt.x - phys.x, tgt.z - phys.z) * 57.3),
+        Math.round(phys.yaw * 57.3), Math.round(s.aim * 57.3),
+        Math.round(rangeOf(phys.x, phys.z, Math.atan2(tgt.x - phys.x, tgt.z - phys.z))),
+        +input.inp.gas.toFixed(2), +input.inp.steer.toFixed(2)]);
+      if (Math.hypot(phys.x - tgt.x, phys.z - tgt.z) < 11) s.wp++;
+      if (f % 900 === 899 && performance.now() - wall > 9000) break;  // never outlive the call budget
+    }
+    // Release the pedal between chunks: the real animation loop keeps running while QA thinks,
+    // and a rover left accelerating between two measurements is a rover that arrives at chunk 2
+    // somewhere chunk 1 never drove it.
+    keys.forEach(k => input.inp.keys.delete(k));
+    input.inp.gas = 0; input.inp.steer = 0; input.inp.brake = 0;
+    const done = s.wp >= s.route.length || s.t >= s.budget;
+    if (done) qaDrive = null;
+    const stalls = [...s.stallCells.values()].sort((a, b) => b.n - a.n);
+    return { done, simSeconds: +s.t.toFixed(1), metres: Math.round(s.dist),
+             mps: s.t > 0 ? +(s.dist / s.t).toFixed(2) : 0, peakSpeed: +s.peakSpeed.toFixed(1),
+             reached: s.route.slice(0, s.wp).map(r => r.name), of: s.route.length,
+             stuckPockets: stalls.length,
+             stuckFrames: stalls.reduce((a, b) => a + b.n, 0),
+             inputGatedFrames: s.gated,
+             teleports: s.events.filter(e => e.kind === 'teleport').length,
+             batteryEvents: s.events.filter(e => /battery/.test(e.kind)).length,
+             battery: +grid.battery.toFixed(3), gridOnline: grid.online, realFps: Math.round(fpsAvg),
+             stalls: stalls.slice(0, 8), events: s.events.slice(0, 12),
+             samples: s.samples.slice(-40) };
+  },
   audio: () => ({ ready: audio.ready, state: audio.ctx?.state || 'none', lp: Math.round(audio.lowpass?.frequency.value || 0), lvl: +(audio.level?.() || 0).toFixed(3), eng: +(audio.engineG?.gain.value || 0).toFixed(3) }),
   audioCtx: () => audio.ctx,
   hold: (v) => { input.inp.keys[v ? 'add' : 'delete']('KeyE'); },

@@ -21,7 +21,7 @@ const G = new THREE.Group();
 export async function buildBase(scene, quality) {
   G.clear();
   const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
-    'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'reactor_tap', 'lamp',
+    'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'reactor_tap', 'lox_stand', 'roadster', 'lamp',
     'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA', 'corridor', 'corridor_corner',
     'corridor_end', 'platform_high', 'platform_low', 'platform_large', 'machine_generator',
@@ -850,7 +850,7 @@ export async function buildBase(scene, quality) {
     // that is what they are now. The emissive guard is what keeps the hero lamps lit: their accents
     // carry a real emissive term and are the base's night lighting, not a surface colour.
     for (const [mname, root] of Object.entries(models)) {
-      if (!root || /^(starship_stack|crew_rover|optimus_bot|watch_deck|spaceport_gate|hub_plaza|reactor_tap|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad)$/.test(mname)) continue;
+      if (!root || /^(starship_stack|crew_rover|optimus_bot|watch_deck|spaceport_gate|hub_plaza|reactor_tap|lox_stand|roadster|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad)$/.test(mname)) continue;
       const deck = /^platform_/.test(mname);
       // A pipe elbow weathered to flat matte pale grey lost the one thing that says "manufactured":
       // a specular streak along its length. Outdoors it read as a 4 m cream boulder sitting in the
@@ -944,28 +944,10 @@ export async function buildBase(scene, quality) {
       const sx = px + 6, sz = pz - 12, sy = surfaceAt(sx, sz);
       // A kit scaffold frame standing over empty ground was the last bare prop on the pad. This is
       // the LOX stand instead: bund, drum, cradle, manifold and a transfer line to the flame deck.
-      cyl(1.55, 1.7, 0.24, M.white, sx, sy + 0.12, sz, 26);
-      cyl(0.62, 0.62, 1.9, M.struct, sx, sy + 1.19, sz, 20);
-      for (const yy of [0.56, 1.29, 1.96]) cyl(0.66, 0.66, 0.09, M.dark, sx, sy + yy, sz, 20);
-      cyl(0.24, 0.24, 0.42, M.white, sx, sy + 2.34, sz, 14);
-      for (let i = 0; i < 4; i++) {
-        const a = i / 4 * Math.PI * 2 + 0.79;
-        cyl(0.075, 0.075, 2.9, M.struct, sx + Math.sin(a) * 1.12, sy + 1.69, sz + Math.cos(a) * 1.12, 8);
-        box(0.1, 0.1, 2.24, M.struct, sx + Math.sin(a) * 1.12, sy + 3.06, sz + Math.cos(a) * 1.12, G)
-          .rotation.y = a;
-      }
-      const cap = new THREE.Mesh(new THREE.TorusGeometry(1.12, 0.06, 5, 22), M.struct);
-      cap.rotation.x = Math.PI / 2; cap.position.set(sx, sy + 3.1, sz); G.add(cap);
-      box(0.52, 0.44, 0.36, M.dark, sx + 0.98, sy + 0.86, sz - 0.62, G).rotation.y = 0.8;
-      box(0.15, 0.15, 0.52, M.orange, sx + 1.24, sy + 1.2, sz - 0.78, G).rotation.y = 0.8;
-      const pts = [];
-      for (let i = 0; i <= 18; i++) {
-        const t = i / 18;
-        pts.push(new THREE.Vector3(sx + (px - sx) * t,
-          sy + 2.3 - t * 1.1 - Math.sin(t * Math.PI) * 0.75, sz + (pz - sz) * t));
-      }
-      const line = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 26, 0.075, 6), M.dark);
-      line.castShadow = true; G.add(line);
+      // One authored stand: a bundled cryo drum on its saddles inside a four-leg cage with a
+      // guard ring, its manhole and relief valve, and the transfer line laid — with its clamps
+      // and its riser flange — out to the flame deck it feeds.
+      put('lox_stand', sx, sz, 1, 0, 0);
       k('barrels', sx - 2.4, sz + 1.6, 0.5);
       lot('lox-stand', sx, sz, 3.5, 3.5);
       sparkPoints.push({ x: sx, y: sy + 2.4, z: sz, rate: 0.22 });
@@ -1387,36 +1369,10 @@ export async function buildBase(scene, quality) {
   {
     const [rx, rz] = ZONES.roadster.pos;
     const ry = surfaceAt(rx, rz);
-    const car = new THREE.Group(); car.position.set(rx, ry, rz); car.rotation.y = 2.55; // nose points out at the rim
-    const paint = new THREE.MeshPhysicalMaterial({ color: 0xa81414, roughness: 0.26, metalness: 0.5, clearcoat: 0.85, clearcoatRoughness: 0.15, envMapIntensity: 1.2 });
-    const glassDark = new THREE.MeshPhysicalMaterial({ color: 0x0d1620, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.6 });
-    const suitMat = new THREE.MeshStandardMaterial({ color: 0xe6e2d8, roughness: 0.62, metalness: 0.05 });
-    box(1.9, 0.4, 4.4, paint, 0, 0.66, 0, car);
-    box(1.62, 0.42, 1.5, paint, 0, 0.72, -1.75, car);
-    box(1.5, 0.34, 1.25, paint, 0, 0.78, 1.7, car);
-    box(1.42, 0.56, 1.35, paint, 0, 0.98, 0.35, car);
-    box(1.24, 0.5, 0.1, glassDark, 0, 1.16, -0.42, car).rotation.x = -0.5;
-    for (const s of [-1, 1]) {
-      box(0.5, 0.5, 1.45, paint, s * 0.86, 0.72, -1.5, car).rotation.z = s * 0.16;
-      box(0.5, 0.46, 1.3, paint, s * 0.86, 0.72, 1.55, car).rotation.z = s * 0.16;
-      const lampB = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 8), M.goldLight);
-      lampB.position.set(s * 0.6, 0.86, -2.48); car.add(lampB);
-    }
-    const tyre = new THREE.MeshStandardMaterial({ color: 0x14120f, roughness: 0.95 });
-    for (const [wxp, wzp] of [[-1.06, -1.5], [1.06, -1.5], [-1.06, 1.55], [1.06, 1.55]]) {
-      cyl(0.58, 0.58, 0.38, tyre, wxp, 0.58, wzp, 16, car).rotation.z = Math.PI / 2;
-      cyl(0.3, 0.3, 0.4, M.struct, wxp, 0.58, wzp, 12, car).rotation.z = Math.PI / 2;
-    }
-    const star = new THREE.Group(); star.position.set(0, 0.78, 0.42);
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.29, 0.4, 6, 12), suitMat);
-    torso.position.y = 0.42; star.add(torso);
-    const helm = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 12), suitMat);
-    helm.position.y = 0.9; star.add(helm);
-    const visor = new THREE.Mesh(new THREE.SphereGeometry(0.225, 16, 12), new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 1, roughness: 0.12, envMapIntensity: 1.5 }));
-    visor.position.set(0, 0.92, -0.1); visor.scale.set(0.95, 0.8, 0.5); star.add(visor);
-    car.add(star);
-    car.traverse(o => { if (o.isMesh) o.castShadow = true; });
-    G.add(car);
+    // The one car in the scene that is not driven has to be recognised as a Roadster from
+    // 60 m: a lofted body with its shoulder line, a glass canopy, arches over spoked rims,
+    // splitter, diffuser and spoiler, shut lines on the panels, and Starman in the seat.
+    const car = put('roadster', rx, rz, 1, 2.55, 0);
     lot('roadster', rx, rz, 2.4, 5.0, 2.55);
     // a small cairn of sample crates so the spot reads as visited
     k('desk_computer', rx + 4, rz - 3, 1.8, 0.7);

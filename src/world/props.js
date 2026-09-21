@@ -31,7 +31,8 @@ export async function buildBase(scene, quality) {
   G.clear();
   const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
     'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'reactor_tap', 'lox_stand', 'roadster', 'lamp',
-    'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut', 'barrier_kit', 'flag_mast'];
+    'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut', 'barrier_kit', 'flag_mast',
+    'hazard_sign'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA', 'corridor', 'corridor_corner',
     'corridor_end', 'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
@@ -1124,13 +1125,25 @@ export async function buildBase(scene, quality) {
     cyl(0.09, 0.09, 1.6, M.struct, mx - 3.4, my2 + 0.8, mz - 3.4, 8);
     beacons.push(cyl(0.4, 0.4, 0.6, M.beacon, mx - 3.4, my2 + 1.85, mz - 3.4, 10));
     box(0.9, 0.12, 0.9, M.struct, mx - 3.4, my2 + 2.35, mz - 3.4);
-    // warning board facing the approach road
-    const board = new THREE.Group();
-    board.position.set(mx + 0.5, my2 + 1.5, mz + 5.6);
-    board.rotation.y = Math.atan2(mx - 20 - (mx + 0.5), mz - 6 - (mz + 5.6));
-    box(2.4, 1.1, 0.1, M.dark, 0, 0, 0, board);
-    box(2.0, 0.5, 0.06, M.hazard, 0, 0.05, 0.09, board);
-    G.add(board);
+    // The placard at the road end of the ring. It warns the driver who is about to reach the
+    // hazard, so its face is aimed at the nearest street centreline instead of at the leak behind
+    // it, and the `+ PI` is what makes the aim land on the printed side: the exporter turns the
+    // authored +Y face into the app's -Z, so a bare atan2 shows the rover the sign's back legs.
+    const bx = mx + 0.5, bz = mz + 5.6;
+    let roadDist = 1e9, aimX = 20, aimZ = 6;
+    for (const s of STREETS) {
+      const ex = s.b[0] - s.a[0], ez = s.b[1] - s.a[1];
+      const t = Math.max(0, Math.min(1, ((bx - s.a[0]) * ex + (bz - s.a[1]) * ez) / (ex * ex + ez * ez)));
+      const d = Math.hypot(bx - (s.a[0] + ex * t), bz - (s.a[1] + ez * t));
+      if (d < roadDist) { roadDist = d; aimX = s.a[0] + ex * t; aimZ = s.a[1] + ez * t; }
+    }
+    const bRy = Math.atan2(aimX - bx, aimZ - bz) + Math.PI;
+    beginProp('leak-board');
+    put('hazard_sign', bx, bz, 1, bRy, 0);
+    // Three discs spanned across the board's own 2.24 m, not one blob at its centre: the panel is
+    // the thing that stops a rover and the ground between the legs is driveable.
+    endProp({ legs: [[-0.72, 0, 0.55, 0.55], [0, 0, 0.55, 0.55], [0.72, 0, 0.55, 0.55]],
+              at: [bx, bz], ry: bRy });
     infoZones.push({
       key: 'tanks', pos: [mx, mz], r: 12, tag: 'ALERT · PROPULSION LEAK',
       name: '推进剂泄漏点', params: ['BOG 回收管线 3 路 · 真空夹套', '按住交互键（键盘 E / 触屏「交互」）约 3 秒'],

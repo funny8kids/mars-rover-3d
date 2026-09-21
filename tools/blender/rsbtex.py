@@ -326,6 +326,125 @@ def decal_maps(text, tag, w_m, h_m, pm=300.0, ink=(30, 29, 27), cover=0.90, trac
     return {"decal": _save(rgb, tag + "_decal")}, w_m, h_m
 
 
+# ─────────────────────────── a printed sign face ───────────────────────────
+def sign_face_maps(tag, w_m, h_m, title="DANGER", lines=(), pm=420.0,
+                   field=(176, 138, 58), ink=(34, 31, 29), dust=(186, 156, 116)):
+    """The laminated face of a safety placard: enamel print under a UV film, weathered where
+    it stands. This is the one field here that does not tile — a sign is a graphic, not a
+    surface, so it is authored at the panel's exact metre size and the builder gives it planar
+    UVs that map 1:1. That is also why the legend is 70 mm: it is drawn at the size it would
+    be printed, so it reads at the distance a driver has to read it.
+
+    The artwork is drawn (PIL polygons plus the same DejaVu Bold a stencil shop uses), then
+    weathered by the same passes as everything else: chalk on the pale field, an ultraviolet
+    bleed-down from the top edge, a dust creep up the bottom, and a fine grit both ways. The
+    roughness plane is what sells it — printed enamel keeps its gloss while the chalked metal
+    around it loses it, so a sign reads as film on a plate rather than as a painted rectangle.
+    The relief comes from the artwork's own edges: the print does sit proud of the laminate by
+    a few microns, and normal-mapping the outline is what makes the lettering catch the sun."""
+    w, h = int(round(w_m * pm)), int(round(h_m * pm))
+    X0, Z0 = w / 2.0, h / 2.0            # metres->pixels, v up in the mesh, y down in the file
+
+    def px(x_m): return X0 + x_m * pm
+    def py(z_m): return h - (Z0 + z_m * pm)
+
+    col = Image.new("RGB", (w, h), field)
+    ink_m = Image.new("L", (w, h), 0)     # 255 wherever enamel is laid down
+    d, di = ImageDraw.Draw(col), ImageDraw.Draw(ink_m)
+
+    def poly(pts, fill):
+        q = [(px(x), py(z)) for x, z in pts]
+        d.polygon(q, fill=fill)
+        di.polygon(q, fill=255 if fill == ink else 0)
+
+    def rect(x0, z0, x1, z1, fill):
+        poly([(x0, z0), (x1, z0), (x1, z1), (x0, z1)], fill)
+
+    def rule(x0, z0, x1, z1, t):
+        """An outlined rectangle of thickness t: the border rule every placard carries."""
+        rect(x0, z0, x1, z0 + t, ink); rect(x0, z1 - t, x1, z1, ink)
+        rect(x0, z0, x0 + t, z1, ink); rect(x1 - t, z0, x1, z1, ink)
+
+    HW, HH = w_m / 2.0, h_m / 2.0
+    rule(-HW + 0.055, -HH + 0.055, HW - 0.055, HH - 0.055, 0.020)
+
+    # ── the ISO warning triangle: a ring of black, the field showing through the middle ──
+    TCX, TCZ, R = -HW + 0.46, 0.02, 0.345
+    tri = [(TCX + R * math.sin(a), TCZ - R * 0.52 + R * math.cos(a) * 1.12)
+           for a in (0.0, TAU / 3.0, 2.0 * TAU / 3.0)]
+    poly(tri, ink)
+    # The inner triangle is inset about the *centroid*, because that is the one centre from
+    # which a uniform scale is a uniform perpendicular inset. Scale about the apex-height mean
+    # instead — as `TCZ` is — and the border comes out twice as thick along the base as along
+    # the sides, which is the exact tell of a hand-placed warning sign.
+    CX, CZ = TCX, sum(p[1] for p in tri) / 3.0
+    poly([(CX + (p[0] - CX) * 0.72, CZ + (p[1] - CZ) * 0.72) for p in tri], field)
+    # The exclamation is sized against that inset ring — the inner triangle spans 417 mm and
+    # closes to 215 mm half-width at its foot — so no stroke of it bleeds into the black.
+    poly([(TCX - 0.045, TCZ - 0.135), (TCX + 0.045, TCZ - 0.135),
+          (TCX + 0.026, TCZ + 0.015), (TCX - 0.026, TCZ + 0.015)], ink)
+    poly([(TCX - 0.034, TCZ - 0.245), (TCX + 0.034, TCZ - 0.245),
+          (TCX + 0.034, TCZ - 0.185), (TCX - 0.034, TCZ - 0.185)], ink)
+
+    # ── the legend, left-aligned off the triangle's corner, sized like a printed placard ──
+    LX, RX = -HW + 0.94, HW - 0.085          # the text column, clear of the art and the rule
+
+    def word(s, z_m, cap_m):
+        """Draw at the cap height asked for, or as near to it as the column allows. The legend
+        is authored per site rather than tuned to this width, and a sign whose second line runs
+        off the plate is worse than a sign with slightly small type."""
+        size = int(cap_m * pm)
+        f = ImageFont.truetype(FONT_BOLD, size)
+        while size > 12 and d.textlength(s, font=f) > (RX - LX) * pm:
+            size = int(size * 0.94)
+            f = ImageFont.truetype(FONT_BOLD, size)
+        d.text((px(LX), py(z_m)), s, font=f, fill=ink, anchor="lm")
+        di.text((px(LX), py(z_m)), s, font=f, fill=255, anchor="lm")
+
+    word(title, 0.235, 0.185)
+    z = 0.030
+    for s in lines:
+        word(s, z, 0.072)
+        z -= 0.132
+
+    base = np.asarray(col, float) / 255.0
+    inm = np.asarray(ink_m, float) / 255.0
+    U, V = _mesh(w, h, pm)
+    # `_mesh` counts v from the file's first row, which is the picture's top — so metres up from
+    # the panel's middle is h_m/2 - V, not V - h_m/2. Get that sign wrong and the saltation band
+    # buries the upper half of the graphic instead of the foot of the board.
+    zz = h_m / 2.0 - V                      # metres up from the panel's middle
+    grit = _pnoise(w, h, int(w_m / 0.0022), int(h_m / 0.0022), 211) - 0.5
+    chalk = _pnoise(w, h, max(2, int(w_m / 0.34)), max(2, int(h_m / 0.20)), 407)
+    blotch = _pnoise(w, h, max(2, int(w_m / 0.9)), max(2, int(h_m / 0.5)), 913)
+    pale = 1.0 - inm                        # the field, not the enamel
+    # Chalking, not darkening: UV lifts an exposed placard's pigment toward the laminate's own
+    # bone, and it works from the crown down because that is the half the sun sees. The enamel
+    # resists most of it — which is the difference between a faded sign and merely a dirty one.
+    crown = np.clip(0.62 + zz / (2.0 * h_m), 0.0, 1.0)
+    fade = np.clip(0.34 * crown + 0.13 * chalk + 0.07 * blotch, 0.0, 1.0) * (0.22 + 0.78 * pale)
+    colr = base + (base * 0.45 + 0.52 - base) * fade[..., None]
+    # Saltation carries grit up the foot of a vertical face and stops, ragged, where the wind
+    # could not lift it further. It is a film laid over the print rather than paint on the
+    # metal, so it lightens the black about as much as it yellows the field: contrast falls,
+    # hue does not. And it reaches ~120 mm, not half the board — the panel stands on legs.
+    foot = zz + HH                          # metres above the panel's own bottom edge
+    creep = np.clip((0.115 + 0.070 * chalk - foot) / 0.085, 0.0, 1.0) * 0.70
+    colr = colr + (np.array(dust, float) / 255.0 - colr) * creep[..., None]
+    colr += grit[..., None] * 0.040
+    rough = np.clip(86 + pale * 30 + fade * 52 + creep * 74 + grit * 12, 60, 255)
+    edge = (np.abs(inm - np.roll(inm, 1, 1)) + np.abs(inm - np.roll(inm, 1, 0)))
+    # A placard face is not a tiling field: the wrapped differences would weld the top border
+    # rule to the bottom one and raise a ridge along the panel's own edge.
+    edge[:2, :] = edge[-2:, :] = edge[:, :2] = edge[:, -2:] = 0.0
+    height = (np.clip(edge * 2.2, 0, 1) * 0.35 + creep * 0.18 + chalk * 0.07
+              + grit * 0.5 - crown * 0.05)
+    maps = {"basecolor": _save(np.clip(colr * 255.0, 0, 255), tag + "_col"),
+            "rough": _save(rough, tag + "_rgh"),
+            "normal": _save(height_to_normal(height, 3.0), tag + "_nrm")}
+    return maps, w_m, h_m
+
+
 PANELS = {
     # Every tint is baked into the map: the exporter carries a multiply chain as nothing.
     "crew_paint":  lambda: panel_maps(tag="crew_paint", tint=(0.905, 0.878, 0.816), base=224,
@@ -392,6 +511,12 @@ ALL = dict(PANELS, **{"steel": steel_maps, "tps": tps_maps,
        # 560 mm drew four cracks across it and turned the run into a stack of boxes.
        "bar_cast": lambda: concrete_maps(tag="bar_cast", tile=0.56, pm=340, joints=False,
                                          nrm=4.2, tint=(0.635, 0.605, 0.55)),
+       # The leak skid's placard, at the panel's own 2.20 × 1.10 m size: the legend is 70 mm
+       # tall because that is what a printed sign's legend is, and nothing about a hazard board
+       # works if you cannot read it from the road it is warning people off.
+       "hazard_face": lambda: sign_face_maps("hazard_face", 2.20, 1.10, title="DANGER",
+                                             lines=("PROPULSION LEAK · BOG RETURN 3",
+                                                    "FLAMMABLE · NO ENTRY · 5 m")),
        })
 
 

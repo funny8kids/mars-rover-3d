@@ -657,6 +657,209 @@ function updateRace(dt) {
   UI.raceShow(true, fmtTime(race.t), `${t('检查点')} ${race.idx}/${race.gates.length}`);
 }
 
+// ───────────────────────── runtime unstick ─────────────────────────
+// A2's scan says the base has no wedges left in it, so whatever still pins a rover is a case the
+// scan cannot see: a prop moved by a later commit, a slope that grabs the wheels, two discs whose
+// push-out normals cancel between substeps. The player must never be left holding keys against
+// static geometry — that is the exact report this replaces ("WASD 失效") — so `update` watches for
+// the state and drives the rover out of it itself:
+//   back-out  real throttle, away from the deepest contact, aimed at whichever heading has the
+//             daylight. Same grip, same slope, same collision response: it is a drive, not a rescue.
+//   jack      if 1.8 s of throttle moved nothing, raise the chassis on its recovery rams and glide
+//             to the nearest legal surface. The collider discs are 2D, so lifting alone frees
+//             nothing — the horizontal glide is the escape and the lift is what stops the wheels
+//             dragging through the ground on the way.
+// Nothing teleports and nothing clips: `jack` interpolates over 1.15 s with a smoothstep, so
+// velocity starts and ends at zero and the rover never moves further in a frame than it drives,
+// and a glide path is rejected unless every half metre of it is clear of props the rover was not
+// ALREADY touching. Control is never taken away either — the raw key set is watched separately
+// from the synthesised pedals, so tapping S or Space hands the rover straight back.
+const BODY_R = 1.6;                 // physics.js pads every collider disc by this for the body ring
+const rescue = {
+  phase: '', t0: 0, cool: 0, tries: 0, markT: 0, markX: 0, markZ: 0,
+  ax: 0, az: 0, heading: 0, reverse: false, from: null, to: null, near: [], maxStep: 0,
+  heldBrake: false, heldDrift: false, events: [],
+};
+const wrapPi = a => Math.atan2(Math.sin(a), Math.cos(a));
+
+// Distance from the body ring at (x,z) to the nearest solid disc; negative once it is inside.
+// `ignore` carries the discs the rover is already wedged between — those are the pocket it is
+// leaving, not a wall it would clip.
+function gapFrom(list, x, z, ignore) {
+  let gap = 99;
+  for (const c of list) {
+    if (ignore && ignore.has(c)) continue;
+    const d = Math.hypot(x - c.x, z - c.z) - c.r - BODY_R;
+    if (d < gap) gap = d;
+  }
+  return gap;
+}
+
+// Every half metre of the line must sit outside the body ring of every prop not already touched.
+function glideClear(list, x0, z0, x1, z1, ignore) {
+  const d = Math.hypot(x1 - x0, z1 - z0);
+  const n = Math.max(2, Math.ceil(d / 0.5));
+  for (let i = 1; i <= n; i++) {
+    const f = i / n;
+    if (gapFrom(list, x0 + (x1 - x0) * f, z0 + (z1 - z0) * f, ignore) < 0) return false;
+  }
+  return true;
+}
+
+// The nearest point the rover could legally be parked: outside every body ring, on ground it can
+// actually sit on, and reachable along such a line. Rings grow outward, so the first ring with any
+// answer holds the nearest one; onward daylight breaks ties.
+function nearestLegalSurface(list, maxR = 13) {
+  const wedged = new Set(list.filter(c => Math.hypot(phys.x - c.x, phys.z - c.z) < c.r + BODY_R + 0.35));
+  for (let r = 2.5; r <= maxR; r += 1.25) {
+    let best = null;
+    for (let k = 0; k < 24; k++) {
+      const a = ((k + (Math.round(r / 1.25) % 2)) / 24) * Math.PI * 2;
+      const x = phys.x + Math.sin(a) * r, z = phys.z + Math.cos(a) * r;
+      if (Math.hypot(x, z) > 1170 || surfaceSlope(x, z) > 0.55) continue;
+      if (gapFrom(list, x, z) < 0.3) continue;
+      if (!glideClear(list, phys.x, phys.z, x, z, wedged)) continue;
+      const onward = Math.min(3, Math.max(0, gapFrom(list, x + Math.sin(a) * 3, z + Math.cos(a) * 3)));
+      const score = r - onward;
+      if (!best || score < best.score) best = { x, z, r, a, score };
+    }
+    if (best) return best;
+  }
+  return null;
+}
+
+function startRescue(cause, inp) {
+  rescue.near = base.colliders.filter(c => c.floor === undefined &&
+    Math.hypot(phys.x - c.x, phys.z - c.z) < c.r + BODY_R + 26);
+  // a pedal already down when the rescue fires is the player's own attempt, not a takeover
+  rescue.heldBrake = inp.brake > 0.5;
+  rescue.heldDrift = inp.drift > 0.5;
+  rescue.tries++;
+  const vf = phys.vx * Math.sin(phys.yaw) + phys.vz * Math.cos(phys.yaw);
+  const rec = { t: +elapsed.toFixed(1), cause, pos: [+phys.x.toFixed(1), +phys.z.toFixed(1)],
+    yaw: +phys.yaw.toFixed(2), vf: +vf.toFixed(2), slope: +surfaceSlope(phys.x, phys.z).toFixed(2),
+    grounded: phys.grounded, onFloor: phys.onFloor, discs: rescue.near.length, out: '' };
+  if (!rescue.near.length) {
+    // no prop within 26 m: this is terrain holding the wheels, so skip the drive-out
+    rec.open = null;
+    rescue.events.push(rec);
+    return escalate('terrain');
+  }
+  let best = null;
+  for (let k = 0; k < 16; k++) {
+    const a = phys.yaw + (k / 16) * Math.PI * 2;
+    let d = 0;
+    while (d < 10 && gapFrom(rescue.near, phys.x + Math.sin(a) * (d + 0.5), phys.z + Math.cos(a) * (d + 0.5)) >= 0) d += 0.5;
+    if (!best || d > best.d) best = { a, d };
+  }
+  rescue.phase = 'back-out';
+  rescue.t0 = elapsed;
+  rescue.ax = phys.x; rescue.az = phys.z;
+  rescue.heading = best.a;
+  rescue.reverse = Math.abs(wrapPi(best.a - phys.yaw)) > Math.PI / 2;
+  rescue.maxStep = 0;
+  Object.assign(rec, { open: +best.d.toFixed(1), reverse: rescue.reverse, heading: +best.a.toFixed(2) });
+  rescue.events.push(rec);
+  if (rescue.events.length > 24) rescue.events.shift();
+  // No heading has half a metre of daylight: the body ring is inside overlapping props, so there is
+  // nothing to drive toward and throttle only leans on the pile. A carry is the only exit — going
+  // through the back-out first just lets the collision solver throw the rover out blind.
+  if (!best.d) return escalate('buried');
+  UI.toast('⟲ 探测到卡死 — 自动脱困程序介入，倒出夹缝');
+  audio.radio('beep');
+}
+
+function escalate(cause) {
+  // Each failed attempt looks wider: a pocket the first 13 m cannot answer is a deep one.
+  const to = nearestLegalSurface(rescue.near, Math.min(25, 13 + 4 * (rescue.tries - 1)));
+  if (!to) {
+    const rec = rescue.events[rescue.events.length - 1];
+    if (rec && rec.out === '') rec.out = 'unresolved';
+    rescue.phase = ''; rescue.cool = 4;
+    UI.toast('⚠ 自动脱困找不到落点 — 请按 S 倒车离开这里');
+    return;
+  }
+  rescue.phase = 'jack'; rescue.t0 = elapsed; rescue.maxStep = 0;
+  rescue.from = { x: phys.x, z: phys.z }; rescue.to = to;
+  const rec = rescue.events[rescue.events.length - 1];
+  if (rec && rec.out === '') Object.assign(rec, { out: 'jack', slip: +to.r.toFixed(1), cause });
+  UI.toast('⟲ 自动脱困 — 抬升车体，滑向最近净空路面');
+}
+
+function endRescue(out) {
+  const rec = rescue.events[rescue.events.length - 1];
+  if (rec) Object.assign(rec, { out, gotOut: +Math.hypot(phys.x - rec.pos[0], phys.z - rec.pos[1]).toFixed(1),
+    at: +elapsed.toFixed(1), maxStep: +rescue.maxStep.toFixed(2) });
+  rescue.phase = ''; rescue.cool = 3;
+  if (out === 'drove out' || out === 'carried') rescue.tries = 0;
+  rescue.markT = 0;
+}
+
+// The pedals the physics receives. Outside a rescue these are exactly the player's.
+function rescuePedals(inp) {
+  const cmd = { gas: inp.gas, brake: inp.brake, steer: inp.steer, drift: inp.drift };
+  if (rescue.phase !== 'back-out') return cmd;
+  const nose = rescue.reverse ? wrapPi(rescue.heading + Math.PI) : rescue.heading;
+  const err = wrapPi(nose - phys.yaw);
+  cmd.gas = rescue.reverse ? 0 : 0.8;
+  cmd.brake = rescue.reverse ? 1 : 0;
+  cmd.drift = 0;
+  // positive steer rotates yaw downwards, so closing a positive error takes a negative pedal
+  cmd.steer = Math.abs(inp.steer) > 0.25 ? inp.steer : -Math.sign(err) * Math.min(1, Math.abs(err) * 1.6);
+  return cmd;
+}
+
+// The recovery carry itself: a smoothstep slide, lifted clear of the surface it leaves.
+function rescueGlide(dt) {
+  const T = 1.15;
+  const f = Math.min(1, (elapsed - rescue.t0) / T);
+  const e = f * f * (3 - 2 * f);
+  const x = THREE.MathUtils.lerp(rescue.from.x, rescue.to.x, e);
+  const z = THREE.MathUtils.lerp(rescue.from.z, rescue.to.z, e);
+  rescue.maxStep = Math.max(rescue.maxStep, Math.hypot(x - phys.x, z - phys.z));
+  const gy = platformAt(base.colliders, x, z);
+  phys.x = x; phys.z = z;
+  phys.groundY = gy; phys.onFloor = gy > surfaceAt(x, z) + 0.05;
+  phys.prevGroundH = gy + 0.46;
+  phys.y = gy + 0.46 + 0.55 * Math.sin(Math.PI * e);   // up on the rams, down onto the new surface
+  phys.vx = 0; phys.vy = 0; phys.vz = 0; phys.speed = 0; phys.lateral = 0; phys.grounded = true;
+  phys.pitch += (0 - phys.pitch) * Math.min(1, dt * 4);
+  phys.roll += (0 - phys.roll) * Math.min(1, dt * 4);
+  if (f >= 1) endRescue('carried');
+}
+
+// "Stuck" is the audit's own bar, so the game can never claim it recovered something the test
+// would still file as a deadlock: throttle held, and less than a metre of NET ground in 2.2 s.
+function rescueWatch(inp, dt) {
+  if (rescue.cool > 0) rescue.cool = Math.max(0, rescue.cool - dt);
+  const push = Math.max(inp.gas, inp.brake);
+  if (rescue.phase === 'back-out') {
+    const moved = Math.hypot(phys.x - rescue.ax, phys.z - rescue.az);
+    if (moved > 1.9 || (phys.speed > 1.6 && moved > 1.0)) return endRescue('drove out');
+    // S / Space is the "I will get out myself" gesture, and the rescue never uses either pedal,
+    // so a fresh press hands the rover back inside the same frame
+    if ((inp.brake > 0.5 && !rescue.heldBrake) || (inp.drift > 0.5 && !rescue.heldDrift)) {
+      return endRescue('player took over');
+    }
+    if (elapsed - rescue.t0 > 1.8) return escalate('back-out failed');
+    return;
+  }
+  if (rescue.phase || rescue.cool > 0 || teleOpen || demoPin || photo.on || grid.dead || paused) {
+    rescue.markT = 0;
+    return;
+  }
+  if (push < 0.15) { rescue.markT = 0; return; }
+  if (push < 0.35) return;
+  // the window only counts while the pedal is genuinely buried, so an anchor set at the moment
+  // the press began is what makes "no net ground in 2.2 s" mean the same thing here as in `drive`
+  if (!rescue.markT) { rescue.markT = elapsed; rescue.markX = phys.x; rescue.markZ = phys.z; return; }
+  if (elapsed - rescue.markT >= 2.2) {
+    const net = Math.hypot(phys.x - rescue.markX, phys.z - rescue.markZ);
+    if (net < 0.9 && phys.grounded) startRescue('no-net-progress', inp);
+    rescue.markT = elapsed; rescue.markX = phys.x; rescue.markZ = phys.z;
+  }
+}
+
 // ───────────────────────── main update ─────────────────────────
 let lastInfoZone = null;
 function update(dt) {
@@ -670,7 +873,13 @@ function update(dt) {
   // drive physics — a flat battery kills the motors, and the last 20 % sags so that running
   // dry is a slow, obvious slide into trouble rather than a sudden loss of control
   const sag = grid.dead ? 0 : THREE.MathUtils.clamp((grid.battery - 0.06) / 0.16, 0.42, 1);
-  phys.update(dt, { gas: inp.gas * sag, brake: inp.brake, steer: inp.steer, drift: inp.drift * (grid.dead ? 0 : 1) }, base.colliders);
+  if (rescue.phase === 'jack') {
+    rescueGlide(dt);
+  } else {
+    const cmd = rescuePedals(inp);
+    phys.update(dt, { gas: cmd.gas * sag, brake: cmd.brake, steer: cmd.steer, drift: cmd.drift * (grid.dead ? 0 : 1) }, base.colliders);
+  }
+  rescueWatch(inp, dt);
   // a demo warp parks the rover for the cinematic shot; the moment someone touches the
   // controls they own it again, otherwise ?demo=… leaves a player with a dead throttle
   if (demoPin && (inp.gas || inp.brake || inp.steer || inp.drift)) demoPin = null;
@@ -1123,7 +1332,7 @@ renderer.setAnimationLoop(tick);
 // between calls rather than inside one.
 let qaDrive = null;
 window.__RSB = {
-  get state() { return { started, paused, bootMs: Math.round(startedAt), pos: [phys?.x, phys?.y, phys?.z], speed: phys?.speed, yaw: phys?.yaw, fps: fpsAvg, mission: activeMission, launch: launch.phase, launchY: launch.y, samples: samplesTaken, leak: leakFixed, quality: qKey, battery: grid.battery, gridOnline: grid.online, gridDead: grid.dead, faults: updateFaults }; },
+  get state() { return { started, paused, bootMs: Math.round(startedAt), pos: [phys?.x, phys?.y, phys?.z], speed: phys?.speed, yaw: phys?.yaw, fps: fpsAvg, mission: activeMission, launch: launch.phase, launchY: launch.y, samples: samplesTaken, leak: leakFixed, quality: qKey, battery: grid.battery, gridOnline: grid.online, gridDead: grid.dead, faults: updateFaults, rescue: rescue.phase, rescueEvents: rescue.events.length }; },
   skipMissions: () => {
     base.gridRigs.forEach(r => { r.online = true; r.power = 1; r.tp.online = true; });
     grid.online = GRID_COUNT; grid.battery = 1; grid.dead = false;
@@ -1142,6 +1351,17 @@ window.__RSB = {
   colliders: () => (base?.colliders || []).map(c => [+c.x.toFixed(2), +c.z.toFixed(2), +c.r.toFixed(2), c.floor === undefined ? 0 : +c.floor.toFixed(2)]),
   solids: () => base?.colliders,
   plan: () => base?.plan ? base.plan() : null,
+  // The unstick's own view: is the body ring buried right now, and what has the rescue done so far.
+  // `forceUnstick` fires the state machine by hand so a verification can watch it work instead of
+  // waiting 2.2 s for a wedge that may not exist.
+  unstick: () => ({ phase: rescue.phase, tries: rescue.tries, cool: +rescue.cool.toFixed(2),
+    gap: +gapFrom(base.colliders.filter(c => c.floor === undefined), phys.x, phys.z).toFixed(2),
+    window: rescue.markT ? +(elapsed - rescue.markT).toFixed(2) : null,
+    windowNet: rescue.markT ? +Math.hypot(phys.x - rescue.markX, phys.z - rescue.markZ).toFixed(2) : null,
+    guards: { teleOpen, demo: !!demoPin, photo: !!photo.on, gridDead: grid.dead, paused,
+      grounded: phys.grounded, gas: +input.inp.gas.toFixed(2) },
+    events: rescue.events.slice(-8) }),
+  forceUnstick: () => startRescue('forced', input.inp),
   setBattery: (v) => { grid.battery = v; grid.dead = false; grid.lowWarned = false; },
   post: () => post,
   camera: () => camera,
@@ -1178,6 +1398,9 @@ window.__RSB = {
       phys.yaw = START.heading;
       phys.vx = 0; phys.vz = 0; phys.vy = 0; phys.speed = 0; phys.lateral = 0;
       phys.wheelAngle = 0; phys.grounded = true; phys.onFloor = false;
+
+      // the runtime unstick is part of what the audit measures, so its log starts with the run
+      rescue.events.length = 0; rescue.phase = ''; rescue.cool = 0; rescue.tries = 0; rescue.markT = 0;
       phys.pitch = 0; phys.roll = 0; phys.susp = 0; phys.suspV = 0;
 
       // every waypoint a player is ever asked to steer to, plus the carriageway itself walked end
@@ -1353,6 +1576,7 @@ window.__RSB = {
              batteryEvents: s.events.filter(e => /battery/.test(e.kind)).length,
              battery: +grid.battery.toFixed(3), gridOnline: grid.online, realFps: Math.round(fpsAvg),
              stalls: stalls.slice(0, 8), events: s.events.slice(0, 12),
+             rescues: rescue.events.length, rescueLog: rescue.events.slice(-6),
              samples: s.samples.slice(-40) };
   },
   // Deadlock scan. The autopilot only reports the wedges it happens to drive into; this one is

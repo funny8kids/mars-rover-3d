@@ -107,6 +107,9 @@ const EN = {
   '⚡ 电力耗尽 — 自动回收程序已呼叫，3 秒后拖回中央广场':
     '⚡ Battery empty — recovery called, towing back to Central Plaza in 3 s',
   '◂ 拖回中央广场 — 光台补电中，电量 38%': '◂ Towed to Central Plaza — recharging, 38%',
+  '⟲ 探测到卡死 — 自动脱困程序介入，倒出夹缝': '⟲ Deadlock detected — the rover is backing itself out',
+  '⟲ 自动脱困 — 抬升车体，滑向最近净空路面': '⟲ Auto-recovery — jacking up and sliding to clear ground',
+  '⚠ 自动脱困找不到落点 — 请按 S 倒车离开这里': '⚠ No safe landing found — hold S to reverse out of here',
   '⛔ 该区电网未恢复 — 光台无法成像': '⛔ This district is still dark — the pad cannot image a jump',
   '⚠ 发射程序启动 · 请留在观礼台安全区': '⚠ Launch sequence started · stay inside the deck safety line',
   '★ 已抵达观礼台 — 发射程序即将启动': '★ On the deck — the launch sequence is starting',

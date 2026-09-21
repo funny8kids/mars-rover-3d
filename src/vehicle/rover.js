@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { loadModel, cloneModel, cloneMaterials, findByName, findMeshByMaterial } from '../world/assets.js';
+import { mergeInto, noMerge } from '../world/merge.js';
 
 // Blender-modeled six-wheel rover (tools/blender/build_assets.py → rover.glb).
 // Wheel pivots ship as empties named wheelpivot_N; the physics rig wants a steer pivot
@@ -56,6 +57,22 @@ export async function createRover(scene) {
   spotL.position.set(-0.5, 1.2, 1.8); spotL.target.position.set(-0.5, -0.9, 34); g.add(spotL, spotL.target);
   const spotR = spotL.clone(); spotR.position.x = 0.5; spotR.target.position.x = 0.5; g.add(spotR, spotR.target);
   g.userData.spots = [spotL, spotR];
+
+  // The hero object was paying for itself three times a frame. rover.glb ships 295 separate parts,
+  // and the chase camera keeps every one of them in frame, so frustum culling never gets to help.
+  // Measured at one fixed pose (1280x720, pixelRatio 1, 高质量, shadows live, gl.finish() sync): the
+  // group cost 8.0 ms of a 24.0 ms frame and 887 of 3 365 draws. The wheel rigs are the only thing
+  // the animation still moves by object — steer pivot plus its spin rotor — so they opt out and
+  // everything bolted to the chassis collapses into one buffer per material: 295 parts → 57, 887
+  // draws → 173, 8.0 ms → 5.3 ms, with the 38.5k triangles conserved exactly.
+  // The second pass is inside each rotor. A wheel ships a dozen pieces — tyre, rim, flange, hub,
+  // cap, brake disc, caliper, lug ring — and they are rigid against the rotor that spins them, so
+  // each of those six copies draws once per material instead of once per piece.
+  // Order matters: this has to run after `beam` above, or the lamp material is already gone into a
+  // merged buffer and `lampMat` falls back to a synthetic one, and after the rig re-homing above,
+  // or `w.userData.spin` does not exist yet.
+  for (const w of wheels) { noMerge(w); mergeInto(w.userData.spin); }
+  mergeInto(inner);
 
   g.position.set(0, 0, 0);
   scene.add(g);

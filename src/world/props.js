@@ -21,9 +21,8 @@ const G = new THREE.Group();
 export async function buildBase(scene, quality) {
   G.clear();
   const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
-    'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'lamp', 'crystal',
-    'lander', 'teleport_pad',
-    'gantry_service', 'astronaut'];
+    'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'lamp',
+    'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA', 'corridor', 'corridor_corner',
     'corridor_end', 'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
@@ -519,16 +518,15 @@ export async function buildBase(scene, quality) {
       const bb = deckBox(k('platform_large', hx, hz, 0, 1.9));
       const top = bb.max.y, x0 = bb.min.x + 0.55, x1 = bb.max.x - 0.55;
       const z0 = bb.min.z + 0.55, z1 = bb.max.z - 0.55;
-      const nx = 6, nz = 6, cw = (x1 - x0) / nx, cd = (z1 - z0) / nz;
-      for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) {
-        const edge = i === 0 || j === 0 || i === nx - 1 || j === nz - 1;
-        box(cw - 0.3, 0.075, cd - 0.3, edge ? M.struct : M.dark,
-          x0 + (i + 0.5) * cw, top + 0.038, z0 + (j + 0.5) * cd);
-      }
-      cyl(3.5, 3.5, 0.1, M.concrete, hx, top + 0.05, hz, 44);
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(4.0, 0.15, 6, 48), M.hazard);
-      ring.rotation.x = Math.PI / 2; ring.position.set(hx, top + 0.11, hz);
-      ring.castShadow = ring.receiveShadow = true; G.add(ring);
+      const cw = (x1 - x0) / 6, cd = (z1 - z0) / 6;
+      // One authored 20 m plate instead of thirty-six boxes: broomed concrete sawn into
+      // quarter-metre slabs at its expansion joints, a kerb around the rim, the landing
+      // disc raised on its hazard ring, and the apron studs ground flush with the deck.
+      const pave = cloneModel(models.hub_plaza);
+      pave.scale.setScalar((x1 - x0 + 1.1) / 20);
+      pave.position.set(hx, top, hz);
+      pave.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      G.add(pave);
       // A landing disc is marked, not painted one flat colour: a painted "H", a threshold band and
       // the four corner markings a pilot actually lines up against.
       {
@@ -557,17 +555,9 @@ export async function buildBase(scene, quality) {
         });
         const disc = new THREE.Mesh(new THREE.CircleGeometry(3.48, 48), mark);
         disc.rotation.x = -Math.PI / 2;
-        disc.position.set(hx, top + 0.108, hz);
+        disc.position.set(hx, top + 0.196, hz);
         noMerge(disc);
         G.add(disc);
-      }
-      for (let i = 0; i < 12; i++) {
-        const a = i / 12 * Math.PI * 2 + 0.26;
-        // Flush markers, not pucks: a 6 cm proud cylinder threw its own shadow at noon and, with
-        // the cyan emissive, every stud read as a candy disc dropped on the plaza. Real apron
-        // lighting is a lens set level with the deck.
-        cyl(0.15, 0.15, 0.05, M.cyanLight, hx + Math.cos(a) * (cw * 2.7), top + 0.026,
-          hz + Math.sin(a) * (cd * 2.7), 10);
       }
     }
     const deckTopY = (o) => deckBox(o).max.y;
@@ -860,7 +850,7 @@ export async function buildBase(scene, quality) {
     // that is what they are now. The emissive guard is what keeps the hero lamps lit: their accents
     // carry a real emissive term and are the base's night lighting, not a surface colour.
     for (const [mname, root] of Object.entries(models)) {
-      if (!root || /^(starship_stack|crew_rover|optimus_bot|watch_deck|spaceport_gate|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad)$/.test(mname)) continue;
+      if (!root || /^(starship_stack|crew_rover|optimus_bot|watch_deck|spaceport_gate|hub_plaza|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad)$/.test(mname)) continue;
       const deck = /^platform_/.test(mname);
       // A pipe elbow weathered to flat matte pale grey lost the one thing that says "manufactured":
       // a specular streak along its length. Outdoors it read as a 4 m cream boulder sitting in the

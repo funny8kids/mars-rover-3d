@@ -32,7 +32,7 @@ export async function buildBase(scene, quality) {
   const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
     'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'reactor_tap', 'lox_stand', 'roadster', 'lamp',
     'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut', 'barrier_kit', 'flag_mast',
-    'hazard_sign'];
+    'hazard_sign', 'telemetry_board'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA', 'corridor', 'corridor_corner',
     'corridor_end', 'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
@@ -1283,7 +1283,12 @@ export async function buildBase(scene, quality) {
       const a = i / 24 * 6.283, rr = (i % 3) / 2 * 7;
       return surfaceAt(wx + Math.cos(a) * rr, wz + Math.sin(a) * rr);
     }));
-    const deckTop = wy + 0.5;
+    // The deck's wearing surface, measured off its own asset rather than guessed: the cast drum is
+    // DECK_TOP = 1.00 m in `build_watch_deck.py` and the wear plate laid over it finishes 0.08
+    // higher, so the crowd stands 1.08 m above the datum the model is placed at. The old constant
+    // said 0.5, which put every foot hung off it — this board's plinth, and the band the chase
+    // camera flies over — half a metre inside the concrete.
+    const deckTop = wy + 1.08;
     const [lpx, lpz] = ZONES.launch.pos;
     // Azimuth the crowd looks down, and the opposite side of the deck where the seating sits.
     const face = Math.atan2(lpx - wx, lpz - wz);
@@ -1301,11 +1306,21 @@ export async function buildBase(scene, quality) {
     // seats facing the pad + telemetry board angled back at the crowd
     k('stairs', wx - 3.5, wz + 2, -2.24, 0.9);
     const boardX = wx + Math.sin(back - 1.28) * 5.4, boardZ = wz + Math.cos(back - 1.28) * 5.4;
-    const board = new THREE.Group(); board.position.set(boardX, deckTop + 2.55, boardZ);
-    board.rotation.y = Math.atan2(wx - boardX, wz - boardZ);
-    box(3.6, 2.0, 0.18, M.dark, 0, 0, 0, board);
-    // An emissive rectangle of pure yellow was the second-brightest thing in the plaza and said
-    // nothing. A flight-display board shows the flight: ascent arc, countdown, telemetry bars.
+    // The enclosure is a Blender asset: a bolted bezel around a recessed bay, a shrouded fin heat
+    // sink on the back, a visor on corner-welded brackets, conduit up the post's back into a gland
+    // plate, and a cast plinth grouted into the deck. It was five `box()`s — a dark slab, a hood,
+    // a square post, a plate and a glowing chip — which read as a drawing of a monitor.
+    const board = cloneModel(models.telemetry_board);
+    board.position.set(boardX, deckTop, boardZ);   // its own datum is the deck surface it bolts to
+    // Aim the panel at the deck centre, where the crowd and the parked rover are. The `+ PI` is the
+    // exporter turning the authored +Y face into the app's -Z — same contract as `hazard_sign`.
+    board.rotation.y = Math.atan2(wx - boardX, wz - boardZ) + Math.PI;
+    board.traverse(shade);
+    // RETAINED RUNTIME PRIMITIVE — the flight display itself, and the only part of this asset that
+    // is not allowed to be baked: the aperture shows a different frame every second (countdown,
+    // ascent arc, telemetry bars), so it has to be a live CanvasTexture. The `box()`s that used to
+    // build the cabinet around it are gone; what is left here is one plane dropped into the hole
+    // the model cuts, 15 mm proud of the recess floor at the bay's own centre.
     const screenTex = (() => {
       const cv = document.createElement('canvas'); cv.width = 512; cv.height = 288;
       const c = cv.getContext('2d');
@@ -1344,11 +1359,12 @@ export async function buildBase(scene, quality) {
       roughness: 0.34, metalness: 0,
     });
     const screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.55), screenMat);
-    screenMesh.position.set(0, 0.05, 0.115); board.add(screenMesh);
-    box(3.86, 0.16, 0.3, M.struct, 0, 1.08, 0, board);
-    box(0.26, 2.6, 0.26, M.struct, 0, -1.6, 0, board);
-    box(1.1, 0.12, 0.9, M.dark, 0, -2.86, 0, board);
-    box(0.16, 0.5, 0.16, M.cyanLight, 1.85, -1.0, 0.1, board);
+    // The bay's own coordinates, read off the builder: the aperture is cut at z = 2.69 m and its
+    // floor left at Blender y = 0.02, which the Y-up export turns into app z = -0.02. The glass
+    // sits 15 mm proud of that floor and faces app -Z, i.e. the way the enclosure is aimed.
+    screenMesh.position.set(0, 2.69, -0.035);
+    screenMesh.rotation.y = Math.PI;
+    board.add(screenMesh);
     G.add(board);
 
     // `top` lets the chase camera fly over; the rover parks on the deck

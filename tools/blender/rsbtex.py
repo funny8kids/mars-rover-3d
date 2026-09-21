@@ -156,6 +156,50 @@ def burnt_maps(tag="burnt", pm=400.0):
     return maps, u_m, v_m
 
 
+# ─────────────────────────── painted panel metal ───────────────────────────
+def panel_maps(tag="panel", pm=600.0, tile=0.85, tint=(1.0, 1.0, 1.0), base=236.0,
+               rough_base=150.0, rivet=0.045):
+    """Painted panel metal: a rollcoat sheen, one parting seam every `tile` metres in each
+    axis, and a countersunk rivet on the seam every `rivet` metres. A 6 mm gap modelled into
+    a 4 m hull is a groove you can only see by flying through it, so the seams and the rivet
+    lines live here and the mesh stays a clean loft. `tint` is multiplied into the map
+    because the glTF exporter carries a multiply chain as nothing at all."""
+    u_m = v_m = tile
+    w = h = int(round(tile * pm))
+    U, V = _mesh(w, h, pm)
+    du = np.minimum(U % tile, tile - U % tile)
+    dv = np.minimum(V % tile, tile - V % tile)
+    gw = 0.006                                     # the gap itself
+    seam = np.clip(1.0 - du / gw, 0, 1) + np.clip(1.0 - dv / gw, 0, 1)
+    # a deburred edge holds a fillet of paint, so the metal gets slightly brighter either
+    # side of the gap before it falls back to the field
+    lip = (np.clip(1.0 - np.abs(du - 1.7 * gw) / (1.5 * gw), 0, 1)
+           + np.clip(1.0 - np.abs(dv - 1.7 * gw) / (1.5 * gw), 0, 1))
+    rr = rivet * 0.16                              # rivet head radius
+    if rivet > 0:
+        ru = np.minimum(U % rivet, rivet - U % rivet)
+        rv = np.minimum(V % rivet, rivet - V % rivet)
+        dots = np.clip(np.exp(-((ru / rr) ** 2 + (dv / rr) ** 2))
+                       + np.exp(-((rv / rr) ** 2 + (du / rr) ** 2)), 0, 1)
+    else:
+        dots = np.zeros_like(seam)
+    # the noise cells are absolute lengths, not fractions of the tile: a robot's 240 mm
+    # shell and a rover's 850 mm panel must show the same 6 mm orange peel, and a
+    # cell count fixed per tile gives a small part stucco instead of paint
+    peel = _pnoise(w, h, max(4, int(round(tile / 0.006))),
+                   max(4, int(round(tile / 0.006))), 4711) - 0.5
+    roll = _pnoise(w, h, max(2, int(round(tile / 0.30))),
+                   max(2, int(round(tile / 0.30))), 88)
+    height = -seam + lip * 0.3 + dots * 0.5 + peel * 0.022
+    tone = np.clip(base + roll * 9 + peel * 4 - seam * 54 + lip * 13 + dots * 14, 30, 255)
+    rough = np.clip(rough_base + roll * 16 + seam * 46 - dots * 10 + peel * 6, 50, 255)
+    maps = {"basecolor": _save(np.dstack([tone * tint[0], tone * tint[1], tone * tint[2]]),
+                               tag + "_col"),
+            "rough": _save(rough, tag + "_rgh"),
+            "normal": _save(height_to_normal(height, 11.0), tag + "_nrm")}
+    return maps, u_m, v_m
+
+
 # ─────────────────────────── painted lettering ───────────────────────────
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
@@ -188,9 +232,27 @@ def decal_maps(text, tag, w_m, h_m, pm=300.0, ink=(30, 29, 27), cover=0.90, trac
     return {"decal": _save(rgb, tag + "_decal")}, w_m, h_m
 
 
-ALL = {"steel": steel_maps, "tps": tps_maps,
+PANELS = {
+    # Every tint is baked into the map: the exporter carries a multiply chain as nothing.
+    "crew_paint":  lambda: panel_maps(tag="crew_paint", tint=(0.905, 0.878, 0.816), base=224,
+                                      rough_base=168, tile=0.62),
+    "crew_frame":  lambda: panel_maps(tag="crew_frame", tint=(0.30, 0.295, 0.288), base=236,
+                                      rough_base=150, tile=0.60, rivet=0.036),
+    "crew_metal":  lambda: panel_maps(tag="crew_metal", tint=(0.60, 0.607, 0.625), base=250,
+                                      rough_base=104, tile=0.45, rivet=0.030),
+    "crew_foil":   lambda: panel_maps(tag="crew_foil", tint=(0.565, 0.44, 0.196), base=255,
+                                      rough_base=86, tile=0.28, rivet=0.022),
+    "bot_shell":   lambda: panel_maps(tag="bot_shell", tint=(0.90, 0.895, 0.882), base=238,
+                                      rough_base=118, tile=0.24, rivet=0.018),
+    "bot_poly":    lambda: panel_maps(tag="bot_poly", tint=(0.108, 0.108, 0.118), base=240,
+                                      rough_base=132, tile=0.30, rivet=0.0),
+    "bot_joint":   lambda: panel_maps(tag="bot_joint", tint=(0.47, 0.472, 0.478), base=250,
+                                      rough_base=92, tile=0.16, rivet=0.012),
+}
+
+ALL = dict(PANELS, **{"steel": steel_maps, "tps": tps_maps,
        "tps_dark": lambda: tps_maps(tag="tps_dark", tint=0.055), "burnt": burnt_maps,
-       "wordmark": lambda: decal_maps("STARBASE", "wordmark", 7.3, 5.0)}
+       "wordmark": lambda: decal_maps("STARBASE", "wordmark", 7.3, 5.0)})
 
 
 if __name__ == "__main__":

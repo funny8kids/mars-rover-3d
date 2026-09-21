@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { surfaceAt } from './height.js';
 import { ZONES, SHIP_POS, LEAK_POS, SAMPLE_COUNT } from '../config.js';
-import { createOptimus, createCrewRover } from './vehicles.js';
 import { mulberry32, vnoise } from '../utils/noise.js';
 import { loadModel, cloneModel } from './assets.js';
 import { mergeInto, noMerge } from './merge.js';
@@ -22,7 +21,8 @@ const G = new THREE.Group();
 export async function buildBase(scene, quality) {
   G.clear();
   const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
-    'lamp', 'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut'];
+    'crew_rover', 'optimus_bot', 'lamp', 'crystal', 'lander', 'teleport_pad',
+    'gantry_service', 'astronaut'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA', 'corridor', 'corridor_corner',
     'corridor_end', 'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
@@ -926,7 +926,7 @@ export async function buildBase(scene, quality) {
     // that is what they are now. The emissive guard is what keeps the hero lamps lit: their accents
     // carry a real emissive term and are the base's night lighting, not a surface colour.
     for (const [mname, root] of Object.entries(models)) {
-      if (!root || /^(starship_stack|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad)$/.test(mname)) continue;
+      if (!root || /^(starship_stack|crew_rover|optimus_bot|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad)$/.test(mname)) continue;
       const deck = /^platform_/.test(mname);
       // A pipe elbow weathered to flat matte pale grey lost the one thing that says "manufactured":
       // a specular streak along its length. Outdoors it read as a 4 m cream boulder sitting in the
@@ -1265,32 +1265,28 @@ export async function buildBase(scene, quality) {
     const pit = (x, z) => rimY(x, z, 1.6);
 
     // ── the crew rover, parked nose-out on its stand so the cupola clears the girder ──
-    const rover = createCrewRover(THREE);
+    const rover = cloneModel(models.crew_rover);
     const ry0 = Math.PI / 2;
-    rover.group.position.set(mx - 0.6, cradleTop + 0.02, mz - 5.2);
-    rover.group.rotation.y = ry0;
-    rover.group.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    mergeInto(rover.group);
-    G.add(rover.group);
-    heroLights.push(...rover.emissives);
+    rover.position.set(mx - 0.6, cradleTop + 0.02, mz - 5.2);
+    rover.rotation.y = ry0;
+    rover.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    G.add(rover);
     // (w, d) are the footprint in the model's own axes and the rover is long along local X, so
     // passing them the other way round strung the two cover discs across the hull instead of
     // along it — a collider standing sideways through a 4.1 m vehicle, and a nose-in pin at each
     // end of it.
-    lot('crew-rover', mx - 0.6, mz - 5.2, rover.length, rover.width, ry0);
+    lot('crew-rover', mx - 0.6, mz - 5.2, 4.1, 2.44, ry0);
     // the stand it docks on: a low cradle the rover's rockers sit in, so it reads parked, not fallen
     for (const dx of [-1.2, 1.2])
       box(0.5, 0.16, 2.5, M.dark, mx - 0.6 + dx, cradleTop + 0.08, mz - 5.2).rotation.y = ry0;
 
     // ── two Optimus on the apron: one checking the airlock, one waiting at the mast ──
     for (const [i, [bx, bz, turn]] of [[mx - 3.9, mz - 3.4, 2.3], [mx + 4.2, mz + 1.6, -1.1]].entries()) {
-      const bot = createOptimus(THREE);
-      bot.group.position.set(bx, pit(bx, bz), bz);
-      bot.group.rotation.y = turn;
-      bot.group.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-      mergeInto(bot.group);
-      G.add(bot.group);
-      heroLights.push(...bot.emissives);
+      const bot = cloneModel(models.optimus_bot);
+      bot.position.set(bx, pit(bx, bz), bz);
+      bot.rotation.y = turn;
+      bot.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      G.add(bot);
       lot(`optimus-0${i + 1}`, bx, bz, 0.62, 0.62);
       // a robot on bare regolith leaves no story; the boot scuff ring and its charge lead do
       cyl(0.42, 0.46, 0.04, M.concrete, bx, pit(bx, bz) + 0.02, bz, 20);

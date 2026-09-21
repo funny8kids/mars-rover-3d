@@ -115,6 +115,21 @@ def textures():
         return json.load(f)
 
 
+def uv_cube(o, size):
+    """Box projection measured in metres: one texture repeat every `size` of surface, which
+    is the only UV a field authored in metres can sit on. rsbtex's panels are 6 mm gaps and
+    7 mm rivets, so a stretched or averaged UV loses them completely."""
+    bpy.ops.object.select_all(action='DESELECT')
+    o.select_set(True)
+    act(o)
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.uv.cube_project(cube_size=size, correct_aspect=True)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='DESELECT')
+    return o
+
+
 # ────────────────────────────── object ops ──────────────────────────────
 def act(o):
     bpy.context.view_layer.objects.active = o

@@ -129,11 +129,28 @@ export function createPost(renderer, scene, camera, quality, w, h) {
     // so a full-resolution buffer bought nothing but three million extra samples a frame.
     const ssao = atScale(new SSAOPass(scene, camera, w, h), 0.5);
     // kernelRadius is in view-space metres; min/maxDistance are normalised over cameraNear..Far,
-    // and with a 9 000 m far plane one metre of depth is 1/9000 of the range. The old values (10 /
-    // 0.0006 / 0.09) therefore sampled ten metres around each pixel and ignored any occluder
-    // closer than 5.4 m — a broad gradient over whole buildings at 17 ms a frame, not contact AO.
-    ssao.kernelRadius = 0.65; ssao.minDistance = 0.00004; ssao.maxDistance = 0.0014;
+    // and with a 9 000 m far plane one metre of depth is 1/9000 of the range. The old band (0.00004
+    // / 0.0014) was 0.36 m … 12.6 m of linear depth, which a 0.65 m kernel can never reach: the map
+    // came back uniformly white and the beauty frame was bit-identical with the pass on and off.
+    // 2 cm … 3 m is what a 1.2 m hemisphere actually produces, and it is the difference between a
+    // gate that stands on the plaza and one that floats over it.
+    ssao.kernelRadius = 1.2; ssao.minDistance = 0.0000022; ssao.maxDistance = 0.000333;
     ssao.output = SSAOPass.OUTPUT.Default;
+    // SSAOPass only copies the camera's projection matrices and near/far into its uniforms in the
+    // constructor and in setSize(), but the chase rig re-derives FOV with speed every frame the
+    // rover accelerates (chase.js) and the whole normal/depth prepass is rendered with that live
+    // camera. The shader then unprojects the pixel with yesterday's matrix and looks for occluders
+    // at UVs the current camera never produced, so the AO drifts out of register exactly while
+    // driving. Re-publish them each frame: four copies, against a pass that costs 2-3 ms.
+    const ssaoRender = ssao.render.bind(ssao);
+    ssao.render = (renderer, writeBuffer, readBuffer, deltaTime, maskActive) => {
+      const u = ssao.ssaoMaterial.uniforms;
+      u.cameraNear.value = camera.near;
+      u.cameraFar.value = camera.far;
+      u.cameraProjectionMatrix.value.copy(camera.projectionMatrix);
+      u.cameraInverseProjectionMatrix.value.copy(camera.projectionMatrixInverse);
+      return ssaoRender(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+    };
     composer.addPass(ssao);
   }
   // Bloom mips are by definition blurry, so the chain starts at a quarter of the frame's pixels

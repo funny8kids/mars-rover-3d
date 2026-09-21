@@ -21,7 +21,7 @@ const G = new THREE.Group();
 export async function buildBase(scene, quality) {
   G.clear();
   const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
-    'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'lamp',
+    'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'reactor_tap', 'lamp',
     'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA', 'corridor', 'corridor_corner',
     'corridor_end', 'platform_high', 'platform_low', 'platform_large', 'machine_generator',
@@ -850,7 +850,7 @@ export async function buildBase(scene, quality) {
     // that is what they are now. The emissive guard is what keeps the hero lamps lit: their accents
     // carry a real emissive term and are the base's night lighting, not a surface colour.
     for (const [mname, root] of Object.entries(models)) {
-      if (!root || /^(starship_stack|crew_rover|optimus_bot|watch_deck|spaceport_gate|hub_plaza|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad)$/.test(mname)) continue;
+      if (!root || /^(starship_stack|crew_rover|optimus_bot|watch_deck|spaceport_gate|hub_plaza|reactor_tap|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad)$/.test(mname)) continue;
       const deck = /^platform_/.test(mname);
       // A pipe elbow weathered to flat matte pale grey lost the one thing that says "manufactured":
       // a specular streak along its length. Outdoors it read as a 4 m cream boulder sitting in the
@@ -1533,7 +1533,8 @@ export async function buildBase(scene, quality) {
   // sun/hemi plus bloom, and six extra dynamic lights would recompile every standard shader.
   const gridRigs = [];
   {
-    const iron = new THREE.MeshStandardMaterial({ color: 0x5a544b, roughness: 0.44, metalness: 0.86 });
+    // The cable's anchor blocks are the one part of a tap that cannot be an asset: each one
+    // has to sit on ground the model has never seen.
     const soot = new THREE.MeshStandardMaterial({ color: 0x2a2825, roughness: 0.72, metalness: 0.5 });
     ZONE = 'grid';
     // A tap has to stand beside its pad, out of the carriageway, and clear of everything the
@@ -1571,49 +1572,14 @@ export async function buildBase(scene, quality) {
       G.add(rig);
 
       // ── the tap has to read as a substation you can drive up to and recognise from 100 m:
-      // bolted plinth, finned transformer drum, insulator bushings, a braced lattice mast,
-      // then the reactor core hung in a cage above the service deck.
-      cyl(1.85, 2.05, 0.26, soot, 0, 0.13, 0, 8, rig);        // octagonal foundation
-      cyl(1.42, 1.42, 0.14, iron, 0, 0.33, 0, 8, rig);        // bolted flange
-      for (let i = 0; i < 8; i++) {
-        const a = i * 0.7854 + 0.39;
-        box(0.14, 0.13, 0.14, soot, Math.sin(a) * 1.42, 0.46, Math.cos(a) * 1.42, rig);
-      }
-
-      cyl(0.6, 0.62, 1.0, iron, 0, 0.92, 0, 12, rig);         // transformer drum
-      for (let i = 0; i < 12; i++) {                          // cooling fins
-        const a = i * 0.5236;
-        const fin = box(0.045, 0.82, 0.24, soot, Math.sin(a) * 0.68, 0.92, Math.cos(a) * 0.68, rig);
-        fin.rotation.y = -a;
-      }
-      cyl(0.44, 0.58, 0.16, soot, 0, 1.5, 0, 12, rig);        // conservator cap
-      for (let i = 0; i < 3; i++) {                           // porcelain bushings
-        const a = i * 2.094 + 0.5, bx = Math.sin(a) * 0.33, bz = Math.cos(a) * 0.33;
-        for (let d = 0; d < 3; d++) cyl(0.145 - d * 0.015, 0.165 - d * 0.015, 0.05, soot, bx, 1.66 + d * 0.13, bz, 8, rig);
-        cyl(0.03, 0.03, 0.46, iron, bx, 1.98, bz, 6, rig);
-      }
-
-      const MS = 0.6, Y0 = 2.2, Y1 = 4.7, TIER = (Y1 - Y0) / 3;
-      for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(0.1, Y1 - Y0 + 0.3, 0.1, iron, sx * MS, (Y0 + Y1) / 2, sz * MS, rig);
-      const braceZ = Math.atan2(MS * 2, TIER);
-      for (let k = 0; k < 4; k++) {
-        const face = new THREE.Group();
-        face.rotation.y = k * Math.PI / 2;
-        rig.add(face);
-        const at = (w, h, d, mat, x, y) => { const b = box(w, h, d, mat, x, y, MS, face); return b; };
-        for (let t = 0; t <= 3; t++) at(MS * 2, 0.07, 0.06, iron, 0, Y0 + t * TIER);
-        for (let t = 0; t < 3; t++) {
-          const yc = Y0 + (t + 0.5) * TIER, L = Math.hypot(MS * 2, TIER) + 0.06;
-          at(0.05, L, 0.05, soot, 0, yc).rotation.z = braceZ;
-          at(0.05, L, 0.05, soot, 0, yc).rotation.z = -braceZ;
-        }
-      }
-      box(1.5, 0.11, 1.5, iron, 0, Y1 + 0.06, 0, rig);       // service deck
-      for (let k = 0; k < 4; k++) {
-        const a = k * Math.PI / 2;
-        const rail = box(1.44, 0.045, 0.045, soot, Math.sin(a) * 0.7, Y1 + 0.52, Math.cos(a) * 0.7, rig);
-        rail.rotation.y = a;
-      }
+      // bolted octagonal footing, finned transformer drum, porcelain bushings, a braced
+      // lattice mast and a service deck with its cage. One authored asset, cloned to each pad.
+      const tap = cloneModel(models.reactor_tap);
+      tap.position.copy(rig.position);
+      tap.rotation.y = rig.rotation.y;
+      tap.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      templateRoots.add(tap);          // already baked as a template; re-merging would copy it
+      G.add(tap);
       // cable run back to the pad so the two read as one installation — the ground falls away
       // between the two bases, so each anchor has to be sampled where it actually lands
       for (let i = 1; i <= 4; i++) {
@@ -1625,14 +1591,6 @@ export async function buildBase(scene, quality) {
       const coreMat = new THREE.MeshStandardMaterial({ color: 0x101a1f, emissive: 0x4fe2ff, emissiveIntensity: 0, roughness: 0.2, metalness: 0.1 });
       const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.62, 0), coreMat);
       core.position.y = 5.85; core.castShadow = true; noMerge(core); rig.add(core);
-      const yoke = new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.055, 6, 20), iron);
-      yoke.position.y = 5.85; yoke.rotation.x = Math.PI / 2; yoke.castShadow = true; rig.add(yoke);
-      for (let i = 0; i < 4; i++) {                            // cage bars over the core
-        const a = i * 1.5708;
-        const bar = box(0.055, 1.5, 0.055, iron, Math.sin(a) * 0.72, 5.85, Math.cos(a) * 0.72, rig);
-        bar.rotation.z = Math.sin(a) * 0.24; bar.rotation.x = -Math.cos(a) * 0.24;
-      }
-      cyl(0.1, 0.14, 0.9, iron, 0, 5.0, 0, 8, rig);           // hanger post off the deck
       const plateMat = new THREE.MeshBasicMaterial({ color: 0x4fe2ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
       const plate = new THREE.Mesh(new THREE.CircleGeometry(1.35, 6), plateMat);
       plate.rotation.x = -Math.PI / 2; plate.position.y = 0.42; rig.add(plate);

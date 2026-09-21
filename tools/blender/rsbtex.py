@@ -323,6 +323,12 @@ ALL = dict(PANELS, **{"steel": steel_maps, "tps": tps_maps,
                                           tint=(0.44, 0.405, 0.362)),
        "plaza_ring": lambda: concrete_maps(tag="plaza_ring", tile=1.45, joints=False,
                                           tint=(0.56, 0.525, 0.472)),
+       "tap_iron": lambda: panel_maps(tag="tap_iron", tint=(0.475, 0.455, 0.42),
+                                      base=236, rough_base=126, tile=0.40, rivet=0.026),
+       "tap_soot": lambda: panel_maps(tag="tap_soot", tint=(0.215, 0.205, 0.192),
+                                      base=236, rough_base=168, tile=0.55, rivet=0.0),
+       "tap_cast": lambda: concrete_maps(tag="tap_cast", tile=1.2,
+                                         tint=(0.395, 0.372, 0.335)),
        })
 
 

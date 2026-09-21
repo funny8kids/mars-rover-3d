@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { surfaceAt } from './height.js';
 import { ZONES, SHIP_POS, LEAK_POS, SAMPLE_COUNT } from '../config.js';
 import { createStarship } from './starship.js';
+import { createOptimus, createCrewRover } from './vehicles.js';
 import { mulberry32, vnoise } from '../utils/noise.js';
 import { loadModel, cloneModel } from './assets.js';
 import { mergeInto, noMerge } from './merge.js';
@@ -1056,9 +1057,9 @@ export async function buildBase(scene, quality) {
 
     infoZones.push({
       key: 'launch', pos: [px, pz], r: 34, tag: 'PAD ONE · ORBITAL LAUNCH MOUNT',
-      name: '轨道发射台', params: ['星舰总高 31 m（1:4 纪念比例）', '筷子塔高 40 m', '任务代号：RED STARBASE'],
+      name: '轨道发射台', params: ['星舰总高 71 m（不锈钢筒身 + 超重型一级）', '筷子塔高 40 m', '任务代号：RED STARBASE'],
       fact: '在火星，这座塔不只是点火台——它是回家的门票。完成任务链后回到观礼台看它喷火。',
-      objective: 'drive: 驶近发射台完成巡检',
+      objective: '星舰总装塔 · 任务链终点的发射场',
     });
   }
 
@@ -1219,6 +1220,69 @@ export async function buildBase(scene, quality) {
       key: 'science', pos: [sx, sz], r: 20, tag: 'FIELD SCIENCE · ANOMALY 07',
       name: '晶体科研区', params: ['撞击玻璃 / 层状硅酸盐 / 橄榄石', '大晶体形成年代：约 37 亿年前', '样本驾驶驶近即可自动采集'],
       fact: '每块岩石都是一页未读的书。好奇号在盖尔坑读了十年。',
+    });
+  }
+
+  // ══════════ MOTOR POOL — the crew-rover bay and the robots that service it ══════════
+  {
+    const [mx, mz] = ZONES.motor.pos;
+    ZONE = 'motor';
+    // The district the map never filled in: a bay, a cradle and the two vehicles that were supposed
+    // to live here. A bay you cannot drive into is not a bay, so the canopy keeps its collision to
+    // the four stanchions it stands on, and the apron is one service pad sized to the rover rather
+    // than two 14 m kit decks that buried it.
+    const cradle = putDeck('platform_low', mx - 0.6, mz - 5.2, 1.4, Math.PI / 2, -0.1);
+    const cradleTop = new THREE.Box3().setFromObject(cradle).max.y;
+    portal('rover-bay', mx - 0.6, mz - 5.2, 0.92, Math.PI / 2);
+    const pit = (x, z) => rimY(x, z, 1.6);
+
+    // ── the crew rover, parked nose-out on its stand so the cupola clears the girder ──
+    const rover = createCrewRover(THREE);
+    const ry0 = Math.PI / 2;
+    rover.group.position.set(mx - 0.6, cradleTop + 0.02, mz - 5.2);
+    rover.group.rotation.y = ry0;
+    rover.group.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    mergeInto(rover.group);
+    G.add(rover.group);
+    heroLights.push(...rover.emissives);
+    lot('crew-rover', mx - 0.6, mz - 5.2, rover.width, rover.length, ry0);
+    // the stand it docks on: a low cradle the rover's rockers sit in, so it reads parked, not fallen
+    for (const dx of [-1.2, 1.2])
+      box(0.5, 0.16, 2.5, M.dark, mx - 0.6 + dx, cradleTop + 0.08, mz - 5.2).rotation.y = ry0;
+
+    // ── two Optimus on the apron: one checking the airlock, one waiting at the mast ──
+    for (const [i, [bx, bz, turn]] of [[mx - 3.9, mz - 3.4, 2.3], [mx + 4.2, mz + 1.6, -1.1]].entries()) {
+      const bot = createOptimus(THREE);
+      bot.group.position.set(bx, pit(bx, bz), bz);
+      bot.group.rotation.y = turn;
+      bot.group.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      mergeInto(bot.group);
+      G.add(bot.group);
+      heroLights.push(...bot.emissives);
+      lot(`optimus-0${i + 1}`, bx, bz, 0.62, 0.62);
+      // a robot on bare regolith leaves no story; the boot scuff ring and its charge lead do
+      cyl(0.42, 0.46, 0.04, M.concrete, bx, pit(bx, bz) + 0.02, bz, 20);
+      sparkPoints.push({ x: bx, y: pit(bx, bz) + 0.9, z: bz - 0.2, rate: 0.12 });
+    }
+
+    // ── the pit: mast, workbench, drums and the second vehicle that still runs on wheels ──
+    kSolid('machine_wireless', mx + 6.5, mz - 2.5, 0, 1.15, 'charge-mast');
+    kSolid('desk_computer', mx + 3.4, mz + 4.6, 0.6, 1.5, 'pit-desk');
+    kSolid('barrels', mx + 5.6, mz + 4.2, 1.2, 1.3, 'lubricant-drums');
+    k('craft_speederA', mx - 6.4, mz + 1.4, 1.1, 1.35);
+    lot('utility-speeder', mx - 6.4, mz + 1.4, 2.2, 3.4, 1.1);
+    k('rail', mx - 8.5, mz + 5.5, 0.4, 1.2);
+    for (const [dx, dz] of [[-2.5, 0.5], [-1, 1.5], [0.5, 2.5]]) {
+      const cx2 = mx + dx, cz2 = mz + dz;
+      cyl(0.05, 0.26, 0.42, M.hazard, cx2, pit(cx2, cz2) + 0.21, cz2, 12);
+      cyl(0.3, 0.32, 0.04, M.dark, cx2, pit(cx2, cz2) + 0.02, cz2, 12);
+    }
+    putDeck('teleport_pad', mx + 1.5, mz + 8.5, 1.05, 0, -0.08);
+    teleports.push({ key: 'motor', name: ZONES.motor.name, x: mx + 1.5, z: mz + 8.5 });
+    infoZones.push({
+      key: 'motor', pos: [mx, mz], r: 22, tag: 'MOTOR POOL · CREW ROVER BAY',
+      name: '载人车车库', params: ['载人火星车 ×1（加压舱 2.4 m³）', 'Optimus 作业机器人 ×2', '舱外活动最远行程 12 km'],
+      fact: '车轮能到的地方不需要火箭。一辆载人火星车就是一座会移动的加压舱。',
     });
   }
 
@@ -1402,7 +1466,7 @@ export async function buildBase(scene, quality) {
       key: 'watch', pos: [wx, wz], r: 20, tag: 'VIEWING DECK · SAFE DIST 60 m',
       name: '发射观礼台', params: ['视角方位直指 PAD ONE', '点火后 60 m 处会感到大气的轻推'],
       fact: '任务完成后回到这里——星舰点火时，火星的大气会把你轻轻推回座椅。',
-      objective: 'drive: 等待发射窗口（完成任务线后触发）',
+      objective: '等待发射窗口 · 完成任务线后自动点火',
     });
   }
 

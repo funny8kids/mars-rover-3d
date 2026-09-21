@@ -85,8 +85,6 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 .grid-pip{width:30px;height:4px;border-radius:2px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.08);transition:.4s}
 .grid-pip.on{background:var(--cyan);border-color:var(--cyan);box-shadow:0 0 10px rgba(60,210,230,.8)}
 .grid-pip.link{background:var(--amber);border-color:var(--amber);box-shadow:0 0 12px rgba(255,150,50,.9);animation:pulse-batt .55s ease-in-out infinite}
-#grid-hint{margin-top:6px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:#7d7566;min-height:12px}
-#grid-hint.act{color:var(--amber)}
 #topbar{position:absolute;top:14px;right:18px;display:flex;gap:14px;font-family:var(--mono);font-size:11px;color:#8a8478}
 #toast{position:absolute;top:64px;left:50%;transform:translateX(-50%);background:rgba(10,8,6,.8);border:1px solid var(--line);
   color:#ffd9a0;padding:10px 26px;border-radius:999px;letter-spacing:.15em;font-size:14px;opacity:0;transition:.4s;pointer-events:none!important;

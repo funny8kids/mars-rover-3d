@@ -47,15 +47,12 @@ export const UI = {
     row.classList.toggle('crit', pct <= 0.12);
     void state;
   },
-  setGridStatus(powers, hint) {
+  setGridStatus(powers) {
     for (const k in this.pips) {
       const p = powers[k];
       this.pips[k].classList.toggle('on', p >= 0.99);
       this.pips[k].classList.toggle('link', p > 0.02 && p < 0.99);
     }
-    const el = $('grid-hint');
-    el.textContent = hint || '';
-    el.classList.toggle('act', !!hint);
   },
   setTop(time, weather, quality, fps) {
     $('tb-time').textContent = `LMT ${time}`;

@@ -37,11 +37,16 @@ const tmpV = new THREE.Vector3();
 // One dark district per teleport pad outside the hub — derived from ZONES so props.js can never
 // drift away from the mission text.
 const GRID_COUNT = Object.values(ZONES).filter(z => z.teleport).length - 1;
+// Four steps, one verb each: drive onto a pad, hold E, drive into a glow, drive home. The chain used
+// to carry a fifth — 巡检轨道发射台 — which was a drive with no input in it at all, and players read
+// the silence as the game having frozen. Every line now names the control on its face, so the counter
+// and the instruction can never disagree.
+const gridText = n => `重启基地电网 ${n}/${GRID_COUNT} · 开上各区光台并保持`;
+const sampleText = n => `采集火星样本 ${n}/${SAMPLE_COUNT} · 驶近发光信标`;
 const missions = [
-  { id: 'grid', text: `重启基地电网 0/${GRID_COUNT}`, done: false },
-  { id: 'inspect', text: '巡检轨道发射台', done: false },
-  { id: 'leak', text: '修复储罐区泄漏', done: false },
-  { id: 'samples', text: `采集火星样本 0/${SAMPLE_COUNT}`, done: false },
+  { id: 'grid', text: gridText(0), done: false },
+  { id: 'leak', text: '修复储罐区泄漏 · 靠近白雾长按 E', done: false },
+  { id: 'samples', text: sampleText(0), done: false },
   { id: 'watch', text: '返回发射观礼台 · 见证星舰升空', done: false },
 ];
 let activeMission = 0, leakFixed = false, repairHold = 0, samplesTaken = 0;
@@ -341,8 +346,7 @@ function advanceMission() {
   while (activeMission < missions.length && missions[activeMission].done) activeMission++;
   renderMissions();
   const id = mAct();
-  if (id === 'inspect') { UI.toast('▸ 新任务：电网恢复，巡检轨道发射台'); audio.radio('beep'); }
-  if (id === 'leak') { UI.toast('▸ 新任务：储罐区检测到推进剂泄漏，前往修复'); audio.radio('beep'); }
+  if (id === 'leak') { UI.toast('▸ 新任务：储罐区检测到推进剂泄漏，靠近白雾长按 E'); audio.radio('beep'); }
   if (id === 'samples') { UI.toast(`▸ 新任务：采集 ${SAMPLE_COUNT} 块火星样本（发光信标处）`); audio.radio('beep'); }
   if (id === 'watch') { launchArmed = true; UI.toast('▸ 任务链完成 — 发射窗口开启，返回观礼台'); audio.radio('good'); }
   if (activeMission >= missions.length) UI.arrowAngle(phys, null);
@@ -353,7 +357,6 @@ function objectiveTarget() {
     const r = base.gridRigs.find(r => r.power < 0.99 && r.key !== 'hub');
     return r ? new THREE.Vector3(r.x, surfaceAt(r.x, r.z) + 2, r.z) : null;
   }
-  if (id === 'inspect') return base.launchPadPos;
   if (id === 'leak' && !leakFixed) return base.leakPoint;
   if (id === 'samples') {
     const s = base.samples.find(s => !s.taken);
@@ -371,7 +374,7 @@ function updateGrid(dt, st) {
   const online = rigs.filter(r => r.online).length;
   if (online !== grid.online) {
     grid.online = online;
-    if (mAct() === 'grid') { missions[0].text = `重启基地电网 ${online}/${GRID_COUNT}`; renderMissions(); }
+    if (mAct() === 'grid') { missions[0].text = gridText(online); renderMissions(); }
   }
 
   // ── drain: the drivetrain, the lamps and the relay are all the same battery
@@ -437,7 +440,7 @@ function updateGrid(dt, st) {
       }
       shockWave(tgt.x, surfaceAt(tgt.x, tgt.z) + 0.5, tgt.z);
       UI.toast(`✔ ${tgt.name} 已复电 — 光台跃迁解锁（${done}/${GRID_COUNT}）`);
-      if (mAct() === 'grid') { missions[0].text = `重启基地电网 ${done}/${GRID_COUNT}`; renderMissions(); }
+      if (mAct() === 'grid') { missions[0].text = gridText(done); renderMissions(); }
       if (done >= GRID_COUNT) onGridComplete();
     }
   } else {
@@ -464,7 +467,7 @@ function updateGrid(dt, st) {
   }
   const pct = {}; for (const r of base.gridRigs) pct[r.key] = r.power;
   UI.setBattery(grid.battery);
-  UI.setGridStatus(pct, grid.target ? `并网 ${Math.round(grid.target.power * 100)}%` : '');
+  UI.setGridStatus(pct);
 }
 
 function onGridComplete() {
@@ -720,18 +723,19 @@ function update(dt) {
   if (zone !== lastInfoZone) { lastInfoZone = zone; UI.showInfo(zone); }
   if (zone?.key === 'tanks' && !leakFixed) zone.hudAction = `靠近白色雾流，按住 ${input.isTouch ? '「交互」' : 'E'} 修复`;
   if (zone?.key === 'watch' && launchArmed && launch.phase === 'idle') zone.hudAction = '★ 已抵达观礼台 — 发射程序即将启动';
+  // The light show was a discoverable-by-accident feature; it is the one thing to do at the pad
+  // after dark, so the panel says so in the same slot the repair instruction uses.
+  if (zone?.key === 'launch' && st.nightF > 0.5 && showOn <= 0 && launch.phase === 'idle')
+    zone.hudAction = `按住 ${input.isTouch ? '「交互」' : 'E'} 点亮星舰灯光秀`;
 
   // missions
-  if (mAct() === 'inspect' && Math.hypot(phys.x - ZONES.launch.pos[0], phys.z - ZONES.launch.pos[1]) < 48) {
-    missions[1].done = true; UI.toast('✔ 发射台巡检完成 — 结构读数正常'); audio.radio('good'); advanceMission();
-  }
   const nearLeak = Math.hypot(phys.x - base.leakPoint.x, phys.z - base.leakPoint.z) < 12;
   if (mAct() === 'leak' && !leakFixed) {
     if (nearLeak && inp.interact > 0 && phys.speed < 1.5) {
       repairHold += dt;
       UI.showInfo({ ...lastInfoZone || base.infoZones.find(z => z.key === 'tanks'), hudAction: `密封中… ${Math.min(100, Math.round(repairHold / 3 * 100))}%`, key: 'tanks' });
       if (repairHold >= 3) {
-        leakFixed = true; missions[2].done = true;
+        leakFixed = true; missions[1].done = true;
         UI.toast('✔ 泄漏已封堵 — 推进剂压力恢复'); audio.radio('good'); advanceMission();
       }
     } else if (!nearLeak) repairHold = 0;
@@ -740,10 +744,10 @@ function update(dt) {
     for (const s of base.samples) {
       if (!s.taken && Math.hypot(phys.x - s.x, phys.z - s.z) < 4.2) {
         s.taken = true; s.group.visible = false; samplesTaken++;
-        missions[3].text = `采集火星样本 ${samplesTaken}/${SAMPLE_COUNT}`;
+        missions[2].text = sampleText(samplesTaken);
         renderMissions(); audio.radio('beep'); UI.toast(`✦ 样本 ${samplesTaken}/${SAMPLE_COUNT} 已入库`);
         for (let i = 0; i < 40; i++) fx.spark.emit(s.x, 1, s.z, (Math.random() - .5) * 8, 3 + Math.random() * 5, (Math.random() - .5) * 8, 0.8, 2);
-        if (samplesTaken >= SAMPLE_COUNT) { missions[3].done = true; advanceMission(); }
+        if (samplesTaken >= SAMPLE_COUNT) { missions[2].done = true; advanceMission(); }
       }
     }
   }
@@ -1107,8 +1111,8 @@ window.__RSB = {
     base.gridRigs.forEach(r => { r.online = true; r.power = 1; r.tp.online = true; });
     grid.online = GRID_COUNT; grid.battery = 1; grid.dead = false;
     missions.forEach(m => { if (m.id !== 'watch') m.done = true; });
-    missions[0].text = `重启基地电网 ${GRID_COUNT}/${GRID_COUNT}`;
-    samplesTaken = SAMPLE_COUNT; missions[3].text = `采集火星样本 ${SAMPLE_COUNT}/${SAMPLE_COUNT}`;
+    missions[0].text = gridText(GRID_COUNT);
+    samplesTaken = SAMPLE_COUNT; missions[2].text = sampleText(SAMPLE_COUNT);
     advanceMission();
   },
   startStorm: () => { env?.toggleWeather(); },

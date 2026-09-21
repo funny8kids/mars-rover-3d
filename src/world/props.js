@@ -121,6 +121,13 @@ export async function buildBase(scene, quality) {
     // with a hint of sheen than to a mirror.
     steel: [[0.30, 0.305, 0.32], 0.74, 0.42],
     alu_bright: [[0.335, 0.34, 0.355], 0.68, 0.5],
+    // The 4 m macro pass found the last two >70 %-saturation albedos in the world hiding here: the
+    // kit pack's `acc_orange` (hsl 29,86,59) and `orange` (hsl 29,76,57). Under the noon key a
+    // saturated diffuse reads as a flat candy chip even with no emissive at all, so they come down
+    // to the dust-faded vermilion the rover's `metalRed` already uses — still the loudest hue on
+    // the structure, no longer a highlighter.
+    acc_orange: [[0.468, 0.144, 0.032], 0.62, 0.12],
+    orange: [[0.50, 0.155, 0.038], 0.6, 0.14],
   };
   const LANDMARKS = new Set(['habitat_dome', 'starship', 'lander']);
   for (const [mname, root] of Object.entries(models)) {

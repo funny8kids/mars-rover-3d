@@ -69,7 +69,11 @@ export class RoverPhysics {
     if (!braking) {
       const t = inp.gas > 0 ? inp.gas : (inp.brake > 0 ? -0.6 : 0);
       accel = t * (t > 0 ? 10.5 : 8) * Math.max(0.25, 1 - Math.abs(vf) / MAX_SPEED);
-      if (inp.gas > 0 && vf < -0.5) accel = -14;            // brake while reversing
+      // Rolling backwards is a state the collision response hands you, never a direction the
+      // player selects, so throttle must RECOVER from it. The -14 this line used to carry turned
+      // every bump into a permanent 10 m/s reverse that no key could cancel: hit a wall, hold W,
+      // and the rover drove away from you at full lock with the steering mirrored.
+      if (inp.gas > 0 && vf < -0.4) accel = 14;             // brake out of the slide, then drive
       if (inp.brake > 0 && vf > 0.6) accel = -16;           // service brake
     }
     this.enginePower = Math.abs(accel) / 10.5;
@@ -89,8 +93,12 @@ export class RoverPhysics {
     const target = inp.steer * lock / (1 + sp * 0.055) * (sp < 4 ? 1 + (4 - sp) * 0.16 : 1);
     this.wheelAngle += (Math.max(-lock, Math.min(lock, target)) - this.wheelAngle) * Math.min(1, 9 * dt);
     const WHEELBASE = 2.9;
-    let yawRate = -(vf / WHEELBASE) * Math.tan(this.wheelAngle);
-    if (sp < 1.2) yawRate *= 0.35 + sp / 1.2 * 0.65;         // authority without the crawl
+    // The bicycle term is proportional to forward speed, so a rover parked nose-first against a
+    // collider has no yaw authority at all — the exact state a bump leaves you in. Below ~2.2 m/s
+    // the tyres scrub instead of rolling, so steering is given a pivot term to keep A/D alive.
+    const bicycle = -(vf / WHEELBASE) * Math.tan(this.wheelAngle) * (sp < 1.2 ? 0.35 + sp / 1.2 * 0.65 : 1);
+    const pivot = -inp.steer * 1.25 * (1 - Math.min(1, sp / 2.2));
+    let yawRate = bicycle + pivot;
     this.yaw += yawRate * dt;
 
     // lateral grip — low on Mars, lower with handbrake → drift
@@ -169,16 +177,27 @@ export class RoverPhysics {
     this.bodyRoll += ((-latG * 0.028) - this.bodyRoll) * Math.min(1, dt * 6);
     this.bodyPitch += ((accel * 0.0075) - this.bodyPitch) * Math.min(1, dt * 5);
 
-    // collisions (cylinders {x,z,r}); platforms are driveable, so they never shove you aside
-    for (const c of colliders) {
-      if (c.floor !== undefined) continue;
-      const dx = this.x - c.x, dz = this.z - c.z;
-      const d = Math.hypot(dx, dz), min = c.r + 1.6;
-      if (d < min && d > 0.001) {
+    // collisions (cylinders {x,z,r}); platforms are driveable, so they never shove you aside.
+    // Two props placed closer together than the rover's clearance leave a lens with no legal
+    // position inside it, and a single sweep freezes the rover dead in the middle of that lens —
+    // which is what reads to the player as "WASD stopped working". Three Gauss-Seidel passes walk
+    // the rover out toward the nearest gap instead of holding it there.
+    for (let pass = 0; pass < 3; pass++) {
+      for (const c of colliders) {
+        if (c.floor !== undefined) continue;
+        const dx = this.x - c.x, dz = this.z - c.z;
+        const d = Math.hypot(dx, dz), min = c.r + 1.6;
+        if (d >= min) continue;
+        if (d <= 0.001) { this.x += min; continue; }
         const push = (min - d);
         this.x += dx / d * push; this.z += dz / d * push;
+        if (pass > 0) continue;
         const vn2 = (this.vx * dx + this.vz * dz) / d;
-        if (vn2 < 0) { this.vx -= dx / d * vn2 * 1.6; this.vz -= dz / d * vn2 * 1.6; this.trauma = Math.min(1, this.trauma + Math.abs(vn2) * 0.04); }
+        // Restitution 0.18, not 0.6: the old factor handed back more speed than the rover brought,
+        // so every contact fired it backwards at 1.6× impact — straight into the slide the
+        // throttle then had to recover from. A thud and a slide along the tangent is what reads as
+        // solid steel, and it keeps the rover under the player instead of launching it.
+        if (vn2 < 0) { this.vx -= dx / d * vn2 * 1.18; this.vz -= dz / d * vn2 * 1.18; this.trauma = Math.min(1, this.trauma + Math.abs(vn2) * 0.04); }
       }
     }
     // world bounds

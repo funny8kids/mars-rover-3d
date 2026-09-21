@@ -1117,6 +1117,8 @@ window.__RSB = {
   warp: (x, z, face, search) => warpTo(x, z, face, search ?? 8),
   sampleList: () => (base?.samples || []).map(s => [Math.round(s.x), Math.round(s.z), !!s.taken]),
   taps: () => (base?.gridRigs || []).map(r => [r.key, +r.x.toFixed(1), +r.z.toFixed(1), +r.power.toFixed(2), !!r.online]),
+  // the raw collision set — the pin/unstick audit needs to see the cylinders the physics loop reads
+  colliders: () => (base?.colliders || []).map(c => [+c.x.toFixed(2), +c.z.toFixed(2), +c.r.toFixed(2), c.floor === undefined ? 0 : +c.floor.toFixed(2)]),
   setBattery: (v) => { grid.battery = v; grid.dead = false; grid.lowWarned = false; },
   post: () => post,
   camera: () => camera,

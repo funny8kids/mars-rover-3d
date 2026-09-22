@@ -75,12 +75,31 @@ function unstub(root) {
   });
 }
 
+// Kenney authors every module inside a 4 × 3 grid cell, so the piece itself sits at local (2, 1.5)
+// and the node marks the cell's corner. Our own Blender assets are modelled about their own centre.
+// The layout code names one thing — where a prop stands — so the packs are recentred on load and
+// both libraries mean "footprint centre at the origin". Uncorrected, every Kenney prop landed
+// ~(7, 5.25) m away from its authored coordinate: the hub plaza paving lay off its own slab, the
+// ring buildings stood a full lane outside their collision discs, and a dune rock sampled its
+// ground height at a point it no longer covered.
+function recentre(root) {
+  root.updateMatrixWorld(true);
+  const b = new THREE.Box3().setFromObject(root);
+  const dx = (b.min.x + b.max.x) / 2, dz = (b.min.z + b.max.z) / 2;
+  if (Math.abs(dx) < 1e-4 && Math.abs(dz) < 1e-4) return;
+  // The children keep their own transforms, so a kit whose parts are cloned out individually
+  // (`barrier_kit`) still assembles the same way — the whole pack just moves together.
+  for (const c of root.children) { c.position.x -= dx; c.position.z -= dz; }
+  root.updateMatrixWorld(true);
+}
+
 // name may carry a subfolder prefix, e.g. 'kenney/space/hangar_largeA'
 export function loadModel(name) {
   if (!cache.has(name)) {
     cache.set(name, loader.loadAsync(`./assets/${name}.glb`).then((gltf) => {
       const root = gltf.scenes[0];
       unstub(root);
+      recentre(root);
       return root;
     }));
   }

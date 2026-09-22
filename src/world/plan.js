@@ -92,6 +92,10 @@ export const streetEncroach = (x, z, r) => {
 export function audit(items) {
   const blocks = [], tight = [], intrusions = [];
   const clearOf = STREET_HW + PAVEMENT;
+  // A prop built from legs is named `${id}#${i}`: a sign's three feet, a portal's four
+  // stanchions. They are one rigid object, so the crease between two of them is not a gap the
+  // rover can be trapped in any more than the lens between two discs of one building is.
+  const base = s => (s || '').replace(/#\d+$/, '');
   for (let i = 0; i < items.length; i++) {
     const a = items[i];
     for (const s of STREETS) {
@@ -100,7 +104,7 @@ export function audit(items) {
     }
     for (let j = i + 1; j < items.length; j++) {
       const b = items[j];
-      if (a.prop && a.prop === b.prop) continue;
+      if (a.prop && base(a.prop) === base(b.prop)) continue;
       const gap = Math.hypot(a.x - b.x, a.z - b.z) - a.r - b.r;
       const at = [a.x, a.z, a.r, b.x, b.z, b.r];
       if (gap < 0) blocks.push({ a: a.id, b: b.id, gap: +gap.toFixed(1), at });

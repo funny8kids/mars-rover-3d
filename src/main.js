@@ -28,7 +28,7 @@ const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.4, 90
 const input = createInput(canvas);
 const audio = new GameAudio();
 
-let quality, qKey, post, fx, env, sky, base, rover, phys, chase, skids;
+let quality, qKey, post, fx, env, sky, terrain, base, rover, phys, chase, skids;
 let started = false, paused = false;
 let startedAt = 0;       // performance.now() at the moment the world became interactive
 let elapsed = 0;
@@ -216,12 +216,18 @@ async function boot() {
   setBar(4, '校准地形高度场…'); await raf(); await raf();
   sky = createSky(scene);
   setBar(22, ' sculpting 火星孤岛 · 300m 程序化沙丘…'); await raf();
-  createTerrain(scene);
+  terrain = createTerrain(scene);
   setBar(44, '撞击坑与岩石风化场…'); await raf();
   await createRocks(scene);
-  createStones(scene);
   setBar(56, '载入 Blender 建模的星舰基地资产…'); await raf();
   base = await buildBase(scene, { particles: 1 });
+  // The site plan cuts its footings into the analytic ground as props are placed, which happens
+  // after the terrain mesh was built. Re-survey the mesh now so what is drawn matches what physics
+  // and the props were seated on — otherwise every graded lot shows a slab of dune under it.
+  terrain.regrade();
+  // Scattered gravel is the last thing laid down: it has to know which ground the site plan turned
+  // into engineered decks, or a chip ends up floating over a footing it was cut through.
+  createStones(scene);
   // the hub tap is the always-live mains feed; every other district starts blacked out
   for (const r of base.gridRigs) { r.online = r.key === 'hub'; r.power = r.online ? 1 : 0; r.tp.online = r.online; }
   UI.gridInit(base.teleports);
@@ -1981,6 +1987,13 @@ window.__RSB = {
     return { drawn: hit ? +hit.point.y.toFixed(2) : null, surface: +surfaceAt(x, z).toFixed(2),
       stand: +platformAt(base.colliders, x, z).toFixed(2) };
   },
+  // Every graded footing, with what the drawn mesh does at its own centre. `deck` and `drawn` have
+  // to agree to within the mesh's 1.36 m interpolation, or the regrade survey missed the plan.
+  footings: async () => (await import('./world/height.js')).listLots().map(l => ({
+    id: l.id, x: +l.x.toFixed(1), z: +l.z.toFixed(1), w: +(l.hw * 2).toFixed(1),
+    d: +(l.hd * 2).toFixed(1), deck: +l.h.toFixed(2), skirt: +l.skirt.toFixed(1),
+    drawn: +surfaceAt(l.x, l.z).toFixed(2),
+  })),
   // name whatever the camera is actually drawing at a screen pixel (px,py in 1280x720 space)
   pick: (px = 640, py = 360) => {
     const rc = new THREE.Raycaster();

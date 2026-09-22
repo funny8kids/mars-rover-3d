@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { surfaceAt } from './height.js';
+import { heightAt, claimLot, resetLots } from './height.js';
 import { ZONES, SHIP_POS, LEAK_POS, SAMPLE_COUNT } from '../config.js';
 import { mulberry32, vnoise } from '../utils/noise.js';
 import { loadModel, cloneModel } from './assets.js';
@@ -29,12 +29,13 @@ const shade = (o) => {
 
 export async function buildBase(scene, quality) {
   G.clear();
-  const HERO = ['habitat_dome', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
+  resetLots();
+  const HERO = ['habitat_dome', 'hab_link', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
     'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'reactor_tap', 'lox_stand', 'roadster', 'lamp',
     'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut', 'barrier_kit', 'flag_mast',
     'hazard_sign', 'telemetry_board', 'feeder_pillar'];
-  const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA', 'corridor', 'corridor_corner',
-    'corridor_end', 'platform_high', 'platform_low', 'platform_large', 'machine_generator',
+  const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA',
+    'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
     'pipe_corner', 'satelliteDish', 'satelliteDish_detailed', 'rocket_baseB', 'rocket_finsA',
     'rover',
@@ -199,32 +200,42 @@ export async function buildBase(scene, quality) {
   }
   // Cloned packs are already collapsed above; hand-built groups still need their own pass.
   const templateRoots = new Set();
-  const put = (name, x, z, s, ry, dy = -0.05) => {
+  // `heightAt` rather than `surfaceAt`: the terrain *mesh* is a 1.36 m lattice sampled before this
+  // function has graded a single footing, so a prop standing where a deck is about to be cut would
+  // otherwise seat itself on the dune that is about to be removed. The analytic field already knows
+  // every lot claimed so far and is exact on a level deck, so props and ground agree from the first
+  // placement; the mesh is re-surveyed to match once the plan is complete.
+  const put = (name, x, z, s, ry, dy = -0.05, at) => {
     const o = cloneModel(models[name]);
     templateRoots.add(o);
     o.scale.setScalar(s);
-    o.position.set(x, surfaceAt(x, z) + dy, z);
+    o.position.set(x, at !== undefined ? at : heightAt(x, z) + dy, z);
     o.rotation.y = ry || 0;
     CUR.add(o); return o;
   };
   const k = (name, x, z, ry, sc = 1) => put(name, x, z, S * sc, ry);
 
-  // A wide deck seated on the centre height buries its downslope rim in the dune, so seat it on
-  // the highest ground inside its own footprint instead.
-  const rimY = (x, z, r) => {
-    let y = surfaceAt(x, z);
-    for (let i = 0; i < 12; i++) {
-      const a = i * Math.PI / 6;
-      y = Math.max(y, surfaceAt(x + Math.cos(a) * r, z + Math.sin(a) * r));
-    }
-    return y;
-  };
+  // ─── site engineering ───
+  // Anything with a wall line gets its own graded footing (see height.js): the ground under it is
+  // cut level, the rims of the model therefore all touch down, and the building stands on the top
+  // of its own pad rather than on `surfaceAt` at its centre plus a constant nobody can defend.
+  // Below this footprint a prop is furniture — a crate, a person, a lamp — and belongs *on*
+  // somebody's deck, not on a 7 m slab of its own.
+  const GRADE_MIN = 4.5;
+  const grade = (id, x, z, w, d, ry) => claimLot({ id: `${ZONE}:${id}`, x, z, w, d, ry });
+
   // Every teleport pad is one authored asset plus one marking decal, and both have to move
   // together when the pad is re-sited (see the pad-siting pass above the grid).
   const padMeshes = [];
   const putDeck = (name, x, z, s, ry, bias = 0) => {
-    const o = put(name, x, z, s, ry, 0);
-    o.position.y = rimY(x, z, 2.7 * s) + bias;
+    const b = footOf(name);
+    // `bias` is now purely how far the asset's own plinth is inset below its deck. It used to carry
+    // a second job — cancelling the slope the pad was standing on — and that is what made every
+    // number at every call site unrepeatable.
+    const lid = name === 'teleport_pad' ? `pad${padSeq}` : name;
+    const foot = { w: b.w * s, d: b.d * s, ry: ry || 0 };
+    const y = grade(lid, x, z, foot.w, foot.d, foot.ry) + bias;
+    const o = put(name, x, z, s, ry, 0, y);
     if (name === 'teleport_pad') {
       const d = new THREE.Mesh(padMarkGeo, padMarkMat(PAD_MARKS[padSeq % 6], 0x1a2b3d + padSeq * 7919));
       padSeq++;
@@ -233,7 +244,7 @@ export async function buildBase(scene, quality) {
       d.position.set(x, o.position.y + 0.366 * s, z);
       noMerge(d);
       G.add(d);
-      padMeshes.push({ o, d, s, bias, x, z });
+      padMeshes.push({ o, d, s, bias, x, z, foot, lotId: `${ZONE}:${lid}` });
     }
     return o;
   };
@@ -377,7 +388,7 @@ export async function buildBase(scene, quality) {
   const screeRnd = mulberry32(0x5eed);
   const scree = (x, z, s, ry, parent) => {
     const grp = new THREE.Group();
-    grp.position.set(x, surfaceAt(x, z), z);
+    grp.position.set(x, heightAt(x, z), z);
     grp.rotation.y = ry;
     // Fracture debris is densest right at the source and thins out fast; an even scatter out to 3 m
     // reads as a gravel field rather than the foot of a crystal.
@@ -387,7 +398,7 @@ export async function buildBase(scene, quality) {
       const dx = Math.cos(a) * rad, dz = Math.sin(a) * rad;
       const m = new THREE.Mesh(chipGeo, M.crystalRubble);
       const cs = (0.055 + screeRnd() * 0.10) * s;
-      m.position.set(dx, surfaceAt(x + dx, z + dz) - surfaceAt(x, z) - cs * 0.35, dz);
+      m.position.set(dx, heightAt(x + dx, z + dz) - heightAt(x, z) - cs * 0.35, dz);
       m.scale.set(cs, cs * (0.6 + screeRnd() * 0.5), cs);
       m.rotation.set(screeRnd() * 3, screeRnd() * 6.28, screeRnd() * 3);
       m.castShadow = true; m.receiveShadow = true;
@@ -462,9 +473,15 @@ export async function buildBase(scene, quality) {
     putSolid(name, x, z, S * sc, ry, id);
   };
   const putSolid = (name, x, z, s, ry, id) => {
-    put(name, x, z, s, ry);
     const b = footOf(name);
-    lot(id || name, x, z, b.w * s, b.d * s, ry || 0);
+    const keyed = id || name;
+    // One footing per collision group: a pressure module, its corridor and its glasshouse are one
+    // structure and must not be separated by a fold in the ground.
+    const y = Math.min(b.w, b.d) * s >= GRADE_MIN
+      ? grade(keyed, x, z, b.w * s, b.d * s, ry || 0)
+      : undefined;
+    put(name, x, z, s, ry, 0, y);
+    lot(keyed, x, z, b.w * s, b.d * s, ry || 0);
     return id;
   };
   // A gantry portal is four stanchions carrying a girder. The bay under it is driveable ground, so
@@ -526,7 +543,7 @@ export async function buildBase(scene, quality) {
   let showBeams = null;
   let shipGroup = null;
 
-  const zoneY = (zz) => surfaceAt(zz.pos[0], zz.pos[1]);
+  const zoneY = (zz) => heightAt(zz.pos[0], zz.pos[1]);
 
   // ══════════ HUB — plaza, arch gate, flagpole, teleport ══════════
   {
@@ -598,7 +615,7 @@ export async function buildBase(scene, quality) {
     {
       beginProp('spaceport-gate');
       const gx = hx, gz = hz - 13.5;
-      const gy = surfaceAt(gx, gz);
+      const gy = heightAt(gx, gz);
       const beamY = gy + 0.78 + 4 * 2.35;
       // One authored asset: jointed precast pylons with their bolt bands, a box girder with
       // chords, verticals, soffit joists and a recessed service panel, a railed catwalk, the
@@ -655,7 +672,7 @@ export async function buildBase(scene, quality) {
     const barBay = models.barrier_kit?.getObjectByName('bay');
     const barrier = (bx) => {
       const zs = [], ys = [];
-      for (let i = 0; i <= 4; i++) { const z = hz - 21.0 + i * 2.16; zs.push(z); ys.push(surfaceAt(bx, z)); }
+      for (let i = 0; i <= 4; i++) { const z = hz - 21.0 + i * 2.16; zs.push(z); ys.push(heightAt(bx, z)); }
       for (let i = 0; i < zs.length; i++) {
         const p = cloneModel(barPost);
         p.position.set(bx, ys[i], zs[i]);
@@ -685,7 +702,7 @@ export async function buildBase(scene, quality) {
     // sectional tube with flanges, sheave truck, halyard and rings. A tapered cylinder with a
     // sphere on top could not carry any of that, and at 8 m the mast is the tallest thing in the
     // plaza, so its silhouette is read from every district.
-    const mastY = surfaceAt(hx + 5.5, hz + 4);
+    const mastY = heightAt(hx + 5.5, hz + 4);
     put('flag_mast', hx + 5.5, hz + 4, 1, 0, 0);
     {
       // A flat quad on a pole is the one prop that guarantees the whole plaza looks like a
@@ -889,7 +906,7 @@ export async function buildBase(scene, quality) {
         // terrain under that one item's own footprint, and the pad apron is not flat.
         const x = sx + dx * Math.cos(dr) + dz * Math.sin(dr);
         const z = sz - dx * Math.sin(dr) + dz * Math.cos(dr);
-        return put(name, x, z, s, ry, floorY - surfaceAt(x, z));
+        return put(name, x, z, s, ry, floorY - heightAt(x, z));
       };
       onDeck('machine_wireless', -0.4, 0.25, S * 0.45, dr - 0.4);
       // The pillar is a Blender asset: a hinged door with a three-point latch, tilted louvres on the
@@ -999,7 +1016,7 @@ export async function buildBase(scene, quality) {
       // on an umbilical mast: an alley the rover drives into, cannot turn in, and has to reverse
       // the whole 22 m out of again. One solid cluster is both drivable and how a launch stack
       // actually stands — the cargo rocket beside the tower that services it.
-      const bx2 = px - 15.6, bz2 = pz + 11.4, by = surfaceAt(bx2, bz2);
+      const bx2 = px - 15.6, bz2 = pz + 11.4, by = heightAt(bx2, bz2);
       const stack = new THREE.Group(); stack.position.set(bx2, by, bz2);
       const part = (name, y, ry) => { const o = cloneModel(models[name]); o.scale.setScalar(S); o.position.y = y; o.rotation.y = ry; stack.add(o); };
       part('rocket_baseB', 0.05, 0);
@@ -1015,7 +1032,7 @@ export async function buildBase(scene, quality) {
     // A support frame with nothing standing under it is scaffolding somebody abandoned, so this one
     // is the pad's LOX stand: a cryo drum, a transfer line slung to the flame deck, and a barrel cage.
     {
-      const sx = px + 6, sz = pz - 12, sy = surfaceAt(sx, sz);
+      const sx = px + 6, sz = pz - 12, sy = heightAt(sx, sz);
       // A kit scaffold frame standing over empty ground was the last bare prop on the pad. This is
       // the LOX stand instead: bund, drum, cradle, manifold and a transfer line to the flame deck.
       // One authored stand: a bundled cryo drum on its saddles inside a four-leg cage with a
@@ -1067,39 +1084,61 @@ export async function buildBase(scene, quality) {
     });
   }
 
-  // ══════════ HABITAT — round hangar, domes, corridors, greenhouse ══════════
+  // ══════════ HABITAT — two dwelling domes, a glasshouse, one real corridor ══════════
   {
     const [vx, vz] = ZONES.habitat.pos;
     ZONE = 'habitat';
-    // The settlement reads as a place, not a pile, because everything is on the block: the drum
-    // backs onto the interior, the dwelling domes and the glasshouse take the two frontages that
-    // face the avenue and the north street, and nothing is allowed further out than the building
-    // line — which is what used to put dome A's 8.5 m disc three metres into the carriageway.
-    // The seated 14.4 m domes used to sit where the corridors and the round hangar drum are;
-    // coincident shells z-fight into a torn black blob, so the settlement is spread out.
-    // One pressurised structure, not four props touching: the drum and the corridors that bolt onto
-    // it are one airtight volume, so they carry one collision id and the audit stops reporting the
-    // joints between them as creases the rover could get stuck in.
-    kSolid('hangar_roundA', vx - 7, vz - 5, 0.5, 1.3, 'hab-module');   // the big living drum
-    putSolid('habitat_dome', vx + 13, vz + 15, 1.1, 0.6, 'dome-a');   // seated 14.4 x 12.3 x 10.3 m
-    putSolid('habitat_dome', vx - 5, vz + 18, 0.85, 2.3, 'dome-b');
-    putSolid('greenhouse', vx - 17, vz + 5, 1.25, -0.5, 'glasshouse');  // 13.7 x 12.0 x 5.0 m
-    // pressurised corridors linking drum → domes → greenhouse
-    kSolid('corridor', vx + 3, vz + 3, 0.62, 1.0, 'hab-module');
-    kSolid('corridor_corner', vx + 9, vz + 11, 1.35, 1.0, 'hab-module');
-    kSolid('corridor_end', vx - 8, vz + 9, 0.9, 1.0, 'hab-module');
-    // front step, awning planters, life
-    k('stairs', vx + 11, vz - 10, 0.1);
-    k('barrel', vx - 2, vz - 8, 1.1);
-    put('astronaut', vx + 7, vz + 15, 1, -0.9, -0.02);
-    k('alien', vx - 13, vz + 14, 2.1);
-    putDeck('teleport_pad', vx + 15, vz - 6, 1.05, 0, -0.08);
-    teleports.push({ key: 'habitat', name: ZONES.habitat.name, x: vx + 15, z: vz - 6 });
+    // A corridor can only bolt to a hatch, so this district is sited from the doors its models
+    // actually have. tools/door_bearing.py measures each shipped GLB: `ax` is the bearing the
+    // modelled door faces in the asset's own frame, `face` how far its flange stands out from the
+    // footprint centre recentre() puts at the origin. One equation then places a hull — aim the
+    // hatch at the corridor (`ry = β − ax`) and drop the origin back along that bearing until the
+    // flange lands on the corridor's end cap. The block used to rotate by eye and fit rectangles,
+    // so all three joints met blank wall, and a four-hull tree asked six door-uses of three doors.
+    const DOOR = {
+      // Re-measured on the rebuilt asset: the porch frame face stands at +Z 4.890 and the door
+      // leaf itself at 4.700, so the flange is set 50 mm inside the frame it bolts to. The old
+      // 5.07 came from the previous shell, whose porch was 370 mm deeper.
+      dome:  { ax: 0,           face: 4.84 },   // airlock porch: yellow door and steps, on +Z
+      glass: { ax: Math.PI / 2, face: 5.46 },   // people door in the +X gable; -X is the air handler
+    };
+    const CAP = 2.75;                            // corridor flange, measured from the link's origin
+    const SPINE = vz - 8;                        // the pressure run, on the avenue side of the block
+    const hatch = (key, name, cx, cz, β, s, id) => {
+      const d = DOOR[key];
+      putSolid(name, cx - Math.sin(β) * d.face * s, cz - Math.cos(β) * d.face * s, s, β - d.ax, id);
+    };
+    // One airtight volume, not three props touching: glasshouse, link and dwelling dome A are
+    // bolted door to door and carry one collision id, so the audit reads the joints as seams the
+    // rover cannot be pinched in. Both flanges bury 50 mm into their frames on purpose.
+    putSolid('hab_link', vx, SPINE, 1, Math.PI / 2, 'hab-module');
+    hatch('glass', 'greenhouse', vx - CAP, SPINE, Math.PI / 2, 1.25, 'hab-module');
+    hatch('dome', 'habitat_dome', vx + CAP, SPINE, -Math.PI / 2, 1.1, 'hab-module');
+    // Dome B has its own airlock, so its crew walk down those steps rather than through a tunnel —
+    // facing south puts the lit porch and the steps at the corner the avenue delivers a rover to,
+    // instead of into a neighbour's wall.
+    putSolid('habitat_dome', vx + 13.5, vz + 14, 0.9, Math.PI, 'hab-domeB');
+    // hangar_roundA is an octagonal drum with no hatch anywhere on it, and measuring it is what
+    // dethroned it from MODULE A: a settlement does not park a 15 m windowless drum on its frontage
+    // and call it living space. It is the yard's dry store and LOX drum now, at the back of the
+    // block where that is exactly what belongs.
+    const drum = { x: vx - 8, z: vz + 14, s: S * 1.3 };
+    putSolid('hangar_roundA', drum.x, drum.z, drum.s, 0, 'hab-drum');
+    // Yard life, all of it in the courtyard the two rows leave open and none of it on a disc, so the
+    // crew read as a settlement's people rather than props standing in a wall.
+    k('stairs', drum.x + 5.2, drum.z - 4.2, Math.PI / 2);   // the drum's only way to its roof hatch
+    k('barrel', vx - 2, vz + 6, 1.1);
+    put('astronaut', vx + 6, vz + 3, 1, -0.9, -0.02);
+    k('alien', vx + 1, vz + 9, 2.1);
+    putDeck('teleport_pad', vx + 16, vz + 2, 1.05, 0, -0.08);
+    teleports.push({ key: 'habitat', name: ZONES.habitat.name, x: vx + 16, z: vz + 2 });
     const vy = zoneY(ZONES.habitat);
-    beacons.push(cyl(0.35, 0.35, 0.5, M.beacon, vx - 7, vy + 8.3, vz - 5, 10));   // seated on the hangar drum
+    // A lamp bulb, not a structure: the beacon is the night-side marker the autopilot aims at, so
+    // it is one cylinder and it has to be sampled from terrain, which no exported GLB can be.
+    beacons.push(cyl(0.35, 0.35, 0.5, M.beacon, drum.x, vy + 8.3, drum.z, 10));   // seated on the drum roof
     infoZones.push({
-      key: 'habitat', pos: [vx, vz], r: 26, tag: 'SETTLEMENT · MODULE A-D',
-      name: '火星生活舱区', params: ['加压体积 4×920 m³ · 气闸 ×2', '温室穹顶生物量 ~2.1 t', '住 here 的有 24 名工程师与植物学家'],
+      key: 'habitat', pos: [vx, vz], r: 28, tag: 'SETTLEMENT · MODULE A-D',
+      name: '火星生活舱区', params: ['加压体积 3×920 m³ · 连通走廊 5.5 m · 气闸 ×2', '干燥储存鼓 Ø15 m · LOX 转注 12 m³/h', '常驻 24 名工程师与植物学家'],
       fact: '暖光从舷窗透出来的时候，四亿公里外的家也不过如此。',
     });
   }
@@ -1126,7 +1165,7 @@ export async function buildBase(scene, quality) {
     for (let i = 0; i < 3; i++) {
       const tx = ix + 17, tz = iz - 14 + i * 6.5;
       putSolid('cryo_tank', tx, tz, 0.95, 0.5 + i, 'cryo-farm');
-      sparkPoints.push({ x: tx, y: surfaceAt(tx, tz) + 1.8, z: tz - 1.6, rate: 0.45 + i * 0.1 });
+      sparkPoints.push({ x: tx, y: heightAt(tx, tz) + 1.8, z: tz - 1.6, rate: 0.45 + i * 0.1 });
     }
     // pipe rack from tanks toward the fab
     for (let i = 0; i < 2; i++) {
@@ -1148,7 +1187,7 @@ export async function buildBase(scene, quality) {
   {
     const [mx, mz] = LEAK_POS;
     ZONE = 'leak';
-    const my2 = surfaceAt(mx, mz);
+    const my2 = heightAt(mx, mz);
     kSolid('machine_generator', mx, mz + 2.5, 1.4, 0.8, 'valve-housing');   // the valve housing
     k('pipe_straight', mx - 5, mz - 1.5, 0.2);
     k('pipe_corner', mx + 4.5, mz - 2.5, 2.4);
@@ -1258,7 +1297,9 @@ export async function buildBase(scene, quality) {
     const cradle = putDeck('platform_low', mx - 0.6, mz - 5.2, 1.4, Math.PI / 2, -0.1);
     const cradleTop = new THREE.Box3().setFromObject(cradle).max.y;
     portal('rover-bay', mx - 0.6, mz - 5.2, 0.92, Math.PI / 2);
-    const pit = (x, z) => rimY(x, z, 1.6);
+    // The bots stand on the apron's graded deck, so the ground under a foot is the deck: no rim
+    // survey needed.
+    const pit = (x, z) => heightAt(x, z);
 
     // ── the crew rover, parked nose-out on its stand so the cupola clears the girder ──
     const rover = cloneModel(models.crew_rover);
@@ -1316,7 +1357,7 @@ export async function buildBase(scene, quality) {
     ZONE = 'watch';
     const wy = Math.max(...Array.from({ length: 24 }, (_, i) => {
       const a = i / 24 * 6.283, rr = (i % 3) / 2 * 7;
-      return surfaceAt(wx + Math.cos(a) * rr, wz + Math.sin(a) * rr);
+      return heightAt(wx + Math.cos(a) * rr, wz + Math.sin(a) * rr);
     }));
     // The deck's wearing surface, measured off its own asset rather than guessed: the cast drum is
     // DECK_TOP = 1.00 m in `build_watch_deck.py` and the wear plate laid over it finishes 0.08
@@ -1417,7 +1458,7 @@ export async function buildBase(scene, quality) {
   {
     const [nx, nz] = ZONES.night.pos;
     ZONE = 'night';
-    const ny = surfaceAt(nx, nz);
+    const ny = heightAt(nx, nz);
     putSolid('habitat_dome', nx + 6, nz - 4, 0.7, 1.7, 'dome');
     for (let i = 0; i < 6; i++) {
       const a = i / 6 * 2.6 + 2.4;
@@ -1449,7 +1490,7 @@ export async function buildBase(scene, quality) {
   {
     const [yx, yz] = ZONES.storm.pos;
     ZONE = 'storm';
-    const wy2 = surfaceAt(yx, yz);
+    const wy2 = heightAt(yx, yz);
     wreckPos = new THREE.Vector3(yx, wy2, yz);
     const w = put('lander', yx, yz, 1.15, 0.6, 0.45);
     w.rotation.z = 1.45; w.rotation.x = 0.25;         // down on its side
@@ -1474,7 +1515,7 @@ export async function buildBase(scene, quality) {
   // ══════════ ROADSTER easter egg ══════════
   {
     const [rx, rz] = ZONES.roadster.pos;
-    const ry = surfaceAt(rx, rz);
+    const ry = heightAt(rx, rz);
     // The one car in the scene that is not driven has to be recognised as a Roadster from
     // 60 m: a lofted body with its shoulder line, a glass canopy, arches over spoked rims,
     // splitter, diffuser and spoiler, shut lines on the panels, and Starman in the seat.
@@ -1496,7 +1537,7 @@ export async function buildBase(scene, quality) {
     const anchors = [[86, 60], [-80, 66], [95, -30], [-30, 95], [35, -92], [-90, -35]];
     for (const [ax2, az2] of anchors) {
       const x = ax2 + (rand() - 0.5) * 14, z = az2 + (rand() - 0.5) * 14;
-      const y = surfaceAt(x, z);
+      const y = heightAt(x, z);
       const g4 = new THREE.Group(); g4.position.set(x, y, z);
       const c = cloneModel(models['crystal']);
       templateRoots.add(c);
@@ -1633,7 +1674,12 @@ export async function buildBase(scene, quality) {
       if (found) {
         m.o.position.x = tp.x = found.x;
         m.o.position.z = tp.z = found.z;
-        m.o.position.y = rimY(tp.x, tp.z, 2.7 * m.s) + m.bias;
+        // The footing moves with the pad: the slab it was cut into is re-graded where the deck now
+        // stands rather than the pad being lifted or dropped by whatever the new ground happens to
+        // be under its centre — that centre-plus-rim-max reading is what used to leave a pad
+        // hovering over a slope it had just been moved onto.
+        m.o.position.y = claimLot({ id: m.lotId, x: tp.x, z: tp.z,
+          w: m.foot.w, d: m.foot.d, ry: m.foot.ry, move: true }) + m.bias;
         m.d.position.set(tp.x, m.o.position.y + 0.366 * m.s, tp.z);
       }
       padAudit.push({
@@ -1686,9 +1732,15 @@ export async function buildBase(scene, quality) {
       const rad = Math.hypot(tp.x, tp.z) || 1;
       const site = siteFor(tp.x, tp.z, Math.atan2(tp.x / rad, tp.z / rad), 2.6, 2.6);
       const rx = site.x, rz = site.z;
+      const yaw = Math.atan2(tp.x - rx, tp.z - rz);
+      // A substation is a building, so it takes a footing of its own like every other tap on the
+      // grid; the 6 cm below that is the plinth deliberately *embedded* in its slab so the joint
+      // reads flush, not a slope cancelled by a constant.
+      const tf = footOf('reactor_tap');
+      const tapY = grade(`tap:${tp.key}`, rx, rz, tf.w, tf.d, yaw) - 0.06;
       const rig = new THREE.Group();
-      rig.position.set(rx, rimY(rx, rz, 2.05) - 0.06, rz);
-      rig.rotation.y = Math.atan2(tp.x - rx, tp.z - rz);
+      rig.position.set(rx, tapY, rz);
+      rig.rotation.y = yaw;
       G.add(rig);
 
       // ── the tap has to read as a substation you can drive up to and recognise from 100 m:
@@ -1705,7 +1757,7 @@ export async function buildBase(scene, quality) {
       for (let i = 1; i <= 4; i++) {
         const lz = -1.6 - (i / 5) * 2.0;
         const wx = rx + Math.sin(rig.rotation.y) * lz, wz = rz + Math.cos(rig.rotation.y) * lz;
-        box(0.11, 0.13, 0.11, soot, 0, surfaceAt(wx, wz) + 0.06 - (rig.position.y), lz, rig);
+        box(0.11, 0.13, 0.11, soot, 0, heightAt(wx, wz) + 0.06 - (rig.position.y), lz, rig);
       }
 
       const coreMat = new THREE.MeshStandardMaterial({ color: 0x101a1f, emissive: 0x4fe2ff, emissiveIntensity: 0, roughness: 0.2, metalness: 0.1 });
@@ -1745,10 +1797,10 @@ export async function buildBase(scene, quality) {
   return {
     group: G, colliders, infoZones, samples, sparkPoints, beacons, lightStrips, lightRings, showBeams, showBeamMats, shipGroup, teleports, padGlow, heroLights, occluders, gridRigs, crystalMat: M.crystal,
     plan: auditPlan, lots,
-    leakPoint: new THREE.Vector3(LEAK_POS[0], surfaceAt(LEAK_POS[0], LEAK_POS[1]) + 1.8, LEAK_POS[1]),
+    leakPoint: new THREE.Vector3(LEAK_POS[0], heightAt(LEAK_POS[0], LEAK_POS[1]) + 1.8, LEAK_POS[1]),
     flamePoint,
     launchPadPos: new THREE.Vector3(...ZONES.launch.pos),
     wreckPos,
-    watchPos: new THREE.Vector3(ZONES.watch.pos[0], surfaceAt(...ZONES.watch.pos), ZONES.watch.pos[1]),
+    watchPos: new THREE.Vector3(ZONES.watch.pos[0], heightAt(...ZONES.watch.pos), ZONES.watch.pos[1]),
   };
 }

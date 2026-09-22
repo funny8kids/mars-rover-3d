@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { heightAt, installSurfaceGrid, surfaceAt, pavedAt, paveGeometry } from './height.js';
+import { heightAt, installSurfaceGrid, surfaceAt, pavedAt, paveGeometry, deckAt, lotAt } from './height.js';
 import { TERRAIN, ZONES, ISLAND } from '../config.js';
 import { fbm, vnoise, mulberry32, smoothstep } from '../utils/noise.js';
 import { loadModel, cloneModel } from './assets.js';
@@ -278,12 +278,16 @@ function applyPaving(mat) {
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, u);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\n' + PARS)
+      .replace('#include <common>', '#include <common>\nattribute float aDeck;\nvarying float vDeck;\n' + PARS)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
   vWP = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
-  vPave = rsbMask( vWP.xz );`);
+  vPave = rsbMask( vWP.xz );
+  // A graded building deck is per-vertex data, not a shader loop: the site plan is not finished
+  // until props are placed, and dozens of rect SDFs evaluated for 48 000 vertices every frame is
+  // the sort of thing that costs an iGPU its frame budget.
+  vDeck = aDeck;`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\n' + PARS)
+      .replace('#include <common>', '#include <common>\nvarying float vDeck;\n' + PARS)
       .replace('#include <map_fragment>', `#include <map_fragment>
   // The 512² ripple tile spans 11.5 m and its fastest train runs ~3.5 cycles per metre, so past
   // roughly 30 m it falls below Nyquist and anisotropic sampling stops saving it: the whole dune
@@ -293,7 +297,7 @@ function applyPaving(mat) {
   gRipple = 1.0 - smoothstep( 0.004, 0.016, fwidth( vMapUv.x ) + fwidth( vMapUv.y ) );
   // (no vColor here — color_fragment multiplies the vertex tint in *after* this chunk)
   diffuseColor.rgb = mix( vec3( 0.92, 0.895, 0.88 ), diffuseColor.rgb, gRipple );
-  gPave = rsbPave( vWP.xz, vPave );
+  gPave = rsbPave( vWP.xz, max( vPave, vDeck ) );
   // Sintered regolith, not poured concrete. The deck has to sit *inside* the sand's value range:
   // the first pass mixed toward pure white and made a glaring apron, and even the grey that
   // replaced it was two stops brighter and fully desaturated, so under a peach sky every plaza
@@ -341,40 +345,53 @@ export function createTerrain(scene) {
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
+  const decks = new Float32Array(pos.count);
   const nodes = new Float32Array(pos.count);
   const col = new THREE.Color();
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), z = pos.getZ(i);
-    const y = heightAt(x, z);
-    nodes[i] = y;
-    pos.setY(i, y);
-    const r = Math.hypot(x, z);
-    const tint = fbm(x * 0.02 + 11, z * 0.02 + 5, 3);
-    col.copy(SAND_A).lerp(SAND_B, smoothstep(0.35, 0.95, tint));
-    col.lerp(SAND_C, smoothstep(2.2, 7.5, y) * 0.45);           // bright rim crest
-    col.lerp(SAND_B, smoothstep(-1, -4, y) * 0.6);              // darker beyond the cliff
-    const pave = pavedAt(x, z);
-    if (pave > 0) col.lerp(PAVE, pave * 0.85);                  // cream pads & roads
-    // soft dune banding so large flats never read as a dead sheet
-    col.multiplyScalar(0.94 + 0.12 * vnoise(x * 0.35, z * 0.35));
-    // gravel drifts and wind-scoured lighter bands — the mid-scale reading that survives
-    // the 1.4 m vertex spacing
-    // A pad used to zero all of this out (`* (1 - pave)`), which is why every plaza in the world
-    // looked like a painted sheet. Compacted ground is *more* varied than dune sand, not less:
-    // traffic lanes, spilled fines and a darker crust where vehicles have turned it over.
-    const gravel = smoothstep(0.58, 0.82, fbm(x * 0.055 + 31, z * 0.055 + 17, 3));
-    col.lerp(GRAVEL, gravel * 0.42 * (1 - pave * 0.4));
-    col.lerp(SAND_C, Math.pow(smoothstep(0.55, 0.95, vnoise(x * 0.12, z * 0.12 + 40)), 2) * 0.20);
-    if (pave > 0.15) {
-      const lane = smoothstep(0.62, 0.94, vnoise(x * 0.09 + 3, z * 0.09 + 71));
-      col.lerp(TRACK, lane * pave * 0.5);                       // worn, compacted darker strips
-      col.lerp(SAND_C, smoothstep(0.7, 0.97, vnoise(x * 0.5, z * 0.5)) * pave * 0.22);
-    }
-    colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
-  }
-  installSurfaceGrid(nodes, seg, size);
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  geo.computeVertexNormals();
+  geo.setAttribute('aDeck', new THREE.BufferAttribute(decks, 1));
+
+  // One pass of the ground survey: height, deck cover, and every colour term that follows from
+  // them. Run once for the natural surface and again after the site plan has claimed its footings,
+  // because the graded lots are laid by props.js and the mesh has to match the analytic field.
+  function survey() {
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = pos.getZ(i);
+      const y = heightAt(x, z);
+      nodes[i] = y;
+      pos.setY(i, y);
+      decks[i] = deckAt(x, z);
+      const tint = fbm(x * 0.02 + 11, z * 0.02 + 5, 3);
+      col.copy(SAND_A).lerp(SAND_B, smoothstep(0.35, 0.95, tint));
+      col.lerp(SAND_C, smoothstep(2.2, 7.5, y) * 0.45);           // bright rim crest
+      col.lerp(SAND_B, smoothstep(-1, -4, y) * 0.6);              // darker beyond the cliff
+      const pave = pavedAt(x, z);
+      if (pave > 0) col.lerp(PAVE, pave * 0.85);                  // cream pads & roads
+      // soft dune banding so large flats never read as a dead sheet
+      col.multiplyScalar(0.94 + 0.12 * vnoise(x * 0.35, z * 0.35));
+      // gravel drifts and wind-scoured lighter bands — the mid-scale reading that survives
+      // the 1.4 m vertex spacing
+      // A pad used to zero all of this out (`* (1 - pave)`), which is why every plaza in the world
+      // looked like a painted sheet. Compacted ground is *more* varied than dune sand, not less:
+      // traffic lanes, spilled fines and a darker crust where vehicles have turned it over.
+      const gravel = smoothstep(0.58, 0.82, fbm(x * 0.055 + 31, z * 0.055 + 17, 3));
+      col.lerp(GRAVEL, gravel * 0.42 * (1 - pave * 0.4));
+      col.lerp(SAND_C, Math.pow(smoothstep(0.55, 0.95, vnoise(x * 0.12, z * 0.12 + 40)), 2) * 0.20);
+      if (pave > 0.15) {
+        const lane = smoothstep(0.62, 0.94, vnoise(x * 0.09 + 3, z * 0.09 + 71));
+        col.lerp(TRACK, lane * pave * 0.5);                       // worn, compacted darker strips
+        col.lerp(SAND_C, smoothstep(0.7, 0.97, vnoise(x * 0.5, z * 0.5)) * pave * 0.22);
+      }
+      colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
+    }
+    installSurfaceGrid(nodes, seg, size);
+    geo.attributes.color.needsUpdate = true;
+    geo.attributes.aDeck.needsUpdate = true;
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+  }
+
+  survey();
   const mat = new THREE.MeshStandardMaterial({
     vertexColors: true, roughness: 0.94, metalness: 0.0,
   });
@@ -391,6 +408,13 @@ export function createTerrain(scene) {
   mesh.receiveShadow = true;
   mesh.name = 'terrain';
   scene.add(mesh);
+  // props.js claims a graded footing per building *while it places* the models, i.e. after this
+  // mesh was built. The height field is the analytic truth, so one after-the-plan survey puts the
+  // ground, the deck mask and the rover's `surfaceAt` back in agreement with what it drew.
+  mesh.regrade = () => {
+    survey();
+    geo.computeBoundingSphere();
+  };
   return mesh;
 }
 
@@ -448,19 +472,27 @@ export function createStones(scene, count = 3600) {
   const mesh = new THREE.InstancedMesh(geo, mat, count);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), s = new THREE.Vector3();
   const e = new THREE.Euler(), col = new THREE.Color();
-  for (let i = 0; i < count; i++) {
+  let n = 0, guard = 0;
+  while (n < count && guard++ < count * 4) {
     const a = rand() * Math.PI * 2;
     const r = 5 + Math.pow(rand(), 0.6) * (ISLAND.rim + 30);
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    // Gravel belongs on the dune, not on engineered ground: a chip sitting on a sawn level reads as
+    // litter, and every footing the site plan cuts changes the height under a previously placed one.
+    // The analytic field is used rather than the mesh because the plan is not complete when this runs.
+    const lot = lotAt(x, z);
+    if (lot && lot.sd < 0) continue;
     const sc = 0.07 + Math.pow(rand(), 2.3) * 0.5;
     e.set(rand() * 6.283, rand() * 6.283, rand() * 6.283);
     q.setFromEuler(e);
-    v.set(x, surfaceAt(x, z) - sc * 0.28, z);
+    v.set(x, heightAt(x, z) - sc * 0.28, z);
     s.set(sc * (0.75 + rand() * 0.7), sc * (0.7 + rand() * 0.6), sc * (0.75 + rand() * 0.7));
-    mesh.setMatrixAt(i, m4.compose(v, q, s));
+    mesh.setMatrixAt(n, m4.compose(v, q, s));
     col.copy(SPECK).lerp(GRAVEL, rand()).lerp(SAND_C, rand() * 0.5);
-    mesh.setColorAt(i, col);
+    mesh.setColorAt(n, col);
+    n++;
   }
+  mesh.count = n;
   mesh.instanceMatrix.needsUpdate = true;
   mesh.computeBoundingSphere();
   mesh.frustumCulled = true;

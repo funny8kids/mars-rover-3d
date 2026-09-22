@@ -28,7 +28,7 @@
 #       lamp          x[-1.1 1.1]  y[-1.0 1.0]   z[0    ..  5.0]
 #       crystal       x[-1.0 1.0]  y[-1.0 1.0]   z[0    ..  2.6]
 #       starship      x[-3.2 3.2]  y[-4.4 4.4]   z[0    .. 43.5]
-#       habitat_dome  x[-7.2 7.2]  y[-6.2 6.2]   z[0    ..  5.2]
+#       habitat_dome  x[-4.3 4.3]  y[-5.6 5.6]   z[0    ..  5.6]
 #   * Material names the runtime keys off — reuse them for the same role:
 #       'light_amber'   rover.js findMeshByMaterial() + props.js emissive set
 #       'light_cyan', 'light_warm', 'light_magenta', 'pad_glow'  props.js set
@@ -457,6 +457,15 @@ def tube(name, pts, radius, m, res=1, par=None, closed=False, loc=(0, 0, 0),
     bpy.ops.object.convert(target='MESH')
     o = act(bpy.context.object)
     o.name = name
+    # use_fill_caps generates the end faces on their own duplicated rim verts,
+    # so every converted sweep is technically a bag of unsealed shells. Welding
+    # closes them; without this a tube-only asset audits ~24 open edges per end.
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(o.data)
+    bm.free()
     smooth_angle(o, 50)
     parent(o, par)
     return o
@@ -3402,6 +3411,452 @@ def launch_tower():
     reassign(g, lambda p, c, nn: c.z < 1.35, WORN, keep=KEEP)
     dust_top(g, zmin=0.55, min_nz=0.66, keep=KEEP)
     scuff_low(g, zmax=1.60, max_nz=0.55, keep=KEEP)
+    return root
+
+
+# ============================================================================
+#  habitat dome — the dwelling pressure hull
+# ============================================================================
+@builder
+def habitat_dome():
+    """A real habitat, not a shell on a promise.
+
+    The shipped asset this replaces was one merged icosphere whose datum came
+    from the lowest vertex anywhere in it — the entry porch, 9.745 units out —
+    so the export node lifted the load-bearing drum base ring 4.42 into the
+    air and every one of them read as a floating oval house. Here the Z=0 plane
+    is the footing's own sole plate, and everything above it is stacked on that
+    with no fudge: cast ring footing -> insulated drum -> gore-stiffened dome
+    -> crown. Air side and ground side are two different structures because
+    that is how a pressure hull is actually built.
+
+    Frame: porch/ECLSS along Y (Blender -Y is the runtime +Z the door faces)."""
+    root = empty("habitat_dome", (0, 0, 0))
+    CREAM = P["cream"]; ALU = P["alu"]; MACH = P["alumach"]
+    DARK = P["gunmetal"]; CONC = P["concrete"]; GRATE = P["grate"]
+    WORN = P["worn"]; RUST = P["rust"]; INS = P["insul"]; ORANGE = P["orange"]
+    AMBER = P["amber"]; CYAN = P["cyan"]; WARM = P["warm"]
+    PANE = mat("glass_pane", (0.70, 0.88, 0.85), rough=0.05, alpha=0.22, coat=0.55)
+    KEEP = {AMBER, CYAN, WARM, PANE, ORANGE}
+    A = []
+    G = []                                   # glazing: own mesh, never shadow-casting
+
+    # ------------------------------------------------------------- geometry
+    PLT = 0.34                # footing sole -> finished floor line
+    DR = 3.60                 # drum radius
+    DZ0 = 1.30                # dome springing
+    DZ1 = 4.28                # dome crown
+    CZ = 0.993                # centre of the generating sphere
+    RS = 3.6131               # ... and its radius
+    TAU = math.pi * 2
+
+    def rd(z):                               # shell radius at height z
+        return math.sqrt(max(0.0, RS * RS - (z - CZ) ** 2))
+
+    def tang(ang):                           # (radial, tangent, up) at azimuth
+        u = (math.cos(ang), math.sin(ang), 0.0)
+        return u, (-u[1], u[0], 0.0)
+
+    def cpl(name, q, su, sv, sd, U, V, m, par=root):
+        """Plate placed BY CENTRE. obase anchors the +U+V+N corner, which makes
+        every cladding panel read half a size off its stated line; nothing here
+        is authored that way, because the datum has to stay symmetric."""
+        Uv = Vector(U).normalized()
+        Vv = Vector(V).normalized()
+        c = Vector(q) + (Uv * su + Vv * sv + Uv.cross(Vv) * sd) * 0.5
+        return obase(name, tuple(c), su, sv, sd, Uv, Vv, m, par=par)
+
+    DECK = 0.36                              # apron / equipment-pad top of cast
+    LAD_J = 1                                # walkway bay the caged ladder uses
+    lad_ang = math.pi / 30 + LAD_J / 10.0 * TAU
+
+    # ------------------------------------------------------- cast ring footing
+    # Both profile ends sit on the axis, so the lathe is a closed solid and the
+    # sole plate is genuinely at Z=0 rather than an open skirt.
+    A.append(lathe("footing", [(0.0, 0.0), (4.30, 0.0), (4.30, 0.24),
+                                (4.16, PLT), (0.0, PLT)], CONC, (0, 0, 0),
+                   segs=48, par=root, smooth=25))
+    A.append(ring("footing_curb", 4.20, 0.050, (0, 0, 0.285), CONC, maj=48,
+                  mino=6, par=root))
+    A.append(boltring("footing_bolts", (0, 0, PLT + 0.005), (0, 0, 1), 3.90, 24, MACH,
+                      br=0.040, bh=0.055, par=root))
+    for k in range(6):                       # anchor chairs into the regolith
+        ang = k / 6.0 * TAU + TAU / 24
+        u, t = tang(ang)
+        A.append(hexn("footing_anchor%d" % k, 0.075, 0.16,
+                      (3.98 * u[0], 3.98 * u[1], 0.16), MACH,
+                      rot=(0, 0, ang), par=root))
+    for sx in (-1, 1):                       # keep-out chevrons at the cart edges
+        A += hazard_band("footing_hazard_%d" % sx, sx * 3.95, 0, 0.245, 1.15, 0.05,
+                         8, ORANGE, DARK, axis='y', par=root, thick=0.014)
+    for i, ang in enumerate([sgn * (k - 0.5) / 12.0 * TAU
+                             for sgn in (-1, 1) for k in (1, 2)]):
+        # services out to the cart bays: on drum bay centres, so no run crosses
+        # a joint strip, and clear of the footing deck so nothing is cast in
+        # concrete - each one lands in its own saddle block.
+        u, t = tang(ang)
+        A += radial_pipe("service_stub%d" % i, 3.90, ang, 0.62, 0.42, 0.055,
+                         MACH, DARK, par=root)
+        A.append(pbox("service_shoe%d" % i, 0.12, 0.12, 0.30,
+                      (4.12 * u[0], 4.12 * u[1], 0.475), CONC, rot=(0, 0, ang),
+                      par=root))
+
+    # ------------------------------------------------------------------- drum
+    # The pressure vessel's lower cylinder: a solid ring wall, because the
+    # interior is never visible and a hollow drum shows its own backfaces.
+    A.append(prism("drum", DR + 0.06, 1.06, (0, 0, 0.83), INS, sides=48,
+                   par=root, br=0.03))
+    # Clamp band over the shell foot. It has to bite the shell: a ring whose
+    # inner equator is merely tangent to the shell corner (major 3.66 / minor
+    # 0.08 at the springing) shares a whole 48-vertex circle with the lathe,
+    # the weld pass then merges two independent shells into a 4-face edge and
+    # the recap cannot close it — that was all 192 open edges of the audit.
+    A.append(ring("springing_ring", DR + 0.035, 0.085, (0, 0, DZ0 + 0.16), ALU,
+                  maj=48, mino=6, par=root))
+    for k in range(24):
+        ang = k / 24.0 * TAU
+        u, t = tang(ang)
+        A.append(hexn("drum_flange%d" % k, 0.045, 0.05,
+                      (3.72 * u[0], 3.72 * u[1], 1.46), MACH,
+                      rot=(math.pi / 2, 0, ang), par=root))
+    # insulation cladding: tangent panels in two courses, seated on the mantle,
+    # with a seal strip over every joint and a machined pilaster outside it
+    for j in range(12):
+        ang = (j + 0.5) / 12.0 * TAU
+        u, t = tang(ang)
+        for zz in (0.60, 1.06):
+            A.append(cpl("drum_panel%d_%g" % (j, zz),
+                         (3.6875 * u[0], 3.6875 * u[1], zz), 1.72, 0.38, 0.075,
+                         t, (0, 0, 1), CREAM, par=root))
+        ang = j / 12.0 * TAU
+        u, t = tang(ang)
+        A.append(cpl("drum_seal%d" % j, (3.665 * u[0], 3.665 * u[1], 0.83),
+                     0.26, 1.04, 0.06, t, (0, 0, 1), DARK, par=root))
+        if j not in (0, 9):                  # 9 is the porch throat, 0 the louver
+            A.append(cpl("drum_pilaster%d" % j, (3.755 * u[0], 3.755 * u[1], 0.83),
+                         0.15, 1.02, 0.09, t, (0, 0, 1), ALU, par=root))
+
+    # ------------------------------------------------------------- dome shell
+    arc = []
+    for k in range(9):
+        z = DZ1 - k * (DZ1 - DZ0) / 8.0
+        arc.append((rd(z) + 0.035, z))
+    A.append(lathe("habitat_shell",
+                   [(0.0, 4.40), (1.70, 4.40), (1.50, DZ1)] + arc +
+                   [(DR - 0.02, DZ0), (DR - 0.02, DZ0 - 0.14), (0.0, DZ0 - 0.14)],
+                   INS, (0, 0, 0), segs=48, par=root, smooth=25))
+    # sixteen gore ribs, each riding the shell and thickened across the band
+    for j in range(12):
+        ang = j / 12.0 * TAU
+        u, t = tang(ang)
+        pts = []
+        for k in range(11):
+            z = 1.28 + k * (4.24 - 1.28) / 10.0
+            r = rd(z) + (0.085 if 1.90 < z < 3.95 else 0.035)
+            pts.append((r * u[0], r * u[1], z))
+        A.append(tube("gore_rib%d" % j, pts, 0.055, ALU, par=root))
+    for z in (1.95, 2.65, 3.35, 3.95):
+        A.append(ring("latitude_ring%.2f" % z, rd(z) + 0.06, 0.052, (0, 0, z), ALU,
+                      maj=48, mino=6, par=root))
+    for z in (2.58, 3.38):                   # sill and head of the window band
+        A.append(ring("window_chan%.2f" % z, rd(z) + 0.075, 0.062, (0, 0, z), DARK,
+                      maj=48, mino=6, par=root))
+
+    # ------------------------------------------------- window band (12 panes)
+    # Every window is authored off the shell's own surface frame: N is the
+    # outward normal, S runs up the meridian, so a `d` offset is a real
+    # distance out of the dome and nothing can end up buried by accident.
+    ZP0, ZP1 = 2.62, 3.34
+    ZPM = 0.5 * (ZP0 + ZP1)
+    RM0 = rd(ZPM)
+    km = (ZPM - CZ) / RM0                    # shell slope: dz/dr
+    sn = math.hypot(1.0, km)
+    for j in range(12):
+        ang = (j + 0.5) / 12.0 * TAU
+        u, t = tang(ang)
+        S = (-km * u[0] / sn, -km * u[1] / sn, 1.0 / sn)   # up the meridian
+        Tv = Vector(t)
+        Sv = Vector(S)
+        Nv = Tv.cross(Sv)                                   # out of the shell
+        B = Vector((RM0 * u[0], RM0 * u[1], ZPM))
+
+        def at(d=0.0, s=0.0, w=0.0):
+            return tuple(B + Nv * d + Sv * s + Tv * w)
+
+        A.append(cpl("window_backing%d" % j, at(0.020), 1.34, 0.90, 0.06,
+                     t, S, DARK, par=root))
+        G.append(cpl("window_pane%d" % j, at(0.075), 1.16, 0.72, 0.035,
+                     t, S, PANE, par=root))
+        for s2 in (-1, 1):                   # head and sill caps
+            A.append(cpl("window_trim%d_%d" % (j, s2), at(0.085, s2 * 0.47),
+                         1.44, 0.075, 0.06, t, S, ALU, par=root))
+        for w in (-0.29, 0.29):              # mullion bars over the glazing
+            A.append(cpl("window_mull%d_%g" % (j, w), at(0.100, 0.0, w),
+                         0.075, 0.72, 0.055, t, S, ALU, par=root))
+        for s2 in (-1, 1):                   # rebate bolts at the corners
+            for w in (-0.62, 0.62):
+                A.append(hexn("window_bolt%d_%d_%g" % (j, s2, w), 0.035, 0.05,
+                              at(0.062, s2 * 0.40, w), MACH, par=root,
+                              rot=Nv.to_track_quat('Z', 'Y').to_euler()))
+    A.append(ring("window_strip", rd(2.50) + 0.055, 0.042, (0, 0, 2.50), AMBER,
+                  maj=48, mino=6, par=root))
+    for j in range(12):
+        ang = j / 12.0 * TAU
+        u, t = tang(ang)
+        A.append(prism("strip_lamp%d" % j, 0.075, 0.10,
+                       ((rd(2.50) + 0.115) * u[0], (rd(2.50) + 0.115) * u[1],
+                        2.50), MACH, sides=6, rot=(math.pi / 2, 0, ang),
+                       par=root))
+
+    # ---------------------------------------------------- airlock porch (-Y)
+    # Section is the portal silhouette; extruding along local Z puts its depth
+    # on world -Y, which is the bearing the runtime door faces.
+    arch = [(-0.95, 0.30), (0.95, 0.30), (0.95, 1.90), (0.70, 2.32), (0.0, 2.48),
+            (-0.70, 2.32), (-0.95, 1.90)]
+    A.append(extrude_poly("porch_tunnel", arch, 1.75, INS, (0, -3.575, 0),
+                          rot=(math.pi / 2, 0, 0), par=root, smooth=30))
+    A.append(rbox("porch_roof", 2.42, 2.30, 0.10, (0, -3.70, 2.50), ALU,
+                  bevel_r=0.03, segs=1, par=root))
+    for sx in (-1, 1):                       # canopy braces off the bulkhead
+        p0 = Vector((sx * 1.05, -2.72, 1.95))
+        p1 = Vector((sx * 1.05, -4.62, 2.46))
+        dv = p1 - p0
+        A.append(rod("porch_strut%d" % (sx > 0), 0.038, dv.length,
+                     tuple((p0 + p1) / 2), MACH,
+                     rot=dv.to_track_quat('Z', 'Y').to_euler(), verts=10, br=0.0,
+                     par=root))
+    A.append(rbox("door_surround", 1.95, 0.22, 2.40, (0, -4.545, 1.40), DARK,
+                  bevel_r=0.03, segs=1, par=root))
+    for zz in (0.26, 2.34):                  # jamb bars proud of the bulkhead
+        A.append(rbox("door_frame_h%d" % (zz > 1), 1.80, 0.06, 0.12,
+                      (0, -4.68, zz), ALU, bevel_r=0.02, segs=1, par=root))
+    for q in (-0.87, 0.87):
+        A.append(rbox("door_frame_v%d" % (q > 0), 0.12, 0.06, 2.20,
+                      (q, -4.68, 1.30), ALU, bevel_r=0.02, segs=1, par=root))
+    # the door plane, measured by the consumer: outer face at y = -4.70
+    A.append(rbox("habitat_door", 1.55, 0.08, 2.04, (0, -4.66, 1.29), ORANGE,
+                  bevel_r=0.05, segs=1, par=root))
+    A.append(ring("door_porthole", 0.245, 0.032, (0, -4.70, 1.66), MACH, maj=24,
+                  mino=6, rot=(math.pi / 2, 0, 0), par=root))
+    G.append(prism("door_porthole_glass", 0.235, 0.03, (0, -4.70, 1.66), PANE,
+                   sides=24, rot=(math.pi / 2, 0, 0), par=root))
+    for zz in (0.72, 1.06, 1.50, 1.84):      # dogs around the pressure seal
+        for sx in (-1, 1):
+            A.append(rod("door_dog%.2f%d" % (zz, sx), 0.022, 0.26,
+                         (sx * 0.65, -4.72, zz), MACH, rot=(math.pi / 2, 0, 0),
+                         verts=8, br=0.0, par=root))
+    A.append(prism("door_wheel", 0.16, 0.07, (0.0, -4.74, 1.28), MACH, sides=12,
+                   rot=(math.pi / 2, 0, 0), par=root, br=0.012))
+    for k in range(4):
+        A.append(rod("door_wheel_spoke%d" % k, 0.020, 0.30, (0, -4.74, 1.28), MACH,
+                     rot=(math.pi / 2, 0, k * math.pi / 4), verts=6, br=0.0,
+                     par=root))
+    for zz in (0.62, 1.28, 1.94):
+        A.append(rbox("door_hinge%.2f" % zz, 0.16, 0.14, 0.20, (-0.80, -4.68, zz),
+                      MACH, bevel_r=0.02, segs=1, par=root))
+    A += letter_row("door_tag", "HAB-1", (-0.244, -4.650, 2.42), 0.14, AMBER,
+                    dirv=(1, 0, 0), up=(0, 0, 1), par=root)
+
+    # ------------------------------------------------------- porch apron (散水)
+    # A drainage apron stands 2 cm above the ring footing so run-off is pushed
+    # clear of the drum; the step is the joint to the graded site.
+    A.append(rbox("porch_apron", 3.50, 2.00, DECK, (0, -4.275, DECK / 2), CONC,
+                  bevel_r=0.03, segs=1, par=root))
+    A.append(rbox("apron_step", 3.00, 0.325, 0.19, (0, -5.4375, 0.095), CONC,
+                  bevel_r=0.025, segs=1, par=root))
+    A += hazard_band("apron_hazard", 0, -5.24, DECK + 0.02, 3.20, 0.16, 12,
+                     ORANGE, DARK, axis='x', par=root)
+    for sx in (-1, 1):
+        A.append(prism("apron_bollard%d" % (sx > 0), 0.13, 0.85, (sx * 1.55, -4.35,
+                                                     DECK + 0.395), ORANGE,
+                       sides=12, par=root, br=0.03))
+        A.append(ring("apron_bollard_band_%d" % (sx > 0), 0.135, 0.026,
+                      (sx * 1.55, -4.35, DECK + 0.70), WARM, maj=16, mino=6,
+                      rot=(math.pi / 2, 0, 0), par=root))
+        for q in (-1, 1):
+            A.append(hexn("apron_anchor%d_%d" % (sx > 0, q > 0), 0.055, 0.10,
+                          (sx * 1.60 + q * 0.10, -5.16, DECK + 0.03), MACH,
+                          rot=(0, 0, 0.3 * q), par=root))
+    A.append(rbox("threshold_plate", 1.70, 0.45, 0.06, (0, -4.95, DECK + 0.025),
+                  MACH, bevel_r=0.015, segs=1, par=root))
+    for sx in (-1, 1):                       # stub grab rails beside the hatch
+        A.append(rod("porch_grab_v%d" % (sx > 0), 0.026, 1.10,
+                     (sx * 0.98, -4.72, 1.05), MACH, verts=10, br=0.0, par=root))
+        for q in (-1, 1):
+            A.append(rod("porch_grab_t%d_%d" % (sx > 0, q > 0), 0.020, 0.22,
+                         (sx * 0.98, -4.61, 0.58 + (q > 0)), MACH,
+                         rot=(math.pi / 2, 0, 0), verts=8, br=0.0, par=root))
+
+    # --------------------------------------------- ECLSS plenum (+Y) and curb
+    # Mirrors the porch side one-for-one: pad, kerb, then the plant on top, so
+    # the asset's footprint stays symmetric about the origin in both axes.
+    A.append(rbox("plenum_pad", 3.10, 2.00, DECK, (0, 4.275, DECK / 2), CONC,
+                  bevel_r=0.03, segs=1, par=root))
+    A.append(rbox("plenum_curb", 3.24, 0.325, 0.50, (0, 5.4375, 0.25), CONC,
+                  bevel_r=0.025, segs=1, par=root))
+    A.append(rbox("plenum_body", 2.60, 1.40, 1.86, (0, 4.25, 1.29), WORN,
+                  bevel_r=0.05, segs=1, par=root))
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            A.append(cpl("plenum_post%d_%d" % (sx > 0, sy > 0),
+                         (sx * 1.32, 4.25 + sy * 0.70, 1.30), 0.18, 0.18, 1.90,
+                         (1, 0, 0), (0, 1, 0), ALU, par=root))
+    A.append(rbox("plenum_roof", 2.90, 1.72, 0.10, (0, 4.24, 2.29), ALU,
+                  bevel_r=0.03, segs=1, par=root))
+    A += louvers("plenum_louvers", (0, 4.97, 1.05), 2.00, 0.60, 6, DARK,
+                 axis='y', par=root)
+    A += louvers("plenum_louver_x", (1.36, 4.25, 1.45), 1.10, 0.62, 5, DARK,
+                 axis='x', par=root)
+    A.append(rbox("plenum_door", 0.08, 1.10, 1.86, (-1.33, 4.25, 1.29), GRATE,
+                  bevel_r=0.02, segs=1, par=root))
+    A.append(rod("plenum_door_bar", 0.022, 0.60, (-1.42, 4.50, 1.30), MACH,
+                 rot=(math.pi / 2, 0, 0), verts=8, br=0.0, par=root))
+    A.append(prism("plenum_door_wheel", 0.14, 0.06, (-1.42, 3.95, 1.30), MACH,
+                   sides=12, rot=(math.pi / 2, 0, 0), par=root, br=0.01))
+    A.append(rbox("plenum_sign", 2.20, 0.06, 0.52, (0, 4.975, 1.78), DARK,
+                  bevel_r=0.02, segs=1, par=root))
+    A += letter_row("plenum_tag", "ECLSS-2", (-0.492, 5.015, 1.68), 0.20, CREAM,
+                    depth=0.03, dirv=(1, 0, 0), up=(0, 0, 1), par=root)
+    for sx in (-1, 1):                       # ducts from the plenum into the dome
+        A += pipe_run("plenum_duct_%d" % (sx > 0), [(sx * 0.62, 4.20, 2.38),
+                                             (sx * 0.62, 3.40, 3.05),
+                                             (sx * 0.62, 2.55, 3.42)], 0.10, INS,
+                      MACH, par=root, flange_at=[1, 2])
+    A += pipe_run("plenum_feeder", [(1.40, 4.86, 2.02), (1.42, 4.88, 1.20),
+                                     (1.40, 4.86, 0.42)], 0.055, DARK, MACH,
+                  par=root, flange_at=[0, 2])
+    A.append(ring("plenum_lift_eye", 0.13, 0.028, (0, 4.25, 2.42), MACH, maj=16,
+                  mino=6, rot=(0, math.pi / 2, 0), par=root))
+
+    # ------------------------------------------------------------ crown stack
+    A.append(prism("crown_plate", 1.66, 0.12, (0, 0, 4.30), ALU, sides=24,
+                   par=root, br=0.02))
+    A.append(boltring("crown_bolts", (0, 0, 4.365), (0, 0, 1), 1.52, 16, MACH,
+                      br=0.030, bh=0.045, par=root))
+    A.append(rod("cupola", 1.15, 0.50, (0, 0, 4.60), INS, verts=24, br=0.18,
+                 segs=2, par=root))
+    for zz in (4.35, 4.85):
+        A.append(ring("cupola_rim%.2f" % zz, 1.08, 0.115, (0, 0, zz), ALU, maj=24,
+                      mino=5, par=root))
+    A.append(ring("cupola_curb", 1.22, 0.055, (0, 0, 4.86), ALU, maj=32, mino=6,
+                  par=root))
+    A.append(ring("crown_light", 0.92, 0.060, (0, 0, 4.92), CYAN, maj=32, mino=6,
+                  par=root))
+    A.append(prism("crown_cap", 0.90, 0.10, (0, 0, 5.02), ALU, sides=24, par=root,
+                   br=0.02))
+    for k in range(4):                       # pressure relief valves
+        ang = k / 4.0 * TAU + TAU / 8
+        u, t = tang(ang)
+        c = (1.32 * u[0], 1.32 * u[1], 4.44)
+        A.append(hexn("prv_base%d" % k, 0.11, 0.10, c, MACH, rot=(0, 0, ang),
+                      par=root))
+        A.append(rod("prv_shank%d" % k, 0.055, 0.22, (c[0], c[1], 4.60), DARK,
+                     verts=10, br=0.0, par=root))
+        A.append(tube_simple("prv_hood%d" % k, 0.13, 0.055, 0.14,
+                             (c[0], c[1], 4.77), ALU, verts=12, par=root,
+                             br=0.015))
+    for k in range(2):
+        ang = k * math.pi
+        A.append(hexn("burst_plug%d" % k, 0.14, 0.09, (1.45 * math.cos(ang),
+                                                       1.45 * math.sin(ang), 4.40),
+                      MACH, rot=(0, 0, ang), par=root))
+    A += pipe_run("vent_stack", [(0.55, -0.35, 4.35), (0.55, -0.35, 5.00)], 0.075,
+                  MACH, DARK, par=root, flange_at=[0])
+    A.append(tube_simple("vent_cowl", 0.115, 0.055, 0.18, (0.55, -0.35, 5.12),
+                         DARK, verts=14, par=root, br=0.012))
+    A.append(rod("beacon_mast", 0.030, 0.44, (0, 0, 5.28), MACH, verts=8, br=0.0,
+                 par=root))
+    A.append(ball("beacon", 0.085, (0, 0, 5.48), AMBER, par=root))
+
+    # -------------------------------------------------- roof walkway + access
+    # The grating is carried on canted corbels bolted through the springing
+    # ring: a walkway hovering a metre above the footing would be a promise
+    # again. Bays at the porch throat and the ECLSS wall are left open, and
+    # the bay the ladder lands in gets a landing deck instead of a hole.
+    for j in range(10):
+        ang = math.pi / 30 + j / 10.0 * TAU
+        if min(abs((ang - a) % TAU) for a in (math.pi / 2, 3 * math.pi / 2)) \
+                < math.radians(20):
+            continue
+        u, t = tang(ang)
+        c = (3.90 * u[0], 3.90 * u[1], 1.445)
+        A.append(cpl("walk_pad%d" % j, c, 0.86, 0.62, 0.05, t, u, GRATE,
+                     par=root))
+        for q in (-1, 1):
+            for s2 in (-1, 1):
+                A.append(hexn("walk_tie%d_%d_%d" % (j, q, s2), 0.038, 0.06,
+                              (c[0] + q * 0.36 * t[0] + s2 * 0.26 * u[0],
+                               c[1] + q * 0.36 * t[1] + s2 * 0.26 * u[1], 1.455),
+                              MACH, rot=(0, 0, ang), par=root))
+        for s2 in (-1, 1):
+            A.append(cpl("walk_corbel%d_%d" % (j, s2 > 0),
+                         (c[0] + s2 * 0.32 * t[0], c[1] + s2 * 0.32 * t[1], 1.30),
+                         0.466, 0.10, 0.028,
+                         (0.858 * u[0], 0.858 * u[1], 0.514), t, ALU, par=root))
+            for q in (-1, 1):             # guard rail kinks at every bay
+                A.append(pbox("walk_post%d_%d" % (j, q > 0), 0.05, 0.05, 1.00,
+                              (4.10 * u[0] + q * 0.38 * t[0],
+                               4.10 * u[1] + q * 0.38 * t[1], 1.95), ALU,
+                              rot=(0, 0, ang), par=root))
+        for zz, rr in ((2.42, 0.028), (1.95, 0.024)):
+            A.append(rod("walk_rail%d_%g" % (j, zz), rr, 0.86,
+                         (4.12 * u[0], 4.12 * u[1], zz), MACH,
+                         rot=(math.pi / 2, 0, ang), verts=8, br=0.0, par=root))
+        A.append(cpl("walk_toe%d" % j, (4.12 * u[0], 4.12 * u[1], 1.52), 0.86,
+                     0.12, 0.02, t, (0, 0, 1), ALU, par=root))
+    # the ship's ladder rises through the landing: its rails run past the deck
+    # as grab bars, and no rung falls inside the deck thickness.
+    A += ring_ladder("shell_ladder", DR + 0.06, lad_ang, 0.30, 2.05, ALU, MACH,
+                     standoff=0.14, ties=(0.60, 1.00, 1.35), par=root)
+
+    # --------------------------------------------------------------- services
+    # Every service owns a drum bay: no diagonal run crosses a joint strip, and
+    # nothing is buried in - or floating outside - the cladding it pierces.
+    A.append(cpl("louver_plate", (3.730, 0.0, 0.95), 1.30, 0.86, 0.06,
+                 (0, 1, 0), (0, 0, 1), ALU, par=root))
+    A += louvers("shell_louvers", (3.752, 0.0, 0.95), 1.10, 0.70, 6, MACH,
+                 axis='x', par=root)
+    hu, _ht = tang(math.radians(15))
+    A += hatch("wall_hatch", (3.70 * hu[0], 3.70 * hu[1], 0.95), 0.38, ALU, MACH,
+               MACH, axis=(hu[0], hu[1], 0.0), par=root)
+    for i, az in enumerate((157.5, 172.5)):   # shell drains into footing scuppers
+        u, t = tang(math.radians(az))
+        A += pipe_run("condensate_%d" % i, [(3.75 * u[0], 3.75 * u[1], 1.30),
+                                            (3.75 * u[0], 3.75 * u[1], 0.80),
+                                            (4.02 * u[0], 4.02 * u[1], 0.36)],
+                      0.048, MACH, DARK, par=root, flange_at=[1])
+        A.append(cpl("condensate_scupper%d" % i,
+                     (4.02 * u[0], 4.02 * u[1], 0.355), 0.24, 0.24, 0.05, t, u,
+                     GRATE, par=root))
+        A.append(ring("condensate_foot%d" % i, 0.075, 0.024,
+                      (4.02 * u[0], 4.02 * u[1], 0.375), MACH, maj=16, mino=5,
+                      par=root))
+
+    # ---------------------------------------------------------------- finish
+    gl = join(meshes(G), "habitat_glazing")
+    parent(gl, root)
+    smooth_angle(gl, 45)
+    g = join(meshes(A), "habitat_shell")
+    parent(g, root)
+    smooth_angle(g, 34)
+    # Weathering shades a surface; it must never relabel it. Four roles have to
+    # survive into the GLB: cast concrete footing, painted drum cladding, bare
+    # alloy structure, and walkway grating. The blanket z-thresholds this pass
+    # used to run with erased all four - footing_cast exported to zero faces,
+    # floor_grate kept 4 of its triangles, and 29% of the asset became
+    # worn_metal, so the biggest mass at eye level read as one poured lump.
+    # Rust in particular only blooms where there is ferrous metal to bloom on.
+    MINERAL = {CONC, GRATE}
+    CLADDING = {CREAM, INS}
+    reassign(g, lambda p, c, nn: c.z < 0.62 and abs(nn.z) < 0.85, RUST,
+             keep=KEEP | MINERAL | CLADDING)
+    scuff_low(g, zmax=1.45, max_nz=0.55, keep=KEEP | MINERAL | CLADDING)
+    # near-horizontal only, and strictly so: at min_nz 0.60 the shell crossed
+    # the threshold right at the window head and the dome came out two-toned
+    # with a paint-straight line across it. 0.95 keeps every real ledge (window
+    # sills and heads are flat, so nz = 1.0) and shrinks the crown film to the
+    # part of the cap that actually is flat, where dust would stand.
+    dust_top(g, zmin=0.40, min_nz=0.95, keep=KEEP | {GRATE})
     return root
 
 

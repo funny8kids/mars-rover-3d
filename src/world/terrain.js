@@ -286,11 +286,12 @@ varying vec3 vWP;
 // The deck's own edge: a plaza is paved to its rim, a carriageway to its shoulder.
 //
 // This is deliberately NOT how far the ground has been levelled, and the shader used to use the
-// levelling falloff for both. Measured 2026-09-22 against the live fields: with pads fading out at
-// r+20 and roads at hw*2.6, 100% of the ground inside r<40 and 92% of everything inside r<75
-// carried a deck weight above 0.5. The rover was not driving on a dune field with a base in it
+// levelling falloff for both. Measured 2026-09-22 against the live fields: with pads then fading out
+// at a fixed r+20 and roads at hw*2.6, 100% of the ground inside r<40 and 92% of everything inside
+// r<75 carried a deck weight above 0.5. The rover was not driving on a dune field with a base in it
 // — it was driving on a sintered concrete field with a 2.6 m joint lattice, and the sand only
-// survived in 5% of the map. gradedAt in height.js owns the wide blend; this owns the paint.
+// survived in 5% of the map. gradedAt in height.js owns the wide blend; this owns the paint. (That
+// r+20 is retired: the collar is now each pad's own measured batter, so don't grep for it here.)
 float rsbDeckPad(vec2 p, vec4 pd){
   return 1.0 - smoothstep( pd.z * 0.78, pd.z * 1.06, distance( p, pd.xy ) );
 }

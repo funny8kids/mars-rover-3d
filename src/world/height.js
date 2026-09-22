@@ -205,9 +205,61 @@ function rawHeight(x, z) {
 }
 
 // ---- flattened pads & roads ----
+// `BATTER` is the one cut-and-fill rule the whole island shares: a change of level has to be
+// spread over three times its height, which is the slope a rover climbs without unlocking a wheel.
+// It is declared here rather than down with the footings because the district pads need it too.
+const LOT_PAD = 1.2;         // metres of deck beyond the wall line
+const BATTER = 3;            // 1 vertical : 3 horizontal — the angle a rover climbs without shifting
 const pads = [];
 for (const zn of Object.values(ZONES)) {
   if (zn.padHeight !== undefined) pads.push({ x: zn.pos[0], z: zn.pos[1], r: zn.radius, h: zn.padHeight });
+}
+// How far each district's cut actually has to be batted back into the desert, measured against the
+// ground line just outside its own rim.
+//
+// This used to be a literal: `gradePad` ran to `r + 20` for every pad on the island. Nine pads of
+// padHeight 0.4..0.6 m therefore each wore a collar two to three times longer than their own fill
+// requires — a 0.6 m drop is 1.8 m of batter at 1:3, not 20 — and because those collars overlap,
+// *every* point inside r<40 sat at a grade weight above 0.5. The blend is a lerp onto the pad level,
+// so flattening the whole drive band that way is what put the dunes under the rover's wheels, not
+// the dune field failing to generate. Measured through the live `heightAt` on one seeded 6 000-point
+// set, with all 22 lots claimed: pad-top relief inside r<40 went 0.76 -> 0.90 m and the outer band
+// r40-90 went 2.58 -> 2.97 m, and peak slope stayed under the 30 degree gate (28.8 deg at (9,-91),
+// which is crater flank, not earthworks).
+//
+// The width is the *worst* bearing, not the average, because gradePad is radial and one pad cannot
+// have nine different edges without becoming the per-bearing rim code. Samples start at the rim and
+// are clipped to r < 0.82 * ISLAND.radius: the launch pad sits 85 m out, so an unfiltered ring walks
+// off the edge of the world and reads the rim wall's 29 m drop into the void as a neighbour to blend
+// with — that is how this measurement first came back asking for 89 m of batter on a 0.6 m pad.
+//
+// Narrowing the collar is what exposed a second, worse bug, and `gradePad`'s inner stop is the fix,
+// so the two have to be reasoned about together. `grade()` cuts a building footing to the highest
+// *natural* ground under its own deck, sampled through `baseHeightAt`. While the pad ramp started at
+// 0.62r, a district's outer annulus was only ~0.69 level, so 31 % of a dune crest still came through
+// underfoot at the plaza edge; a footing out there inherited that crest as its slab level. Measured:
+// a habitat-district rim lot came in at 1.53 m on a plaza whose datum is 0.5, i.e. a 1.03 m plinth
+// stacked on top of a paved square, and because `baseHeightAt` picks its target level by argmax over
+// the fields, the crossover with the neighbouring pad turned that into a 41 deg face at (-42,67)
+// where the old fat collar had kept it to 18 deg. Holding the pad dead level to its own rim makes
+// every footing read the datum it actually sits in — lot levels came back to 0.4..0.8, all inside
+// the padHeight range — and the same point is now 14 deg. It also puts the painted plate and the
+// cut ground in the same place: `deckPad` lays plate from 0.78r, and plate over uncut sand was the
+// whole complaint in the first place.
+const PAD_RING = 30;                       // metres beyond the rim to look for the ground line
+for (const p of pads) {
+  let mx = -Infinity, mn = Infinity;
+  for (let th = 0; th < Math.PI * 2; th += 0.05) {
+    const ct = Math.cos(th), st = Math.sin(th);
+    for (let d = p.r; d <= p.r + PAD_RING; d += 3) {
+      const x = p.x + ct * d, z = p.z + st * d;
+      if (Math.hypot(x, z) > ISLAND.radius * 0.82) continue;
+      const n = rawHeight(x, z);
+      if (n > mx) mx = n;
+      if (n < mn) mn = n;
+    }
+  }
+  p.batter = clamp(Math.max(mx - p.h, p.h - mn) * BATTER + LOT_PAD, 5, 16);
 }
 // The carriageway the rover actually rolls on: the street grid from the site plan, flattened to the
 // same engineered level as the pads. It used to be five spokes from the hub to each district, which
@@ -243,8 +295,6 @@ function distToSeg(px, pz, a, b) {
 // Lots are claimed while props are placed, i.e. after the terrain mesh exists, so `heightAt` is the
 // analytic truth and the mesh is rebuilt from it once the plan is complete (terrain `regrade()`).
 const lots = [];
-const LOT_PAD = 1.2;         // metres of deck beyond the wall line
-const BATTER = 3;            // 1 vertical : 3 horizontal — the angle a rover climbs without shifting
 const SKIRT_MIN = 5, SKIRT_MAX = 16, SAMPLE = 2, SAMPLE_MAX = 22;
 
 // signed distance to the lot's rectangle, in metres, negative inside the deck
@@ -378,17 +428,19 @@ export function deckAt(x, z) {
 // shoulder, a footing to its slab line. *Grade* is "has the earth been cut or filled to an engineered
 // level", which has to run further out because the cut has to be batted back to the desert at a slope
 // a wheel can climb. They are not the same extent, and the terrain shader used to read the grade
-// falloff for both — so every district wore a 20 m collar of concrete plate and every street a paved
-// band 2.6× its carriageway width. Measured against the live fields: 100% of the island inside r<40
-// and 92% inside r<75 carried a deck weight above 0.5, and the "Martian desert" the rover drives
-// across was a flat jointed slab with dunes in the remaining 5%.
+// falloff for both — so every district wore a collar of concrete plate as wide as its earthworks and
+// every street a paved band 2.6× its carriageway width. Measured against the live fields: 100% of the
+// island inside r<40 and 92% inside r<75 carried a deck weight above 0.5, and the "Martian desert"
+// the rover drives across was a flat jointed slab with dunes in the remaining 5%.
 //
 // `terrain.js` rsbDeckPad/rsbDeckRoad are the same two bands written in GLSL; change one, change the
 // other, or the vertex tint and the painted plate separate at the deck edge.
 const deckPad = (p, d) => 1 - smoothstep(p.r * 0.78, p.r * 1.06, d);
 const deckRoad = (hw, d) => 1 - smoothstep(hw * 0.90, hw * 1.14, d);
 const deckLot = (l, s) => 1 - smoothstep(0, l.skirt * 0.72, s);
-const gradePad = (p, d) => 1 - smoothstep(p.r * 0.62, p.r + 20, d);
+// Level to the rim, then batted back: a district plaza that is only ~0.69 level inside its own edge
+// leaks dune crest into `grade()`'s footing cut. See the PAD_RING block above.
+const gradePad = (p, d) => 1 - smoothstep(p.r, p.r + p.batter, d);
 const gradeRoad = (hw, d) => 1 - smoothstep(hw * 0.8, hw * 2.6, d);
 const gradeLot = (l, s) => 1 - smoothstep(0, l.skirt, s);
 

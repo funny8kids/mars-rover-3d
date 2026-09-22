@@ -1706,12 +1706,19 @@ export async function buildBase(scene, quality) {
     });
   }
 
-  // ══════════ ROAD SETTING — lamps + centerline tiles on the street grid ══════════
+  // ══════════ ROAD SETTING — street furniture on the terrain's own carriageway ══════════
   {
     // The road used to be painted along hand-picked zone-to-zone lines, which is why the carriageway
     // you could see did not match the carriageway the terrain shader flattened. Now the same STREETS
-    // list that height.js compacts and plan.js audits is what gets tiled and lit.
-    const TILE = S * 1.7;                       // one kit road tile laid across the lane
+    // list that height.js compacts and plan.js audits is what gets lit.
+    //
+    // It used to get kit tiles as well, and that is what is gone here. A row of `terrain_roadStraight`
+    // slabs laid every 8.7 m is a *second* carriageway sitting on top of the first: the shader's is
+    // welded to `roadAt()` and therefore to the same field the wheels drive on, the tiles are rigid
+    // ribbons at a fixed y. Where a dune rose over the avenue the tiles buried the paint, where the
+    // sand dipped they stood proud of it, and the seam between those two cases is what made the
+    // street read as pasted-down cards rather than ground. One street, one representation.
+    const TILE = S * 1.7;                       // spacing of the lamp posts along the lane
     ZONE = 'road';       // the lamps below are the street's own furniture, not any district's
     for (const [si, s] of STREETS.entries()) {
       const dx = s.b[0] - s.a[0], dz = s.b[1] - s.a[1], l = Math.hypot(dx, dz);
@@ -1720,7 +1727,6 @@ export async function buildBase(scene, quality) {
       for (let i = 0; i <= n; i++) {
         const t = i / n;
         const x = s.a[0] + dx * t, z = s.a[1] + dz * t;
-        k('terrain_roadStraight', x, z, yaw, 1.7);
         if (i % 3 === 1) {
           // lamps stand on the shoulder, clear of the trafficable width but inside the setback
           const ox = dz / l * 8.2, oz = -dx / l * 8.2;
@@ -1734,6 +1740,8 @@ export async function buildBase(scene, quality) {
     // no value separation from the dunes, and laid across the dark sintered deck it read as bathroom
     // tiling — the single brightest thing in every driving frame. A service road is compacted
     // regolith asphalt: darker than the pad it crosses, and matte enough to stop catching the dome.
+    // It still gets that treatment wherever the kit tile is laid as rubble, which is now only the
+    // launch-pad scorch strip.
     models.terrain_roadStraight?.traverse(o => {
       for (const mt of (Array.isArray(o.material) ? o.material : o.material ? [o.material] : [])) {
         mt.color?.setRGB(0.198, 0.172, 0.152);

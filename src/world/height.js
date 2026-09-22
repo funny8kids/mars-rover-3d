@@ -472,20 +472,35 @@ export function heightAt(x, z) {
   return w > 0 ? lerp(h, th, w) : h;
 }
 
-// 0..1 — how much sintered plate is under a point. Used for the ground tint, and mirrored in the
-// shader for the painted joints, centreline and hazard chevrons.
+// 0..1 — how much sintered plate is under a point: district aprons and building decks. Used for the
+// ground tint, and mirrored in the shader for the painted joints, centreline and hazard chevrons.
+//
+// Streets are deliberately *not* in here. They were, and it cost the island its desert: four
+// carriageways at half-width 6 are 8 640 m² of the playfield's 29 560 m², which made the roads the
+// single largest source of plate — more than all nine district pads together (measured 2026-09-22
+// over 20 000 uniform points inside r < 0.82·118: pads alone 21.3 %, roads alone 27.9 %, lots alone
+// 3.0 %, both 9.9 %, nothing 37.9 %). A 2.6 m saw-joint lattice run down 180 m of every avenue is
+// why the rover never crossed a grain of sand. `roadAt` owns that band now, and terrain.js shades it
+// as compacted, wheel-rutted regolith instead of a concrete slab.
 export function pavedAt(x, z) {
   let w = 0;
   for (const p of pads) {
     const k = deckPad(p, Math.hypot(x - p.x, z - p.z));
     if (k > w) w = k;
   }
-  for (const [a, b, hw] of roads) {
-    const k = deckRoad(hw, distToSeg(x, z, a, b));
-    if (k > w) w = k;
-  }
   for (const l of lots) {
     const k = deckLot(l, sdLot(l, x, z));
+    if (k > w) w = k;
+  }
+  return w;
+}
+
+// 0..1 — how much graded carriageway is under a point. Same footprint the deck used to have, so
+// this is a re-treatment of the surface, not a re-drawing of the map.
+export function roadAt(x, z) {
+  let w = 0;
+  for (const [a, b, hw] of roads) {
+    const k = deckRoad(hw, distToSeg(x, z, a, b));
     if (k > w) w = k;
   }
   return w;

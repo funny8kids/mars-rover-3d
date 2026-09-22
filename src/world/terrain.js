@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { heightAt, installSurfaceGrid, surfaceAt, surfaceSlope, pavedAt, gradedAt, paveGeometry, deckAt, lotAt } from './height.js';
+import { heightAt, installSurfaceGrid, surfaceAt, surfaceSlope, pavedAt, roadAt, gradedAt, paveGeometry, deckAt, lotAt } from './height.js';
 import { TERRAIN, ISLAND } from '../config.js';
 import { fbm, vnoise, mulberry32, smoothstep } from '../utils/noise.js';
 import { loadModel, cloneModel } from './assets.js';
@@ -279,6 +279,7 @@ uniform float uRoadW[6];
 uniform int uPadN;
 uniform int uRoadN;
 varying float vPave;
+varying float vTrack;
 varying vec3 vWP;
 // Paint has to be resolved per pixel. The terrain mesh is vertex-coloured on a ~1.4 m lattice, so
 // anything narrower than that — a 0.5 m taxi line, a joint, a hazard chevron — falls between
@@ -295,10 +296,30 @@ varying vec3 vWP;
 float rsbDeckPad(vec2 p, vec4 pd){
   return 1.0 - smoothstep( pd.z * 0.78, pd.z * 1.06, distance( p, pd.xy ) );
 }
-float rsbDeckRoad(vec2 p, vec4 rd, float hw){
-  vec2 ab = rd.zw - rd.xy;
-  float t = clamp( dot( p - rd.xy, ab ) / dot( ab, ab ), 0.0, 1.0 );
-  return 1.0 - smoothstep( hw * 0.90, hw * 1.14, distance( p, rd.xy + ab * t ) );
+// Where a point sits on the street grid, in the street's own frame. A carriageway's whole surface
+// history is written along its axis — ruts, washboards, spoil berms, the churn where two cross — so
+// a distance field alone cannot draw one; this returns the direction as well as the offset.
+//   .xy unit vector along the winning street, .z signed metres across it, .w metres along from its
+//   start. best is that street's deck weight, other the best weight of every *other* street, so
+//   the caller can tell a straight run from a junction without a second loop; hw is the half-width
+//   the winning street was graded at.
+vec4 rsbRoadFrame(vec2 p, out float best, out float other, out float hw){
+  best = 0.0;
+  other = 0.0;
+  hw = 6.0;
+  vec4 fr = vec4( 1.0, 0.0, 0.0, 0.0 );
+  for ( int i = 0; i < 6; i++ ) {
+    if ( i >= uRoadN ) break;
+    vec4 rd = uRoads[ i ];
+    vec2 ab = rd.zw - rd.xy;
+    float ll = max( dot( ab, ab ), 1e-4 );
+    vec2 dir = ab / sqrt( ll );
+    vec2 c = rd.xy + ab * clamp( dot( p - rd.xy, ab ) / ll, 0.0, 1.0 );
+    float k = 1.0 - smoothstep( uRoadW[ i ] * 0.90, uRoadW[ i ] * 1.14, distance( p, c ) );
+    if ( k > best ) { other = max( other, best ); best = k; hw = uRoadW[ i ]; fr = vec4( dir, dot( p - c, vec2( -dir.y, dir.x ) ), dot( p - rd.xy, dir ) ); }
+    else if ( k > other ) other = k;
+  }
+  return fr;
 }
 void rsbMark(vec2 p, out float line, out float edge){
   line = 0.0;
@@ -314,29 +335,17 @@ void rsbMark(vec2 p, out float line, out float edge){
     float band = smoothstep( 0.880, 0.902, rr ) * ( 1.0 - smoothstep( 0.940, 0.962, rr ) );
     edge = max( edge, band * smoothstep( 0.20, 0.45, k ) );
   }
-  for ( int i = 0; i < 6; i++ ) {
-    if ( i >= uRoadN ) break;
-    vec4 rd = uRoads[ i ];
-    float hw = uRoadW[ i ];
-    vec2 ab = rd.zw - rd.xy;
-    float t = clamp( dot( p - rd.xy, ab ) / dot( ab, ab ), 0.02, 0.98 );
-    float d = distance( p, rd.xy + ab * t );
-    float inl = 1.0 - smoothstep( hw * 0.80, hw * 1.05, d );      // stop painting past the road ends
-    // taxi centreline plus a shoulder stripe each side, the way an apron is actually marked
-    float centre = 1.0 - smoothstep( 0.42, 0.60, d );
-    float shoulder = 1.0 - smoothstep( 0.20, 0.36, abs( d - hw * 0.66 ) );
-    line = max( line, max( centre, shoulder * 0.85 ) * inl );
-  }
+  // The streets used to be marked here: a thermoplastic taxi centreline and a shoulder stripe each
+  // side, drawn 180 m down four avenues. That paint was load-bearing for a deck that no longer
+  // exists — a carriageway of compacted regolith has no reason to carry a painted line, and the
+  // ruts the TRACK block carves are a better route cue than a stripe ever was, because they only
+  // exist where something actually drove.
 }
 float rsbMask(vec2 p){
   float w = 0.0;
   for ( int i = 0; i < 10; i++ ) {
     if ( i >= uPadN ) break;
     w = max( w, rsbDeckPad( p, uPads[ i ] ) );
-  }
-  for ( int i = 0; i < 6; i++ ) {
-    if ( i >= uRoadN ) break;
-    w = max( w, rsbDeckRoad( p, uRoads[ i ], uRoadW[ i ] ) );
   }
   return w;
 }
@@ -347,9 +356,18 @@ float rsbNoise(vec2 p){
   return mix( mix( rsbHash( i ), rsbHash( i + vec2( 1.0, 0.0 ) ), u.x ),
               mix( rsbHash( i + vec2( 0.0, 1.0 ) ), rsbHash( i + vec2( 1.0, 1.0 ) ), u.x ), u.y );
 }
+// A unit-height bump profile, evaluated from a signed offset in metres and a half-width in metres.
+// exp() rather than a smoothstep so a rut has no flat bottom and no hard shoulder — the way a wheel
+// actually presses, and the reason a smoothstep rut reads as a painted stripe instead of a dent.
+float rsbBump( float off, float halfW ){ float t = off / max( halfW, 1e-4 ); return exp( -t * t ); }
 float gPave;
 vec2 gPaveN = vec2( 0.0 );
 float gPaveR = 0.0;
+// Carriageway, kept separate from the plate all the way to the shading: a plaza is sintered panel
+// with sawn joints, a street is pressed-down Martian ground, and only the pads get the deck.
+float gTrack;
+vec2 gTrackN = vec2( 0.0 );
+float gTrackR = 0.0;
 // Ripple survival factor: 1 right under the lens, 0 once the tile is denser than the pixels.
 float gRipple = 1.0;
 // Sand blows across the edge of every deck. The height field's pad falloff is a perfect circle, and
@@ -359,6 +377,56 @@ float rsbPave(vec2 p, float v){
   float fringe = smoothstep( 0.02, 0.40, v ) * ( 1.0 - smoothstep( 0.52, 0.99, v ) );
   float drift = smoothstep( 0.40, 0.72, rsbNoise( p * 0.34 ) );
   return clamp( v - drift * fringe * 1.2, 0.0, 1.0 );
+}
+// Sin-free, unlike rsbHash: this one runs five times per ground fragment across the whole horizon,
+// and twenty transcendentals per fragment is not something an iGPU hands out for free.
+float rsbHash12(vec2 q){
+  vec3 p3 = fract( vec3( q.xyx ) * vec3( 0.1031, 0.1030, 0.0973 ) );
+  p3 += dot( p3, p3.yzx + 33.33 );
+  return fract( ( p3.x + p3.y ) * p3.z );
+}
+float rsbVnoise(vec2 p){
+  vec2 i = floor( p ), f = fract( p );
+  f = f * f * ( 3.0 - 2.0 * f );
+  return mix( mix( rsbHash12( i ), rsbHash12( i + vec2( 1.0, 0.0 ) ), f.x ),
+              mix( rsbHash12( i + vec2( 0.0, 1.0 ) ), rsbHash12( i + vec2( 1.0, 1.0 ) ), f.x ), f.y );
+}
+// The desert between the ripple tile and the horizon, 0..1 with mean 0.5 at every scale.
+//
+// The ripple map is derivative-faded to nothing by 5.5 cm per pixel, and what replaces it is a flat
+// constant — so above a few metres the ground had no surface left at all, just the smooth 1.36 m
+// vertex tint, which is exactly the "painted sheet" a nadir shot used to show. Grain and plate are
+// both accounted for either side of that gap; nothing covered the middle. Four octaves do: each one
+// is alive only while its own wavelength still spans a few pixels, so the sum hands the eye a band
+// of detail instead of dropping it off a cliff.
+//
+// Mean-preserved on purpose. The caller modulates brightness by ( s - 0.5 ), so a field whose mean
+// drifted with camera altitude would tint the entire planet darker every time someone pulled back.
+//
+// Streaked, not spotted: ground at this scale is laid down by a prevailing wind, so the same field
+// sampled 3.6:1 along and across one fixed bearing reads as a dune field, while the square lattice
+// an isotropic noise actually produces reads as a leopard. The bearing is off the street grid on
+// purpose — detail that runs along x and z is indistinguishable from the carriageways it sits next
+// to, and the eye files it as more road.
+vec2 rsbStreak(vec2 w, float f){
+  vec2 ax = vec2( 0.9063, 0.4226 );
+  return vec2( dot( w, ax ), dot( w, vec2( -ax.y, ax.x ) ) ) * vec2( f, f * 3.6 );
+}
+float rsbSweep(vec2 w, float px){
+  float wx = rsbVnoise( rsbStreak( w, 0.062 ) );
+  float wy = rsbVnoise( rsbStreak( w + 31.0, 0.045 ) );
+  // Warped before the fine octaves are read, or several value noises on the same square grid stack
+  // into a lattice the eye reads as a texture, not as ground. wx doubles as the coarsest octave.
+  vec2 q = w + vec2( wx, wy ) * 6.0;
+  vec4 n = vec4( rsbVnoise( rsbStreak( q, 1.818 ) + 3.0 ),
+                 rsbVnoise( rsbStreak( q, 0.5714 ) - 7.0 ),
+                 rsbVnoise( rsbStreak( q, 0.1852 ) + 17.0 ),
+                 wx );
+  vec4 g = 1.0 - smoothstep( vec4( 0.110, 0.350, 1.080, 3.300 ),
+                             vec4( 0.468, 1.488, 4.590, 14.025 ), vec4( px ) );
+  vec4 wa = g * vec4( 0.34, 0.28, 0.22, 0.16 );
+  float t = wa.x + wa.y + wa.z + wa.w;
+  return mix( 0.5, dot( wa, n ) / max( t, 1e-4 ), smoothstep( 0.0, 0.10, t ) );
 }
 `;
 
@@ -485,6 +553,77 @@ if ( gPave > 0.004 ) {
 }
 `;
 
+// A street in a base this size is not paved, it is *graded*. The loose fluff gets dragged aside and
+// what is left is the same Martian ground everything else is made of — pressed denser, coarser,
+// darker, and shaped by the axles that use it. So this is written as multipliers on the sand already
+// sitting in diffuseColor, not as a mix toward a colour: mixing toward a colour is precisely how the
+// plate read as a foreign sheet laid on top of the desert, which is the thing being fixed.
+//
+// Everything here is keyed to the street's own axis. Ruts and washboards run along it, spoil berms
+// and the encroaching drift sit across it, and none of that is expressible as a distance field —
+// hence rsbRoadFrame rather than another falloff.
+const TRACKSURF = /* glsl */`
+if ( gTrack > 0.004 ) {
+  float trkW, jctW, hw;
+  vec4 fr = rsbRoadFrame( vWP.xz, trkW, jctW, hw );
+  vec2 dir = fr.xy;
+  vec2 perp = vec2( -dir.y, dir.x );
+  float across = fr.z;
+  float along = fr.w;
+  float px = fwidth( vWP.x ) + fwidth( vWP.z );          // metres of ground behind one pixel
+  // Anything narrower than a handful of pixels cannot be shaded, only averaged. Every relief term
+  // below is gated on this: an unresolved rut is not a faint rut, it is a band of speckle.
+  float reslv = 1.0 - smoothstep( 0.012, 0.055, px );
+  // The rover's own wheel gauge, measured off the shipped rig: its six pivots sit 1.1 m either side
+  // of its centreline. A rut is not a decorative stripe, it is the track that axle left behind.
+  float gauge = 1.10;
+  float rw = 0.30 + px * 0.8;
+  float bA = rsbBump( across - gauge, rw );
+  float bB = rsbBump( across + gauge, rw );
+  float ruts = clamp( bA + bB, 0.0, 1.0 );
+  // The wheels have to put the spoil somewhere: fines get thrown out past their own shoulders, and
+  // the ground between and beside the ruts rides high with dust nothing has scoured off yet.
+  float berms = rsbBump( abs( across ) - ( gauge + rw * 1.8 ), 0.40 + px );
+  float crown = rsbBump( across, gauge * 0.58 );
+  // The travelled band, tapering into the graded shoulder rather than ending on a line.
+  float band = 1.0 - smoothstep( hw * 0.42, hw * 1.02, abs( across ) );
+  // Where two streets cross, neither set of ruts survives the other. What is left has no axis at
+  // all — churned, coarser and darker rubble — so the directional terms have to hand over to noise.
+  float jct = smoothstep( 0.22, 0.70, jctW );
+  float churn = rsbNoise( vWP.xz * 1.35 + 7.0 ) * 0.55 + rsbNoise( vWP.xz * 4.6 ) * 0.45;
+  // Coarse aggregate worked up to the surface. Only while a pixel is finer than the clasts: past
+  // that it aliases into the same fake grain the dune ripple had before it was derivative-faded.
+  float agg = smoothstep( 0.44, 0.84, rsbNoise( vWP.xz * 3.6 ) ) * reslv;
+  // Pale dust settling in patches at dune scale, so the strip never degenerates into a bright lane.
+  float fines = smoothstep( 0.50, 0.86, rsbNoise( vWP.xz * 0.38 + 12.0 ) );
+
+  // Compacted regolith is not just darker than the fluff beside it, it is cooler: the wind has taken
+  // the iron-stained fines out of the travelled band and what is left is coarser, basalt-heavier
+  // ground. A brightness-only step of 0.795 was tried first and a street in a driving shot still
+  // read as more sand, because everything in this palette is the same hue — the separation has to be
+  // chromatic, and a chromatic cue survives all the way to the horizon where every rut has faded.
+  diffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.780, 0.802, 0.852 ), gTrack * ( 0.40 + 0.60 * band ) );
+  diffuseColor.rgb *= 1.0 - ruts * gTrack * ( 1.0 - jct * 0.75 ) * 0.19;
+  diffuseColor.rgb *= 1.0 + ( berms * 0.085 + crown * 0.045 ) * gTrack;
+  diffuseColor.rgb *= 1.0 - agg * gTrack * ( 0.12 + jct * 0.15 );
+  diffuseColor.rgb *= 1.0 - jct * gTrack * churn * 0.20;
+  diffuseColor.rgb *= 1.0 + fines * gTrack * ( 1.0 - band * 0.5 ) * 0.16;
+
+  // Relief. A wheel dent is read almost entirely from its two lips, which catch a low sun in
+  // opposite ways; the dent floor itself contributes nearly nothing. dh/d(across) for a sum of
+  // gaussians is their analytic derivative, so the ridge lands exactly where the albedo says it
+  // does instead of drifting off by half a rut.
+  float rutSlope = ( bA * ( across - gauge ) + bB * ( across + gauge ) ) * ( 0.11 / ( rw * rw ) );
+  // Washboard: ridges perpendicular to travel at ~0.42 m, the classic self-excited pattern of a
+  // vehicle crossing soft ground repeatedly. Small enough that it is only ever shading, never shape.
+  float wash = cos( along * 14.96 ) * 0.075 * band * ( 1.0 - jct ) * reslv;
+  gTrackN += ( -perp * rutSlope - dir * wash ) * gTrack * reslv;
+  // Packed ground is smoother than fluff, the ruts most packed of all, and the worked-up aggregate
+  // back the other way. Sign matters here: this is what stops a track reading as a wet ribbon.
+  gTrackR = ( -0.11 * band - 0.07 * ruts + 0.06 * agg ) * gTrack;
+}
+`;
+
 function applyPaving(mat) {
   const { pads, roads } = paveGeometry();
   const P = new Array(10).fill(null).map(() => new THREE.Vector4());
@@ -512,6 +651,7 @@ function applyPaving(mat) {
       .replace('#include <begin_vertex>', `#include <begin_vertex>
   vWP = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
   vPave = rsbMask( vWP.xz );
+  { float trk, jct, hw; rsbRoadFrame( vWP.xz, trk, jct, hw ); vTrack = trk; }
   // A graded building deck is per-vertex data, not a shader loop: the site plan is not finished
   // until props are placed, and dozens of rect SDFs evaluated for 48 000 vertices every frame is
   // the sort of thing that costs an iGPU its frame budget.
@@ -528,9 +668,33 @@ function applyPaving(mat) {
   // 11 cm out. The old 4.6–18.5 cm window was tuned to a spectrum whose coarsest ridge was 1.07 m.
   gRipple = ( 1.0 - smoothstep( 0.0028, 0.0095, fwidth( vMapUv.x ) + fwidth( vMapUv.y ) ) )
           * rsbRipEnv( vWP.xz );
-  // (no vColor here — color_fragment multiplies the vertex tint in *after* this chunk)
-  diffuseColor.rgb = mix( vec3( 0.92, 0.895, 0.88 ), diffuseColor.rgb, gRipple );
   gPave = rsbPave( vWP.xz, max( vPave, vDeck ) );
+  // Where an avenue meets a district apron the plate wins, so the grading terminates at the rim of
+  // the pad it serves instead of stitching a dirt seam straight through a landing pad.
+  gTrack = rsbPave( vWP.xz, vTrack ) * ( 1.0 - gPave );
+  // (no vColor here — color_fragment multiplies the vertex tint in *after* this chunk)
+  // A graded street has no dune trains left in it: whatever the map says, the surface has been
+  // pressed flat and dragged. It keeps a third of the grain, because compacted regolith is still
+  // regolith and a perfectly featureless strip is the other tell of a texture-stamped road.
+  diffuseColor.rgb = mix( vec3( 0.92, 0.895, 0.88 ), diffuseColor.rgb, gRipple * ( 1.0 - gTrack * 0.66 ) );
+  // Scoured hollows keep coarse lag gravel — darker, and flatter in hue than the iron-stained fines
+  // blown off them; the raised patches hold a skin of pale dust. Both ride rsbSweep, and both are
+  // multipliers on the map rather than a mix toward a colour: the vertex tint is multiplied in
+  // *after* this chunk, so mixing toward dark here would crush the rust straight to black.
+  float sweepPx = fwidth( vWP.x ) + fwidth( vWP.z );
+  float sweepT = ( rsbSweep( vWP.xz, sweepPx ) - 0.5 ) * 2.0;
+  // A deck is sintered and a street is dragged, so neither keeps its own mid-frequency ground tone —
+  // but the carriageway is still Martian soil and goes only three quarters of the way.
+  float sweepOpen = ( 1.0 - gPave ) * ( 1.0 - gTrack * 0.72 );
+  float lag = clamp( -sweepT, 0.0, 1.0 );  lag = lag * lag * ( 3.0 - 2.0 * lag );
+  float pale = clamp( sweepT, 0.0, 1.0 );  pale = pale * pale * ( 3.0 - 2.0 * pale );
+  // Per channel, not scalar. A brightness-only field makes darker and lighter *rust*, which is how
+  // the first pass read as stains on one colour; what separates scoured basalt from a dust skin is
+  // hue as much as value, so the lag loses red and the pallings keep it.
+  diffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.845, 0.880, 0.950 ), lag * sweepOpen );
+  diffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 1.140, 1.095, 0.980 ), pale * sweepOpen );
+  float sweepLum = dot( diffuseColor.rgb, vec3( 0.333 ) );
+  diffuseColor.rgb = mix( diffuseColor.rgb, vec3( sweepLum ), lag * sweepOpen * 0.16 );
   // Sintered regolith, not poured concrete. The deck has to sit *inside* the sand's value range:
   // the first pass mixed toward pure white and made a glaring apron, and even the grey that
   // replaced it was two stops brighter and fully desaturated, so under a peach sky every plaza
@@ -539,17 +703,17 @@ function applyPaving(mat) {
   // and its joints, not from its brightness. The frame had no pixels below 0.2 luminance left.
   // One stop above the sand, though, not below it: level with the dunes and the whole paved field
   // lost its edges, leaving a lattice of dark seams on orange that read as unmodelled ground.
-  diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.232, 0.206, 0.182 ), gPave * 0.9 );` + SLABS)
+  diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.232, 0.206, 0.182 ), gPave * 0.9 );` + SLABS + TRACKSURF)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
   roughnessFactor = mix( roughnessFactor, roughnessFactor * 0.80, gPave );
   // Sintered dust is matte. The old floor of 0.05 turned every pad into a sky mirror at grazing
   // angles — south of the gate the whole apron blew out to a white sheet with a dark grid in it,
   // because the only thing still rough was the joint filler.
-  roughnessFactor = clamp( roughnessFactor + gPaveR, 0.58, 1.0 );`)
+  roughnessFactor = clamp( roughnessFactor + gPaveR + gTrackR, 0.58, 1.0 );`)
       .replace('#include <normal_fragment_maps>', `#ifdef USE_NORMALMAP_TANGENTSPACE
   vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
-  mapN.xy *= normalScale * ( 1.0 - gPave * 0.95 ) * gRipple;
-  mapN.xy += gPaveN;
+  mapN.xy *= normalScale * ( 1.0 - gPave * 0.95 ) * ( 1.0 - gTrack * 0.72 ) * gRipple;
+  mapN.xy += gPaveN + gTrackN;
   normal = normalize( tbn * mapN );
 #endif`);
   };
@@ -598,8 +762,15 @@ export function createTerrain(scene) {
       col.copy(SAND_A).lerp(SAND_B, smoothstep(0.35, 0.95, tint));
       col.lerp(SAND_C, smoothstep(2.2, 7.5, y) * 0.45);           // bright rim crest
       col.lerp(SAND_B, smoothstep(-1, -4, y) * 0.6);              // darker beyond the cliff
-      const pave = pavedAt(x, z);
-      if (pave > 0) col.lerp(PAVE, pave * 0.85);                  // cream pads & roads
+      const plate = pavedAt(x, z);
+      const road = roadAt(x, z);
+      if (plate > 0) col.lerp(PAVE, plate * 0.85);             // cream aprons and building decks
+      // A carriageway is the same ground it was cut through, pressed down — so it darkens toward
+      // TRACK instead of lightening toward PAVE, and keeps its rust hue rather than losing it to
+      // concrete grey. This is the vertex half of the shader's gTrack; the two must agree or the
+      // tint and the painted surface separate along the shoulder.
+      if (road > 0) col.lerp(TRACK, road * 0.62);
+      const eng = Math.max(plate, road);
       // soft dune banding so large flats never read as a dead sheet
       col.multiplyScalar(0.94 + 0.12 * vnoise(x * 0.35, z * 0.35));
       // gravel drifts and wind-scoured lighter bands — the mid-scale reading that survives
@@ -608,12 +779,12 @@ export function createTerrain(scene) {
       // looked like a painted sheet. Compacted ground is *more* varied than dune sand, not less:
       // traffic lanes, spilled fines and a darker crust where vehicles have turned it over.
       const gravel = smoothstep(0.58, 0.82, fbm(x * 0.055 + 31, z * 0.055 + 17, 3));
-      col.lerp(GRAVEL, gravel * 0.42 * (1 - pave * 0.4));
+      col.lerp(GRAVEL, gravel * 0.42 * (1 - eng * 0.4));
       col.lerp(SAND_C, Math.pow(smoothstep(0.55, 0.95, vnoise(x * 0.12, z * 0.12 + 40)), 2) * 0.20);
-      if (pave > 0.15) {
+      if (plate > 0.15) {
         const lane = smoothstep(0.62, 0.94, vnoise(x * 0.09 + 3, z * 0.09 + 71));
-        col.lerp(TRACK, lane * pave * 0.5);                       // worn, compacted darker strips
-        col.lerp(SAND_C, smoothstep(0.7, 0.97, vnoise(x * 0.5, z * 0.5)) * pave * 0.22);
+        col.lerp(TRACK, lane * plate * 0.5);                   // worn, compacted darker strips
+        col.lerp(SAND_C, smoothstep(0.7, 0.97, vnoise(x * 0.5, z * 0.5)) * plate * 0.22);
       }
       colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
     }

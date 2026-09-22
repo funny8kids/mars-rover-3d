@@ -116,7 +116,7 @@ export class GameAudio {
     const g = this.ctx.createGain(); g.gain.value = vol;
     s.connect(g); g.connect(this.master); s.start();
   }
-  update(dt, { speed01, rpm, power, stormF, nightF, camPos, camFwd, camUp, roverPos, leakActive, launchIntensity, padPos }) {
+  update(dt, { speed01, rpm, power, stormF, windLoad, windGust, nightF, camPos, camFwd, camUp, roverPos, leakActive, launchIntensity, padPos }) {
     if (!this.ready) return;
     const t = this.ctx.currentTime, L = this.ctx.listener;
     if (L.positionX) {
@@ -135,8 +135,17 @@ export class GameAudio {
     this.engNoiseG.gain.setTargetAtTime(0.008 + speed01 * 0.03, t, 0.14);
     // the pad is the room tone: fuller at night, hushed in a storm
     this.padG.gain.setTargetAtTime(0.04 + nightF * 0.035 - stormF * 0.02, t, 0.5);
-    this.windG.gain.setTargetAtTime(0.012 + stormF * 0.10 + nightF * 0.012 + speed01 * 0.012, t, 0.3);
-    this.windF.frequency.setTargetAtTime(240 + stormF * 160 + Math.sin(t * 0.35) * 60, t, 0.4);
+    // Wind pressure, not weather mood. `windLoad` is the front's standing pressure at the rover
+    // (wind speed × the dust actually reaching it), so the roar climbs through `watch` — nine
+    // m/s of air with clean sky and zero dust — and that is the warning you hear before the wall
+    // is on top of you. `stormF` on its own could only say "dust is here", one second too late.
+    const wLoad = windLoad || 0, wGust = windGust || 0;
+    const breathe = 0.72 + 0.28 * Math.sin(t * 1.31) + 0.16 * Math.sin(t * 0.53 + 1.7);
+    this.windG.gain.setTargetAtTime(0.012 + wLoad * (0.055 + 0.105 * wGust) * breathe + nightF * 0.012 + speed01 * 0.012, t, 0.25);
+    // Pressure sets the register (a deeper roar as the front arrives); the gust swings the band
+    // up and down around it, which is the swoop a gust makes as it passes the mast.
+    this.windF.frequency.setTargetAtTime(200 + wLoad * 190 + wGust * Math.sin(t * 0.83) * 150, t, 0.4);
+    this.windF.Q.setTargetAtTime(0.4 + wLoad * 0.5, t, 0.5);
     this.lowpass.frequency.setTargetAtTime(20000 - stormF * 9000, t, 0.35);   // muffled during storm
     this.hissG.gain.setTargetAtTime(leakActive ? 0.10 : 0, t, 0.4);
     if (leakActive && this.leakPos) this._setP(this.hissP, this.leakPos.x, this.leakPos.y, this.leakPos.z);

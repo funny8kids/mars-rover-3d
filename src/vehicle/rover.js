@@ -28,10 +28,28 @@ export async function createRover(scene) {
     rover_hub:  [[0.27, 0.255, 0.24], 0.58, 0.55],
     solar_cell: [[0.019, 0.031, 0.072], 0.34, 0.3],
   };
+  // Storm deposition as a film, per shell material: [colour, roughness the film ends at, weight].
+  // A horizontal panel under a settling atmosphere gets the whole film; a vertical mast or a
+  // shadowed frame gets less. `solar_cell` is 1.0 and only 0.34→0.78 because the fine fraction of
+  // Martian dust is exactly the size that clouds a cell, and the array is the part the storm
+  // actually costs the player — the same load that later has to be washed off at a pad.
+  const DUST_FILM = [0.60, 0.435, 0.295];
+  const COAT = {
+    rover_white: [DUST_FILM, 0.82, 1.0], metalRed: [DUST_FILM, 0.78, 1.0],
+    rover_hub: [DUST_FILM, 0.82, 1.0], solar_cell: [DUST_FILM, 0.78, 1.0],
+    rover_alu: [DUST_FILM, 0.74, 0.72], metal: [DUST_FILM, 0.70, 0.55],
+    metalDark: [DUST_FILM, 0.66, 0.34],
+  };
+  const coatMats = [], coatK = [], coatBase = [], baseRough = [];
   inner.traverse(o => {
     for (const mt of (Array.isArray(o.material) ? o.material : o.material ? [o.material] : [])) {
       const v = SHELL[mt.name];
       if (v) { mt.color.setRGB(v[0][0], v[0][1], v[0][2]); mt.roughness = v[1]; mt.metalness = v[2]; }
+      const c = COAT[mt.name];
+      if (c && !coatMats.includes(mt)) {
+        coatMats.push(mt); coatK.push(c); baseRough.push(mt.roughness);
+        coatBase.push(mt.color.r, mt.color.g, mt.color.b);
+      }
       if (o.name === 'dish' || o.name === 'dishfeed') {
         mt.color.setRGB(0.40, 0.40, 0.42); mt.roughness = 0.55; mt.metalness = 0.12;
       }
@@ -74,7 +92,28 @@ export async function createRover(scene) {
   for (const w of wheels) { noMerge(w); mergeInto(w.userData.spin); }
   mergeInto(inner);
 
+  // Deposition is only believable if it lands on the thing you are sitting in. The buckets keyed on
+  // material uuid survive the merge, so these instances are the ones actually drawing. Blending in
+  // the material, rather than only driving it from an external colour, is what lets a wash reset
+  // the array's yield and the paint in the same move.
+  let shown = -1;
+  const setDust = (v) => {
+    const a = Math.max(0, Math.min(1, v || 0));
+    if (Math.abs(a - shown) < 0.0015) return;
+    shown = a;
+    for (let i = 0; i < coatMats.length; i++) {
+      const mt = coatMats[i], c = coatK[i], b = i * 3, k = a * c[2];
+      // Blend from the stored authored colour, never from `mt.color`: this runs every frame, so
+      // reading back what it wrote last frame would creep the paint to full film regardless of load.
+      mt.color.setRGB(
+        coatBase[b] + (c[0][0] - coatBase[b]) * k,
+        coatBase[b + 1] + (c[0][1] - coatBase[b + 1]) * k,
+        coatBase[b + 2] + (c[0][2] - coatBase[b + 2]) * k);
+      mt.roughness = baseRough[i] + (c[1] - baseRough[i]) * k;
+    }
+  };
+
   g.position.set(0, 0, 0);
   scene.add(g);
-  return { group: g, wheels, lampMat };
+  return { group: g, wheels, lampMat, setDust };
 }

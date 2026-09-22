@@ -30,7 +30,7 @@ const input = createInput(canvas);
 const audio = new GameAudio();
 
 let quality, qKey, post, fx, env, sky, terrain, base, rover, phys, chase, skids;
-let stormField = null, stormWall = null;
+let stormField = null, stormWall = null, lastWind = null;
 const _viewDir = new THREE.Vector3();
 // The wall's own two poles: dust in shadow is a maroon screen, dust backlit by the sun blazes.
 // The shadow pole has to be *far* darker than the sky the wall stands against. Measured 2026-09-22:
@@ -928,11 +928,25 @@ function update(dt) {
   // drive physics — a flat battery kills the motors, and the last 20 % sags so that running
   // dry is a slow, obvious slide into trouble rather than a sudden loss of control
   const sag = grid.dead ? 0 : THREE.MathUtils.clamp((grid.battery - 0.06) / 0.16, 0.42, 1);
+  // What the weather hands the vehicle. The air velocity is passed as velocity, never as a force:
+  // ½ρCdA/m on a 260 kg boxy chassis in 0.020 kg/m³ air is 7.3e-5, so the force is the physics
+  // module's own arithmetic and the mass and area stay next to the wheels that pay them. The storm
+  // reaches the driver through `soft` — dust bedded under the tyres, which is a surface effect on
+  // Mars and the only place a 0.02 kg/m³ atmosphere can legally be felt. The gust term doubles as
+  // the camera buffeting amplitude a frame later, so nothing has to agree with the weather by hand.
+  const _wHere = st.stormF;
+  const _wGust = 0.55 + 0.45 * (st.stormGust || 0);
+  const wind = {
+    vx: stormField.wx * stormField.speed, vz: stormField.wz * stormField.speed,
+    soft: THREE.MathUtils.clamp(0.8 * _wHere + 0.4 * stormField.dustLoad, 0, 1),
+    gust: _wGust * _wHere,
+  };
+  lastWind = wind;
   if (rescue.phase === 'jack') {
     rescueGlide(dt);
   } else {
     const cmd = rescuePedals(inp);
-    phys.update(dt, { gas: cmd.gas * sag, brake: cmd.brake, steer: cmd.steer, drift: cmd.drift * (grid.dead ? 0 : 1) }, base.colliders);
+    phys.update(dt, { gas: cmd.gas * sag, brake: cmd.brake, steer: cmd.steer, drift: cmd.drift * (grid.dead ? 0 : 1) }, base.colliders, wind);
   }
   rescueWatch(inp, dt);
   // a demo warp parks the rover for the cinematic shot; the moment someone touches the
@@ -947,6 +961,11 @@ function update(dt) {
   rover.group.position.set(pose.x, pose.y + 0.12, pose.z);
   rover.group.rotation.order = 'YXZ';
   rover.group.rotation.set(pose.pitch, pose.yaw, -pose.roll);
+  // A storm's deposit is only believable if it lands on the thing you are sitting in. Driving
+  // scours the windward body panels, so the film climbs with deposition load but is rubbed back
+  // down by ground speed — the same balance that leaves the panels clean after a run and filthy
+  // after an hour parked in the front.
+  rover.setDust(THREE.MathUtils.clamp(st.stormLoad - phys.speed * 0.006, 0, 1));
   // wheels
   const omega = (phys.speed * Math.sign(phys.vx * Math.sin(pose.yaw) + phys.vz * Math.cos(pose.yaw) || 1)) / 0.46;
   // the modelled wheels show the angle the physics is actually using, so the tyres and the
@@ -1202,6 +1221,15 @@ function update(dt) {
       launchAir.w = Math.max(0, launchAir.w - dt * 1.1);
     }
     chase.air = launchAir.w > 0.001 ? launchAir : null;
+    // Chassis buffeting. A rover in a front is hammered by a gust envelope that repeats on no
+    // period the eye can lock onto, so the shake rides the weather's own two incommensurate
+    // sines (φ = 2.3T and 0.7T) instead of the frame timer — the noise `physics` just spent on
+    // the body, handed straight to the camera. Bounded to 0.34: a frame that shakes harder than
+    // a kerb strike stops reading as wind and starts reading as a broken rig.
+    if (wind.gust > 0.02 && phys.grounded) {
+      const buff = 0.20 * wind.gust * (0.45 + 0.30 * Math.sin(elapsed * 2.3) + 0.25 * Math.sin(elapsed * 0.7 + 1.9));
+      phys.trauma = Math.min(0.34, Math.max(phys.trauma, buff));
+    }
     chase.update(dt, { x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw, roll: pose.roll, lateral: phys.lateral, wheelAngle: phys.wheelAngle, groundY: phys.groundY }, phys.speed, phys.trauma);
   } else updatePhotoCam(dt);
 
@@ -1232,10 +1260,13 @@ function update(dt) {
     }
   }
 
-  // audio
+  // audio — `windLoad` is the pressure the front is standing on right now: wind speed × the dust
+  // fraction at the rover. It rises through `watch` before a single mote arrives, which is the
+  // warning you hear with the radio off.
   audio.update(dt, {
     speed01: Math.min(1, phys.speed / 28), rpm: 0.3 + phys.enginePower * 0.7, power: phys.enginePower,
-    stormF, nightF: st.nightF, camPos: camera.position,
+    stormF, windLoad: Math.min(1, stormField.speed / 26) * _wHere, windGust: wind.gust,
+    nightF: st.nightF, camPos: camera.position,
     camFwd: camera.getWorldDirection(tmpV.set(0, 0, 1)), camUp: camera.up,
     roverPos: rover.group.position, leakActive: !leakFixed, launchIntensity: launch.audioLevel || 0,
     padPos: base.launchPadPos,
@@ -1419,7 +1450,19 @@ window.__RSB = {
   },
   unpinStorm: () => stormField.unpin().state,
   storm: () => stormField?.state,
+  // What the weather is actually paying the rover this frame: the air speed out there, the tiny
+  // force it buys on a 260 kg chassis, the dust read through the tyres, the deposited film on the
+  // paint, and the wind band's live gain. A wind effect you cannot read a number off is a wind
+  // effect you cannot prove is not moving the rover into a wall.
+  windNow: () => ({ air: lastWind ? +Math.hypot(lastWind.vx, lastWind.vz).toFixed(2) : 0,
+    load: +phys.windLoad.toFixed(4), soft: +phys.windSoft.toFixed(3),
+    gust: +(lastWind?.gust || 0).toFixed(3), trauma: +phys.trauma.toFixed(3),
+    speed: +phys.speed.toFixed(2), yaw: +phys.yaw.toFixed(3),
+    deposit: +stormField.dustLoad.toFixed(4), windG: +((audio.windG?.gain.value || 0) * 1000).toFixed(1) }),
   startNight: () => { env?.forceNight(); },
+  // the field itself, not its readout: a 300 s drive needs the slab widened past the island,
+  // which no phase-pinning standoff can do from outside the object
+  stormRef: () => stormField,
   phys: () => phys, env: () => env, launchRef: launch,
   warp: (x, z, face, search) => warpTo(x, z, face, search ?? 8),
   sampleList: () => (base?.samples || []).map(s => [Math.round(s.x), Math.round(s.z), !!s.taken]),

@@ -3,6 +3,9 @@ import { surfaceAt } from '../world/height.js';
 const G = 3.71;         // Mars gravity
 const MAX_SPEED = 32;   // m/s (~115 km/h cinematic)
 const RIDE = 0.46;      // wheel radius → body ground clearance reference
+const RHO = 0.020;      // kg/m³ — mean Martian surface density, 1.6% of Earth's air
+const CD_A = 1.9;       // m²·Cd for the boxy chassis and its mirror-flat solar deck
+const MASS = 260;       // kg
 
 // Props may publish a driveable platform as a collider `{x, z, r, floor}`. The last 3 m of
 // its radius ramp from terrain up to the deck, so a low pad reads as a curb you roll onto
@@ -42,26 +45,41 @@ export class RoverPhysics {
     this.onFloor = false;
     this.wheelAngle = 0;      // realised front-wheel angle (rad), driven toward a speed-scaled target
     this.longAcc = 0;         // m/s², feeds the visual nose dive/squat
+    this.windLoad = 0;        // m/s² the air is actually paying the chassis this substep
+    this.windSoft = 0;        // 0..1 dust under the wheels — the term the storm drives through
     this.bodyRoll = 0; this.bodyPitch = 0;   // chassis lean from lateral / longitudinal G
     this._acc = 0;            // fixed-step accumulator
   }
   // Fixed 120 Hz integration: the feel must not change between a 60 Hz laptop and a stuttering
   // frame, and a surface-locked rig that is stepped with a variable dt is exactly what makes an
   // arcade car twitch.
-  update(dt, inp, colliders) {
+  update(dt, inp, colliders, wind) {
     this._acc += Math.min(dt, 0.25);
     const h = 1 / 120;
     let n = 0;
-    while (this._acc >= h && n < 8) { this.step(h, inp, colliders); this._acc -= h; n++; }
+    while (this._acc >= h && n < 8) { this.step(h, inp, colliders, wind); this._acc -= h; n++; }
     if (n === 8) this._acc = 0;
     this.trauma = Math.max(0, this.trauma - Math.min(dt, 0.25) * 1.4);
     return this;
   }
-  step(dt, inp, colliders) {
+  step(dt, inp, colliders, wind) {
     const fwdX = Math.sin(this.yaw), fwdZ = Math.cos(this.yaw);
     const rgtX = Math.cos(this.yaw), rgtZ = -Math.sin(this.yaw);
     let vf = this.vx * fwdX + this.vz * fwdZ;
     let vl = this.vx * rgtX + this.vz * rgtZ;
+
+    // The weather hands the vehicle two things: the air load carried on the chassis, and the dust
+    // bedded down under the wheels. The first is a force, so it is built from the *relative* air
+    // velocity — which is why the mass, area and density live here and not in the caller.
+    const soft = wind ? wind.soft : 0;
+    let ax = 0, az = 0;
+    if (wind) {
+      const rx = wind.vx - this.vx, rz = wind.vz - this.vz;
+      const q = 0.5 * RHO * CD_A / MASS * Math.hypot(rx, rz);   // ½ρ|v|CdA/m, ×v gives m/s²
+      ax = q * rx; az = q * rz;
+    }
+    this.windLoad = Math.hypot(ax, az);
+    this.windSoft = soft;
 
     // drive / brake
     const braking = inp.brake > 0.05 && vf > 0.6;
@@ -80,8 +98,11 @@ export class RoverPhysics {
     this.longAcc = accel;
     vf += accel * dt;
     if (braking) vf = Math.max(0, vf - 18 * dt);
-    // rolling drag
-    vf *= Math.exp(-0.35 * dt);
+    // rolling drag. On Mars the air cannot slow a rover — see the load note below — but what a
+    // storm does to the *surface* it rolls on can: suspended regolith and the film it leaves on the
+    // dune faces is the same talc that made Opportunity's wheels spin in a dust-filled ripple. The
+    // term is a rate on speed, so it costs nothing at rest and cannot park a rover on a slope.
+    vf *= Math.exp(-(0.35 + 0.30 * soft) * dt);
     if (Math.abs(vf) < 0.02 && !accel) vf = 0;
     vf = Math.max(-10, Math.min(MAX_SPEED, vf));
 
@@ -101,12 +122,26 @@ export class RoverPhysics {
     let yawRate = bicycle + pivot;
     this.yaw += yawRate * dt;
 
-    // lateral grip — low on Mars, lower with handbrake → drift
-    const grip = inp.drift > 0 ? 0.7 : 4.6;
+    // lateral grip — low on Mars, lower with handbrake → drift, and lower still with dust under the
+    // tyres: at full load the 4.6 s⁻¹ that sets the break-away line is down to 3.2, so a corner taken
+    // at the same speed inside a front slides where the same corner outside one bites.
+    const grip = (inp.drift > 0 ? 0.7 : 4.6) * (1 - 0.30 * soft);
     vl *= Math.exp(-grip * dt);
     if (inp.drift > 0) vl += -inp.steer * vf * 0.55 * dt;    // kick-slide
     this.drifting = Math.abs(vl) > 2.4 && Math.abs(vf) > 4;
     this.lateral = vl;
+
+    // The air load, integrated as the force it is. Measured, not decorated: ½ρCdA/m at 0.020 kg/m³,
+    // 1.9 m²·Cd and 260 kg is 7.3e-5, so a 25 m/s front reaches 0.046 m/s² — 0.4 % of the 10.5 m/s²
+    // a throttle starts at, and a sixth of the rover's own rolling drag. That is the real number for
+    // real Martian air, and the honest conclusion is that wind cannot push this rover anywhere: it
+    // biases a coast downhill by a few metres over a minute and nothing more. So it is applied
+    // straight, with no gain in front of it, and the storm's cost to the driver is paid through the
+    // surface terms above. Measured against the parked-rover case this replaced: an earlier version
+    // relaxed `vf` toward the wind's *velocity* at 1.9 s⁻¹, which reads to the driver as a 26 m/s
+    // headwind being a handbrake, and capped full throttle at 4 m/s.
+    vf += (ax * fwdX + az * fwdZ) * dt;
+    vl += (ax * rgtX + az * rgtZ) * dt;
 
     // slope gravity projection
     const e = 0.8;

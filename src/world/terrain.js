@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { heightAt, installSurfaceGrid, surfaceAt, surfaceSlope, pavedAt, paveGeometry, deckAt, lotAt } from './height.js';
+import { heightAt, installSurfaceGrid, surfaceAt, surfaceSlope, pavedAt, gradedAt, paveGeometry, deckAt, lotAt } from './height.js';
 import { TERRAIN, ISLAND } from '../config.js';
 import { fbm, vnoise, mulberry32, smoothstep } from '../utils/noise.js';
 import { loadModel, cloneModel } from './assets.js';
@@ -14,13 +14,61 @@ import { mergeInto } from './merge.js';
 // Both maps are derived from one height field so the light and the colour always agree.
 //
 // The wave trains use integer wave-vector components over the tile, which is what makes the field
-// exactly periodic: a non-tiling seam repeated 26× across the world shows up as dead-straight
-// lines, and an albedo seam is far more visible than a normal one.
+// exactly periodic: a non-tiling *seam* repeated 26× across the world shows up as dead-straight
+// lines, and an albedo seam is far more visible than a normal one. Note the tension this creates —
+// a tile that repeats perfectly also repeats its pattern perfectly, which is a different artifact
+// with the same symptom. It is broken downstream by addressing the tile from world space instead of
+// from the mesh uv; see SAND_WARP.
 const SAND_TILES = 26;
 // One tile of the ripple field, in metres. Anything that wants to *continue* the desert's pattern —
 // a storm drift, a scoured bank — has to sample at this spacing, and with its v axis running along
 // −z, because the terrain plane is rotated about X and that is the direction its uv ends up in.
 export const SAND_TILE_M = TERRAIN.size / SAND_TILES;
+
+// ─── the tile is laid down in world space ───
+// One 512² tile repeated 26×26 is 676 copies of the same grain, and every copy resumes at exactly the
+// same phase on its seam, so the crest trains ran dead-straight and unbroken from one side of the
+// island to the other. That is the corduroy in every driving frame. The `bend` field inside
+// makeSandDetail was written to stop this and cannot: its coarsest lattice is 3 cells wide *within one
+// tile*, so the meander repeats on the 11.54 m grid too and the tiles wander in lockstep.
+//
+// Proven by experiment rather than inference — zeroing the terrain material's normalScale removed the
+// bands entirely, while the sampled mesh height along a 71 m cross-grain chord came back as a single
+// monotone ramp with no periodicity. The ribs were 100% shader and 0% geometry.
+//
+// So the tile is no longer sampled at its own uv. Both maps are addressed through a world-space frame:
+//
+//   1. `rsbSandUv` drags the tile sideways by up to half a metre on ~26/31/53 m waves. Nothing inside
+//      the tile changes — its *placement* becomes aperiodic, which is what breaks seam-to-seam
+//      alignment and bends the crest lines. The summed warp gradient is 0.10, so local ridge spacing
+//      shifts by under 12%: ridges wander instead of folding into moiré.
+//   2. `rsbRipEnv` lets the grain thin out and return over 20-50 m patches. What the eye reads as
+//      wind-laid is not curvature but *termination* — real ripples end, fork and restart, and a band
+//      that never dies is a drawn line. Its mean is ~0.85, so the field keeps the grain it has: the
+//      frames being replaced here were too smooth, not too busy.
+//
+// Both are shared with the drift material, which is the only way a storm mound stays in register with
+// the desert it was blown off of while neither one is allowed to repeat.
+const TILE_SCALE = (1 / SAND_TILE_M).toFixed(6);
+const SAND_WARP = /* glsl */`
+vec2 rsbSandUv( vec2 w ){
+  vec2 o = vec2(
+    sin( w.y * 0.2013 + 1.7 ) * 0.31 + sin( w.y * 0.1181 - 4.2 ) * 0.19 + sin( w.x * 0.2404 + 2.9 ) * 0.07,
+    sin( w.x * 0.1860 - 0.6 ) * 0.27 + sin( w.x * 0.1042 + 3.3 ) * 0.16 + sin( w.y * 0.2233 - 1.1 ) * 0.06 );
+  return ( w + o ) * ${TILE_SCALE};
+}
+float rsbGr( vec2 q ){ return fract( sin( dot( q, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ); }
+float rsbGn( vec2 p ){
+  vec2 i = floor( p ), f = fract( p );
+  f = f * f * ( 3.0 - 2.0 * f );
+  return mix( mix( rsbGr( i ), rsbGr( i + vec2( 1.0, 0.0 ) ), f.x ),
+              mix( rsbGr( i + vec2( 0.0, 1.0 ) ), rsbGr( i + vec2( 1.0, 1.0 ) ), f.x ), f.y );
+}
+float rsbRipEnv( vec2 w ){
+  return 0.55 + 0.45 * clamp( rsbGn( w * 0.052 + 7.3 ) * 0.9 + rsbGn( w * 0.019 - 3.1 ) * 0.9, 0.0, 1.0 );
+}
+`;
+
 export function makeSandDetail(size = 512) {
   // All six trains run within ±6° of one another. Crossing them at wide angles — the obvious
   // thing to reach for — weaves a diamond lattice that reads as carpet, not sand; wind lays ripples
@@ -49,7 +97,10 @@ export function makeSandDetail(size = 512) {
     const a = hsh(x0, y0, P), b = hsh(x1, y0, P), c = hsh(x0, y1, P), d = hsh(x1, y1, P);
     return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
   };
-  // pn() takes a lattice period in *tiles*, so it wraps exactly at the texture edge.
+  // `pnoise` wraps its lattice at P, and x*P/size maps the texel range onto exactly [0,P], so any
+  // integer P tiles seamlessly — a snap to powers of two buys nothing and shifts every feature
+  // size by up to 11%. Measured with /tmp/probe_seam.mjs: the wrap step is 0.47 against an internal
+  // maximum step of 0.55, i.e. the tile edge is not where the desert's grid lines came from.
   const pn = (x, y, P) => pnoise(x * P / size, y * P / size, P);
 
   const h = new Float32Array(size * size);    // relief + grain: drives albedo
@@ -181,26 +232,29 @@ export function makeDriftMaterial() {
   });
   mat.name = 'drift_sand';   // surface_detail.js: no panel seams and no rivets on a sandpile
   mat.normalScale.set(1, 1);
-  const S = 1 / SAND_TILE_M;
   mat.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 rsbDriftF;\n' + SAND_WARP)
       // uv_vertex runs *before* begin_vertex, so `transformed` does not exist yet here; `position`
       // already does, and a drift is never instanced.
       .replace('#include <uv_vertex>', `#include <uv_vertex>
   vec3 rsbDrift = ( modelMatrix * vec4( position, 1.0 ) ).xyz;
+  rsbDriftF = rsbDrift;
   #ifdef USE_MAP
-    vMapUv = vec2( rsbDrift.x, -rsbDrift.z ) * ${S.toFixed(6)};
+    vMapUv = rsbSandUv( vec2( rsbDrift.x, -rsbDrift.z ) );
   #endif
   #ifdef USE_NORMALMAP
-    vNormalMapUv = vec2( rsbDrift.x, -rsbDrift.z ) * ${S.toFixed(6)};
+    vNormalMapUv = rsbSandUv( vec2( rsbDrift.x, -rsbDrift.z ) );
   #endif`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nfloat gDrift = 1.0;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 rsbDriftF;\n' + SAND_WARP + '\nfloat gDrift = 1.0;')
       .replace('#include <map_fragment>', `vec3 rsbDriftBase = diffuseColor.rgb;
   #include <map_fragment>
   // The same Nyquist window the terrain fades its ripples with, so a drift never keeps grain after
-  // the desert beside it has lost theirs to the mip chain.
-  gDrift = 1.0 - smoothstep( 0.0028, 0.0095, fwidth( vMapUv.x ) + fwidth( vMapUv.y ) );
+  // the desert beside it has lost theirs to the mip chain — and the same world-space envelope, so a
+  // mound crossing into a scoured patch loses grain at exactly the same line the ground does.
+  gDrift = ( 1.0 - smoothstep( 0.0028, 0.0095, fwidth( vMapUv.x ) + fwidth( vMapUv.y ) ) )
+         * rsbRipEnv( rsbDriftF.xz );
   diffuseColor.rgb = mix( rsbDriftBase * vec3( 0.92, 0.895, 0.88 ), diffuseColor.rgb, gDrift );`)
       .replace('#include <normal_fragment_maps>', `#ifdef USE_NORMALMAP_TANGENTSPACE
   vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
@@ -229,6 +283,22 @@ varying vec3 vWP;
 // Paint has to be resolved per pixel. The terrain mesh is vertex-coloured on a ~1.4 m lattice, so
 // anything narrower than that — a 0.5 m taxi line, a joint, a hazard chevron — falls between
 // vertices and simply does not exist when it is computed in the vertex stage.
+// The deck's own edge: a plaza is paved to its rim, a carriageway to its shoulder.
+//
+// This is deliberately NOT how far the ground has been levelled, and the shader used to use the
+// levelling falloff for both. Measured 2026-09-22 against the live fields: with pads fading out at
+// r+20 and roads at hw*2.6, 100% of the ground inside r<40 and 92% of everything inside r<75
+// carried a deck weight above 0.5. The rover was not driving on a dune field with a base in it
+// — it was driving on a sintered concrete field with a 2.6 m joint lattice, and the sand only
+// survived in 5% of the map. gradedAt in height.js owns the wide blend; this owns the paint.
+float rsbDeckPad(vec2 p, vec4 pd){
+  return 1.0 - smoothstep( pd.z * 0.78, pd.z * 1.06, distance( p, pd.xy ) );
+}
+float rsbDeckRoad(vec2 p, vec4 rd, float hw){
+  vec2 ab = rd.zw - rd.xy;
+  float t = clamp( dot( p - rd.xy, ab ) / dot( ab, ab ), 0.0, 1.0 );
+  return 1.0 - smoothstep( hw * 0.90, hw * 1.14, distance( p, rd.xy + ab * t ) );
+}
 void rsbMark(vec2 p, out float line, out float edge){
   line = 0.0;
   edge = 0.0;
@@ -236,7 +306,7 @@ void rsbMark(vec2 p, out float line, out float edge){
     if ( i >= uPadN ) break;
     vec4 pd = uPads[ i ];
     float d = distance( p, pd.xy );
-    float k = 1.0 - smoothstep( pd.z * 0.62, pd.z + 20.0, d );
+    float k = rsbDeckPad( p, pd );
     // a crisp painted border sits just inside the rim of the deck; 4 % of the pad radius is about
     // a metre of paint, and anything softer than that disappears at driving distance
     float rr = d / pd.z;
@@ -261,16 +331,11 @@ float rsbMask(vec2 p){
   float w = 0.0;
   for ( int i = 0; i < 10; i++ ) {
     if ( i >= uPadN ) break;
-    vec4 pd = uPads[ i ];
-    w = max( w, 1.0 - smoothstep( pd.z * 0.62, pd.z + 20.0, distance( p, pd.xy ) ) );
+    w = max( w, rsbDeckPad( p, uPads[ i ] ) );
   }
   for ( int i = 0; i < 6; i++ ) {
     if ( i >= uRoadN ) break;
-    vec4 rd = uRoads[ i ];
-    vec2 ab = rd.zw - rd.xy;
-    float t = clamp( dot( p - rd.xy, ab ) / dot( ab, ab ), 0.0, 1.0 );
-    float d = distance( p, rd.xy + ab * t );
-    w = max( w, 1.0 - smoothstep( uRoadW[ i ] * 0.8, uRoadW[ i ] * 2.6, d ) );
+    w = max( w, rsbDeckRoad( p, uRoads[ i ], uRoadW[ i ] ) );
   }
   return w;
 }
@@ -311,17 +376,29 @@ if ( gPave > 0.004 ) {
   // A sawn joint is 12 mm, not 200 mm. At 0.034 slabs the seam ate a tenth of every plate and, once
   // the filler went dark, the plaza read as a lattice of floating dashes instead of a continuous
   // deck — the eye needs a run of unbroken surface before it accepts the joints as grooves.
-  float w = 0.013 + 0.008 * rsbHash( id + 3.7 );    // no two seams are the same width
-  // The seam is drawn at whatever width the pixel can actually resolve. A fixed 0.012-unit transition
-  // collapses to a hard step the moment one pixel spans more ground than that — and from the rover seat
-  // a plaza pixel spans tens of centimetres — so every joint degenerated into a single-pixel black line
-  // that the eye stitched into long streaks raking across the deck. Growing the window with the
-  // screen-space derivative keeps what a sub-pixel groove can honestly report, which is its coverage,
-  // not its shape.
-  vec2 d = fwidth( vWP.xz ) / 2.6;                  // one pixel, in slab units
-  vec2 hw = max( vec2( 0.006 ), d * 0.9 );
-  float jx = 1.0 - smoothstep( w - hw.x, w + hw.x, a.x );
-  float jy = 1.0 - smoothstep( w - hw.y, w + hw.y, a.y );
+  //
+  // That first cut only fixed a tenth of the error, because w is a HALF-width in cell units: 0.013
+  // was not a 12 mm seam, it was a 68 mm trench, and the ±hw window below took the drawn band out to
+  // ~110 mm. Measured at a 50-pixel plate that is a 3-pixel black stripe at 55 % contrast — which is
+  // why every wide shot still read as dashes rather than lines, and why no amount of amplitude fading
+  // made it go away. A real sawn joint is 6..12 mm of half-width, so the groove now covers under two
+  // percent of a plate instead of under five.
+  float w = 0.0024 + 0.0018 * rsbHash( id + 3.7 );    // no two seams are the same width
+  // The seam is drawn at whatever width the pixel can actually resolve. A fixed transition collapses
+  // to a hard step the moment one pixel spans more ground than that — and from the rover seat a plaza
+  // pixel spans tens of centimetres — so every joint degenerated into a single-pixel black line that
+  // the eye stitched into long streaks raking across the deck. Growing the window with the screen-space
+  // derivative keeps what a sub-pixel groove can honestly report, which is its coverage, not its shape.
+  vec2 d = fwidth( vWP.xz ) / 2.6;                    // one pixel, in slab units
+  vec2 hw = max( vec2( 0.0012 ), d * 0.9 );
+  // Coverage, not just a soft edge. Widening the window with the pixel keeps the joint's *boundary*
+  // from aliasing, but the band it draws is then 2(w+hw) wide while the groove it stands for is 2w.
+  // Drawing the full filler colour across all of that paints a two-pixel black line where the truth is
+  // a tenth of a pixel, so what survives once the joint is thinner than the pixel is its coverage:
+  // the amplitude falls as w/(w+hw) while the window keeps growing.
+  vec2 jAmp = w / ( w + hw );
+  float jx = ( 1.0 - smoothstep( w - hw.x, w + hw.x, a.x ) ) * jAmp.x;
+  float jy = ( 1.0 - smoothstep( w - hw.y, w + hw.y, a.y ) ) * jAmp.y;
   float joint = max( jx, jy );
   // Past a few pixels per plate even that stops resolving, and what remains is not a groove but
   // slightly darker, slightly rougher concrete. So the seam's contrast eases to a floor instead of
@@ -331,8 +408,17 @@ if ( gPave > 0.004 ) {
   // plate faces: two-tone sintered grey, a few slabs laid down as darker repair stock
   float tone = rsbHash( id );
   float repair = step( 0.86, rsbHash( id + 11.3 ) );
-  vec3 slab = mix( vec3( 0.86, 0.88, 0.96 ), vec3( 1.10, 1.05, 0.99 ), tone );
-  slab *= mix( 1.0, 0.72, repair );
+  vec3 slabCell = mix( vec3( 0.86, 0.88, 0.96 ), vec3( 1.10, 1.05, 0.99 ), tone );
+  slabCell *= mix( 1.0, 0.72, repair );
+  // Everything above is keyed to the plate's cell id, so it is a hard-edged random mosaic on a 2.6 m
+  // axis-aligned lattice — and until now it was the one slab term with no distance falloff at all.
+  // Measured for this frame: the rover's own ground spanned 0.10..0.29 m per pixel out to 40 m, so a
+  // plate was 9..26 pixels wide, and at that size the eye stops seeing grooves and sees only the
+  // mosaic — a field of floating tiles, which is what the whole paved interior read as. A real deck
+  // 30 m away is one surface whose tone is the *mean* of its plates, so the mosaic converges to that
+  // mean (0.98 * the 14 % repair stock's 0.96) as gSeam closes, and the deck keeps its colour.
+  slabCell = mix( vec3( 0.941 ), slabCell, gSeam );
+  vec3 slab = slabCell;
   // Diamond tread, faint, only legible at driving distance — and it has to be *told* that. A hard step()
   // on a 0.76 m lattice is about the most alias-primitive thing a shader can write: unresolved, it beats
   // against the pixel grid into moiré exactly like the sand ripple did. Resolved the same way, and
@@ -357,10 +443,16 @@ if ( gPave > 0.004 ) {
   // grid of glowing orange dashes rather than shadowed seams.
   float silt = smoothstep( 0.30, 0.62, rsbNoise( vWP.xz * 1.1 ) );
   vec3 siltC = vec3( 0.072, 0.046, 0.032 );
-  diffuseColor.rgb = mix( diffuseColor.rgb, siltC, joint * gPave * ( 0.42 + silt * 0.34 ) * mix( 0.55, 1.0, gSeam ) );
+  // The floor here used to be 0.55, so a groove kept more than half its contrast after gSeam had
+  // decided it could no longer be drawn — which is how an unresolved joint lattice ends up reading as
+  // permanent grout. What is left below is a deliberate, small aggregate darkening: a deck covered in
+  // sawn joints really is a little darker and dustier than a monolithic slab.
+  diffuseColor.rgb = mix( diffuseColor.rgb, siltC, joint * gPave * ( 0.42 + silt * 0.34 ) * mix( 0.16, 1.0, gSeam ) );
   // dust drifts in off the dunes and lies along the downwind edge of each plate — pale, unlike the
-  // joint filler, which is scoured regolith packed into a shadowed groove
-  float edge = smoothstep( 0.30, 0.47, f.y * 0.7 + f.x * 0.3 + 0.35 ) * ( 1.0 - joint );
+  // joint filler, which is scoured regolith packed into a shadowed groove. Cell-keyed like the plate
+  // tone, so it fades with it: a band that sits at a fixed offset inside a 2.6 m square is a tell at
+  // any range where the square itself is only a few pixels.
+  float edge = smoothstep( 0.30, 0.47, f.y * 0.7 + f.x * 0.3 + 0.35 ) * ( 1.0 - joint ) * gSeam;
   diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.26, 0.185, 0.125 ), edge * gPave * silt * 0.34 );
 
   // Painted deck furniture: a taxi centreline and shoulder stripes down every road, and an
@@ -379,11 +471,15 @@ if ( gPave > 0.004 ) {
   // relief: tilt each slab a hair off-level, then fold the bevelled groove walls into the normal.
   // The slope lives where the joint smoothstep transitions, not in its centre, so the wall term
   // peaks mid-bevel and the plate faces stay flat.
-  float tx = clamp( ( a.x - ( w - hw.x ) ) / ( 0.030 + 2.0 * hw.x ), 0.0, 1.0 );
-  float ty = clamp( ( a.y - ( w - hw.y ) ) / ( 0.030 + 2.0 * hw.y ), 0.0, 1.0 );
-  vec2 wall = vec2( 6.0 * tx * ( 1.0 - tx ) * sign( f.x ), 6.0 * ty * ( 1.0 - ty ) * sign( f.y ) );
+  float tx = clamp( ( a.x - ( w - hw.x ) ) / ( 0.005 + 2.0 * hw.x ), 0.0, 1.0 );
+  float ty = clamp( ( a.y - ( w - hw.y ) ) / ( 0.005 + 2.0 * hw.y ), 0.0, 1.0 );
+  vec2 wall = vec2( 6.0 * tx * ( 1.0 - tx ) * sign( f.x ) * jAmp.x, 6.0 * ty * ( 1.0 - ty ) * sign( f.y ) * jAmp.y );
   vec2 tilt = vec2( rsbHash( id + 1.7 ), rsbHash( id + 8.3 ) ) - 0.5;
-  gPaveN = ( wall * 0.62 + tilt * 0.055 ) * gPave * mix( 0.30, 1.0, gSeam );
+  // The old single 0.30 floor applied to both terms, and the tilt term is the one that must not have
+  // it: a per-plate random normal offset held at 30 % strength is literally the shading of a plate
+  // lattice, and it is the last thing standing once the albedo has converged. The groove wall keeps a
+  // floor — a deck of sawn plates really is a slightly broken surface at range — but the tilt goes.
+  gPaveN = ( wall * 0.62 * mix( 0.30, 1.0, gSeam ) + tilt * 0.055 * gSeam * gSeam ) * gPave;
   gPaveR = clamp( ( joint * 0.55 + stain * -0.45 + grit * 0.10 ) * gPave - paint * 0.34, -0.5, 0.6 );
 }
 `;
@@ -399,7 +495,19 @@ function applyPaving(mat) {
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, u);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aDeck;\nvarying float vDeck;\n' + PARS)
+      .replace('#include <common>', '#include <common>\nattribute float aDeck;\nvarying float vDeck;\n' + PARS + SAND_WARP)
+      .replace('#include <uv_vertex>', `#include <uv_vertex>
+  // The mesh uv *is* the world frame here: a 300 m plane on 26 tiles puts tile 13.0 at x=z=0, so
+  // re-deriving the coordinate from the vertex position lands on the same grid the geometry would
+  // have produced, and only the warp is new. That is what lets a drift use this exact expression and
+  // stay in register with the ground it is sitting on.
+  vec3 rsbVW = ( modelMatrix * vec4( position, 1.0 ) ).xyz;
+  #ifdef USE_MAP
+    vMapUv = rsbSandUv( vec2( rsbVW.x, -rsbVW.z ) );
+  #endif
+  #ifdef USE_NORMALMAP
+    vNormalMapUv = rsbSandUv( vec2( rsbVW.x, -rsbVW.z ) );
+  #endif`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
   vWP = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
   vPave = rsbMask( vWP.xz );
@@ -408,7 +516,7 @@ function applyPaving(mat) {
   // the sort of thing that costs an iGPU its frame budget.
   vDeck = aDeck;`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vDeck;\n' + PARS)
+      .replace('#include <common>', '#include <common>\nvarying float vDeck;\n' + PARS + SAND_WARP)
       .replace('#include <map_fragment>', `#include <map_fragment>
   // The 512² ripple tile spans 11.5 m, so its trains run from 0.94 to 5.0 cycles per metre and the
   // 20 cm one falls below Nyquist as soon as a pixel covers more than half of it. Past that point
@@ -417,7 +525,8 @@ function applyPaving(mat) {
   // grain under the lens, flat rust on the horizon, which is exactly how a real dune field resolves.
   // The window is the Nyquist limit of the *fastest* train, not a taste cutoff: 3.2 cm per pixel in,
   // 11 cm out. The old 4.6–18.5 cm window was tuned to a spectrum whose coarsest ridge was 1.07 m.
-  gRipple = 1.0 - smoothstep( 0.0028, 0.0095, fwidth( vMapUv.x ) + fwidth( vMapUv.y ) );
+  gRipple = ( 1.0 - smoothstep( 0.0028, 0.0095, fwidth( vMapUv.x ) + fwidth( vMapUv.y ) ) )
+          * rsbRipEnv( vWP.xz );
   // (no vColor here — color_fragment multiplies the vertex tint in *after* this chunk)
   diffuseColor.rgb = mix( vec3( 0.92, 0.895, 0.88 ), diffuseColor.rgb, gRipple );
   gPave = rsbPave( vWP.xz, max( vPave, vDeck ) );
@@ -600,7 +709,7 @@ export async function createRocks(scene, avoid = []) {
     const a = rand() * Math.PI * 2;
     const r = 26 + Math.pow(rand(), 0.62) * (SCATTER_R - 26);
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (pavedAt(x, z) > 0.02) continue;              // no boulder on engineered ground
+    if (gradedAt(x, z) > 0.02) continue;             // no boulder on engineered ground
     if (surfaceSlope(x, z) > 0.5) continue;          // one clinging to a 27° face reads as a mistake
     const name = BAG[Math.floor(rand() * BAG.length)];
     const spec = RIM_ROCK[name];

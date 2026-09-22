@@ -6,16 +6,21 @@ import { loadModel, cloneModel } from './assets.js';
 import { RIM_ROCK } from './rim_rock.js';
 import { mergeInto } from './merge.js';
 
-// The dune field is one 512² tile repeated 26× over 300 m, so at 2.2 cm per texel it carries every
-// grain the player drives through. A normal map alone was not enough: on a roughness-0.94 diffuse
-// surface under a near-overhead sun, ripple normals barely change the shading, so the ground still
-// read as a painted sheet. Real sand ripples show up because the crests are dry, coarse and
+// The dune field is one 512² tile repeated SAND_TILES× over 300 m, so at 2.2 cm per texel it carries
+// every grain the player drives through. A normal map alone was not enough: on a roughness-0.94
+// diffuse surface under a near-overhead sun, ripple normals barely change the shading, so the ground
+// still read as a painted sheet. Real sand ripples show up because the crests are dry, coarse and
 // sun-bleached while the troughs hold finer, darker, wind-scoured material — an *albedo* signal.
 // Both maps are derived from one height field so the light and the colour always agree.
 //
 // The wave trains use integer wave-vector components over the tile, which is what makes the field
 // exactly periodic: a non-tiling seam repeated 26× across the world shows up as dead-straight
 // lines, and an albedo seam is far more visible than a normal one.
+const SAND_TILES = 26;
+// One tile of the ripple field, in metres. Anything that wants to *continue* the desert's pattern —
+// a storm drift, a scoured bank — has to sample at this spacing, and with its v axis running along
+// −z, because the terrain plane is rotated about X and that is the direction its uv ends up in.
+export const SAND_TILE_M = TERRAIN.size / SAND_TILES;
 export function makeSandDetail(size = 512) {
   // All six trains run within ±6° of one another. Crossing them at wide angles — the obvious
   // thing to reach for — weaves a diamond lattice that reads as carpet, not sand; wind lays ripples
@@ -80,7 +85,7 @@ export function makeSandDetail(size = 512) {
     g.putImageData(img, 0, 0);
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(26, 26);
+    t.repeat.set(SAND_TILES, SAND_TILES);
     t.anisotropy = 8;
     return t;
   };
@@ -148,6 +153,63 @@ export function makeSandDetail(size = 512) {
   });
   map.colorSpace = THREE.SRGBColorSpace;
   return { map, normalMap };
+}
+
+// The tile is forged once and handed to everything made of the same sand — the dune field, and any
+// drift a storm piles up. Two independent calls would upload a second 512² pair and the two would
+// fall out of register the moment either builder was touched.
+let sandTile;
+export function sandDetail() { return sandTile || (sandTile = makeSandDetail()); }
+
+// ─── a drift is the desert's own sand, moved ───
+// Storm cover used to be a flat-shaded sphere in a hand-picked ochre, and it read as programmer art
+// for two independent reasons, both fixed in the shading. The colour sat ~0.48 linear against a
+// terrain palette whose brightest crest is 0.178, so a mound rendered as a glaring pancake three
+// stops above the desert it was made of. And it carried none of the ripple language, so the ground's
+// crest lines simply stopped dead at the mound's edge — a pile of sand with no grain is a sticker.
+// Sampling the terrain's tile in WORLD space continues those lines across the junction, and it is the
+// only way to do it here: main.js dresses every lens by scaling the mesh from its cover depth, so a
+// UV baked into the geometry would stretch along with the drift.
+export function makeDriftMaterial() {
+  const { map, normalMap } = sandDetail();
+  const mat = new THREE.MeshStandardMaterial({
+    // A *pile* of fresh dust is not brighter than the desert it came from. The airborne film is: a
+    // coat of fines catching the sun head-on reads pale, and that ochre is correct for panels and
+    // for the particle pools. Volume is a different object, and it has to live in the ground's range.
+    color: SAND_C.clone().multiplyScalar(1.06),
+    roughness: 0.97, metalness: 0.0, map, normalMap,
+  });
+  mat.name = 'drift_sand';   // surface_detail.js: no panel seams and no rivets on a sandpile
+  mat.normalScale.set(1, 1);
+  const S = 1 / SAND_TILE_M;
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      // uv_vertex runs *before* begin_vertex, so `transformed` does not exist yet here; `position`
+      // already does, and a drift is never instanced.
+      .replace('#include <uv_vertex>', `#include <uv_vertex>
+  vec3 rsbDrift = ( modelMatrix * vec4( position, 1.0 ) ).xyz;
+  #ifdef USE_MAP
+    vMapUv = vec2( rsbDrift.x, -rsbDrift.z ) * ${S.toFixed(6)};
+  #endif
+  #ifdef USE_NORMALMAP
+    vNormalMapUv = vec2( rsbDrift.x, -rsbDrift.z ) * ${S.toFixed(6)};
+  #endif`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nfloat gDrift = 1.0;')
+      .replace('#include <map_fragment>', `vec3 rsbDriftBase = diffuseColor.rgb;
+  #include <map_fragment>
+  // The same Nyquist window the terrain fades its ripples with, so a drift never keeps grain after
+  // the desert beside it has lost theirs to the mip chain.
+  gDrift = 1.0 - smoothstep( 0.0028, 0.0095, fwidth( vMapUv.x ) + fwidth( vMapUv.y ) );
+  diffuseColor.rgb = mix( rsbDriftBase * vec3( 0.92, 0.895, 0.88 ), diffuseColor.rgb, gDrift );`)
+      .replace('#include <normal_fragment_maps>', `#ifdef USE_NORMALMAP_TANGENTSPACE
+  vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
+  mapN.xy *= normalScale * gDrift;
+  normal = normalize( tbn * mapN );
+#endif`);
+  };
+  mat.customProgramCacheKey = () => 'rsb-drift-sand';
+  return mat;
 }
 
 // ─── paved ground: pads and roads are engineering surfaces, not sand with a tint ───
@@ -456,7 +518,7 @@ export function createTerrain(scene) {
   const mat = new THREE.MeshStandardMaterial({
     vertexColors: true, roughness: 0.94, metalness: 0.0,
   });
-  const detail = makeSandDetail();
+  const detail = sandDetail();
   mat.map = detail.map;
   mat.normalMap = detail.normalMap;
   // The map now arrives with its slopes already calibrated, so the scale is a taste knob rather than

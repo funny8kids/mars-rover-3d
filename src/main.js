@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { QUALITIES, ZONES, START, SAMPLE_COUNT, ISLAND } from './config.js';
+import { QUALITIES, ZONES, START, ISLAND } from './config.js';
 import { createSky } from './world/sky.js';
 import { createTerrain, createRocks, createStones } from './world/terrain.js';
 import { Environment } from './world/environment.js';
@@ -16,7 +16,7 @@ import { createSkidMarks } from './fx/skids.js';
 import { GameAudio } from './audio/audio.js';
 import { UI, fmtTime } from './ui.js';
 import { createMapChart } from './ui/chart.js';
-import { t, mountLangButton, onChange } from './i18n.js';
+import { t, getLang, mountLangButton, onChange } from './i18n.js';
 import { STREETS } from './world/plan.js';
 
 const $ = id => document.getElementById(id);
@@ -63,7 +63,7 @@ const GRID_COUNT = Object.values(ZONES).filter(z => z.teleport).length - 1;
 const missions = [
   { id: 'grid', text: '重启基地电网 {n}/{total} · 开上各区光台并保持', n: 0, total: GRID_COUNT, done: false },
   { id: 'leak', text: '修复储罐区泄漏 · 靠近白雾长按 E', done: false },
-  { id: 'samples', text: '采集火星样本 {n}/{total} · 驶近发光信标', n: 0, total: SAMPLE_COUNT, done: false },
+  { id: 'samples', text: '采集火星样本 {n}/{total} · 驶近发光晶体，沙暴会改写样本点', n: 0, total: 0, done: false },
   { id: 'watch', text: '返回发射观礼台 · 见证星舰升空', done: false },
 ];
 let activeMission = 0, leakFixed = false, repairHold = 0, samplesTaken = 0;
@@ -199,7 +199,7 @@ function drawTeleMap() {
   // information the fiction says they still have.
   chart.draw({
     x: phys.x, z: phys.z, yaw: phys.yaw, time: elapsed,
-    teleports: base.teleports, padHere, objective: obj, samples: nav.blind ? [] : base.samples,
+    teleports: base.teleports, padHere, objective: obj, samples: nav.blind ? [] : liveSamples(),
     danger: leakFixed ? null : { x: base.leakPoint.x, z: base.leakPoint.z, r: 15 },
   });
 }
@@ -250,6 +250,14 @@ async function boot() {
   createStones(scene);
   // the hub tap is the always-live mains feed; every other district starts blacked out
   for (const r of base.gridRigs) { r.online = r.key === 'hub'; r.power = r.online ? 1 : 0; r.tp.online = r.online; }
+  // The sample mission's denominator is however many crystals the world actually left above ground at
+  // boot — the storm ledger adds to it later. Counting them beats keeping a constant in sync with the
+  // site list by hand: nine anchors are authored, three are deliberately buried, and a hard-coded
+  // total would go stale the first time a masked site surfaces.
+  missions[2].total = liveSamples().length;
+  // A buried site is dressed, not switched off: its sand mound has to be in the very first frame,
+  // because the mound is what the player later watches the wind take away.
+  base.samples.forEach(dressSample);
   UI.gridInit(base.teleports);
   setBar(74, '装配漫游车 RD-6 …'); await raf();
   rover = await createRover(scene);
@@ -401,7 +409,7 @@ function advanceMission() {
   renderMissions();
   const id = mAct();
   if (id === 'leak') { UI.toast('▸ 新任务：储罐区检测到推进剂泄漏，靠近白雾长按 E'); audio.radio('beep'); }
-  if (id === 'samples') { UI.toast(`▸ 新任务：采集 ${SAMPLE_COUNT} 块火星样本（发光信标处）`); audio.radio('beep'); }
+  if (id === 'samples') { UI.toast(`▸ 新任务：采集 ${missions[2].total} 块火星样本（发光晶体处）`); audio.radio('beep'); }
   if (id === 'watch') { launchArmed = true; UI.toast('▸ 任务链完成 — 发射窗口开启，返回观礼台'); audio.radio('good'); }
   if (activeMission >= missions.length) UI.arrowAngle(phys, null);
 }
@@ -413,7 +421,14 @@ function objectiveTarget() {
   }
   if (id === 'leak' && !leakFixed) return base.leakPoint;
   if (id === 'samples') {
-    const s = base.samples.find(s => !s.taken);
+    // The nearest site you can actually work, not the first one in the list: a front can put a drift
+    // over whichever crystal the chain would otherwise walk you to, and an arrow that parks you on a
+    // drift for two minutes is an arrow that is wrong. Buried ones stay in the running as a fallback,
+    // because uncovering one is a drive, not a wait.
+    const open = liveSamples().filter(s => !s.taken);
+    const nearest = list => list.reduce((a, s) => !a ||
+      Math.hypot(phys.x - s.x, phys.z - s.z) < Math.hypot(phys.x - a.x, phys.z - a.z) ? s : a, null);
+    const s = nearest(open.filter(x => x.buried < SAND.DEAD)) || nearest(open);
     return s ? new THREE.Vector3(s.x, surfaceAt(s.x, s.z) + 1, s.z) : null;
   }
   if (id === 'watch') return base.watchPos;
@@ -626,6 +641,120 @@ function weatherLabel(st) {
   return sky + cost;
 }
 
+// ───────────────────────── 覆沙账本：the storm rewrites the sample map ─────────────────────────
+// The second thing a front moves is not dust on a panel, it is the ground itself. A wall of wind
+// carrying sand does not drop it evenly. The island is a 240 m dome, and a dome is an obstacle: the
+// flow is squeezed against the flank it hits and accelerates there, so that face is stripped
+// (deflation); behind the crest the flow separates into a wake and loses its grip, so it lays its
+// load down (deposition) — which is why every dune on Mars has a falldeposit on its downwind side.
+//
+// So one crossing takes sand off the windward flank and piles it on the leeward one, and because
+// every event draws a new heading, which flank is which rotates with the weather.
+//
+// That is the whole mechanic: sample sites the fingers passed over get buried and stop yielding, and
+// sites the storm scoured clean come out of the sand — including three that were never on the map at
+// all, which is how a front can hand the mission *more* science than it hides. The rover is the only
+// thing that can move the sand on purpose, so driving fast around a buried site is the dig.
+// The first version of this ledger keyed its transport on the *derivative* of the airborne load —
+// rising dust meant scour, falling dust meant settle. A full 125 s crossing measured it as a dead
+// mechanism: every site ended at exactly the burial it started with. The two halves could never both
+// apply to one site, so each was pinned to whichever direction its own starting value allowed (0 can
+// only scour, 1 can only settle) and the clamp held it there. Keying on the load itself, not its
+// slope, removes the lock — and one front then buries and exposes at the same time. It did, but only
+// in the ledger: the *side* test was a two-point difference of the terrain over 13 m, and measured
+// across the nine sites at eight headings that pinned whole sites to one direction for every wind
+// there is — six could never be buried, two could never be uncovered. At that range the difference is
+// local pits and the cuts under graded pads, not weather; and once the clamp saturates the sign goes
+// binary, so a bad reading becomes a permanent sentence.
+const SAND = {
+  DEFLATE: 0.015, // per (unit of airborne load · s) on ground taking the wind
+  AGGRADE: 0.019, // per (unit of airborne load · s) in the island's lee — sand is quicker to drop than
+                  // to lift, which is why drifts win over ripples on a calm afternoon
+  WAKE: 100,      // m from the centreline of the island for the sheltering to be total. The dome radius
+                  // is 118, and the sample sites sit at 95–110: at this scale the commitment spreads
+                  // over the sites instead of saturating all of them, so one front buries a couple,
+                  // scours a couple, and leaves the crosswind pair roughly where they were.
+  DRIVE: 0.10,    // per (m/s of rover · s) of wheels passing, scaled by proximity
+  R: 9,           // m — the same reach as the dust lance; one idiom for "the rover works on this"
+  DEAD: 0.5,      // burial past this and the crystal is under the drift: no sample, and no map pin glow
+  SHOW: 0.05,     // below this a lens is thinner than the ripples it sits on, so it is not drawn
+};
+// Which flank of the island this ground is on, as −1…1 for the way the wind is blowing right now:
+// +1 is the face taking the weather, −1 is dead centre of the wake behind it, 0 is the crosswind
+// line through the middle where neither applies. One dot product against the storm's own axis, so the
+// test is monotone and every heading commits roughly half the island to each direction — which is the
+// property the terrain-difference version was measured not to have.
+function exposure(x, z) {
+  return THREE.MathUtils.clamp(-stormField.along(x, z) / SAND.WAKE, -1, 1);
+}
+// Put a site where its ledger says it should be: sunk into its own drift by that drift's height.
+function dressSample(s) {
+  const k = THREE.MathUtils.smoothstep(s.buried, 0.03, 0.85);
+  s.crystal.position.y = s.seatY - k * s.rise;
+  s.ring.material.opacity = 0.10 * (1 - k);
+  s.lens.visible = s.buried > SAND.SHOW;
+  // The lens mesh is authored at one front's mature deposit — a 4 m cap, 0.47 m of crest over a 0.43 m
+  // skirt — so this is only a growth curve. Plan and section do not scale together: a front that is
+  // still creeping over a rock veils it wide and low, and only the mature one plumps into a cap.
+  const foot = s.spread * (0.45 + 0.55 * k);
+  s.lens.scale.set(foot, 0.30 + 0.70 * k, foot);
+  // A deposition landform points with its weather: the crown sits downwind of the rock it buries, so
+  // the cap turns to whatever heading built it instead of keeping the yaw it was authored with. The
+  // ripple on it does not follow — terrain.js samples that in world space, which is the whole point.
+  // Until the first front has been drawn there is no wind to point with, and the site keeps the
+  // bearing it was built at; the world is dressed at boot, several steps before the weather exists.
+  if (stormField) s.lens.rotation.y = -stormField.heading + s.yawJit;
+  // Sand covers the rubble before it covers the crystal, so the site's own scree goes under the same
+  // front. Left at ground level it survives the burial as a collar of dark boulders on the flank of a
+  // mound, which reads as gravel somebody dumped rather than as the foot of a drift.
+  s.rubble.position.y = s.footY - 0.30 * k;
+}
+function updateSand(dt) {
+  for (const s of base.samples) {
+    if (s.taken) continue;
+    let b = s.buried;
+    // Wind strong enough to carry sand, at this exact ground: the storm's own finger pattern, so the
+    // same crossing scours one site and drops load on the next one hundred metres along.
+    const wind = stormField.local(s.x, s.z);
+    if (wind > 0.02) {
+      // Which side of the island's own wake this ground is on, for the way the wind is blowing right
+      // now. The dome shelters its leeward half, so any heading buries some sites and scours others:
+      // one front is always both a hiding and a revealing.
+      const p = exposure(s.x, s.z);
+      b += wind * dt * (p > 0 ? -SAND.DEFLATE * p : SAND.AGGRADE * -p);
+    }
+    // The wheels are the player's shovel. A rover driving past a lens kicks the loose cover off it,
+    // and does it faster the faster it goes — which is why the fix is a lap, not a wait.
+    const d = Math.hypot(phys.x - s.x, phys.z - s.z);
+    if (d < SAND.R && phys.speed > 1) b -= (1 - d / SAND.R) * phys.speed * dt * SAND.DRIVE;
+    s.buried = THREE.MathUtils.clamp(b, 0, 1);
+    dressSample(s);
+    if (!s.seen) {
+      // An emerged site joins the mission rather than the map: the count on the board has to be the
+      // number of sites the field can actually yield, or the last leg is unreachable by definition.
+      if (s.buried < SAND.DEAD) {
+        s.seen = true;
+        if (!missions[2].done) { missions[2].total++; renderMissions(); }
+        UI.toast(t('✦ 沙暴刮开了{site}的覆沙 — 新的样本点露头了').replace('{site}', siteName(s)));
+        audio.radio('good');
+      }
+      continue;
+    }
+    if (s.buried >= SAND.DEAD && !s.buriedWarned) {
+      s.buriedWarned = true;
+      UI.toast(t('⚠ 沙暴把{site}的样本埋住了 — 驶近绕几圈，用车轮把覆沙刮开').replace('{site}', siteName(s)));
+      audio.radio('bad');
+    } else if (s.buried < SAND.DEAD * 0.6) s.buriedWarned = false;
+  }
+}
+// Sites the player can see and drive to. An unemerged one is neither, and must not become a
+// navigation target or a connectivity obligation.
+const liveSamples = () => base.samples.filter(s => s.seen);
+// Named for the landmark it sits beside, never a compass word: config.js and the chart disagree about
+// which way is north, so "east rim" would be a coin flip. Chinese runs its words together, so only the
+// English join gets the space.
+const siteName = s => [t(s.near), t('外缘')].join(getLang() === 'zh' ? '' : ' ');
+
 function updateStormPlay(dt, st, inp) {
   // The moment the wall commits to walking is when a warning stops being about someday and starts
   // being about now, and the top bar is a small place to notice it. One line per front, where the
@@ -654,6 +783,7 @@ function updateStormPlay(dt, st, inp) {
   }
   roverFilm = THREE.MathUtils.clamp(
     roverFilm + st.stormF * dt * FILM.RIDE - phys.speed * dt * FILM.SCOUR, 0, 1);
+  updateSand(dt);
 
   const open = !!inp.keys.has('KeyF') && !photo.on && !paused && grid.battery > FILM.LANCE_MIN;
   stormPlay.lance = open;
@@ -1266,16 +1396,33 @@ function update(dt) {
   const aLvl = audio.level();
 
   // info zones
-  let zone = null, bestD = 1e9;
+  let zone = null, bestD = 1e9, nearSite = null;
   for (const z of base.infoZones) {
     if (z.r > 9000) continue;
     const d = Math.hypot(phys.x - z.pos[0], phys.z - z.pos[1]);
     if (d < z.r && d < bestD) { bestD = d; zone = z; }
   }
-  if (!zone) {
-    for (const s of base.samples) if (!s.taken && Math.hypot(phys.x - s.x, phys.z - s.z) < 10) zone = base.infoZones.find(z => z.key === 'samples');
+  const samplesZone = liveSamples().length ? base.infoZones.find(z => z.key === 'samples') : null;
+  for (const s of liveSamples()) {
+    const d = Math.hypot(phys.x - s.x, phys.z - s.z);
+    if (!s.taken && d < 10 && (!nearSite || d < nearSite.d)) nearSite = { s, d };
+  }
+  // A site under a drift outranks whatever pad it happens to stand beside. Six of the nine sit on a
+  // zone's outer edge, and the launch mount's circle swallows one of them: measured 2026-09-22, parked
+  // 5.2 m from a 70 %-buried crystal the card read 「星舰总装塔」 and said nothing about the refusal —
+  // which is the exact silence this slot exists to prevent. Nothing else may steal the panel, because
+  // an unburied site yields on contact and never needed the card at all.
+  if (nearSite && samplesZone) {
+    if (nearSite.s.buried >= SAND.DEAD) zone = samplesZone;
+    else if (!zone) zone = samplesZone;
   }
   if (zone !== lastInfoZone) { lastInfoZone = zone; UI.showInfo(zone); }
+  // The action slot is where a player looks for "why did nothing happen", and a buried site is the
+  // one case where nothing is supposed to happen. It reports the cover depth rather than the reward,
+  // and names the verb that fixes it, so the mechanic reads as weather and not as a broken trigger.
+  if (zone?.key === 'samples' && nearSite && nearSite.s.buried >= SAND.DEAD) {
+    UI.showInfo({ ...zone, key: 'samples', hudAction: `${t('覆沙')} ${Math.round(nearSite.s.buried * 100)}% · ${siteName(nearSite.s)} — ${t('绕圈开快些，用车轮把沙刮开')}` });
+  }
   if (zone?.key === 'tanks' && !leakFixed) zone.hudAction = `${t('靠近白色雾流，按住')} ${input.isTouch ? t('「交互」') : 'E'} ${t('修复')}`;
   if (zone?.key === 'watch' && launchArmed && launch.phase === 'idle') zone.hudAction = t('★ 已抵达观礼台 — 发射程序即将启动');
   // The light show was a discoverable-by-accident feature; it is the one thing to do at the pad
@@ -1296,14 +1443,17 @@ function update(dt) {
     } else if (!nearLeak) repairHold = 0;
   }
   if (mAct() === 'samples') {
-    for (const s of base.samples) {
-      if (!s.taken && Math.hypot(phys.x - s.x, phys.z - s.z) < 4.2) {
-        s.taken = true; s.group.visible = false; samplesTaken++;
-        missions[2].n = samplesTaken;
-        renderMissions(); audio.radio('beep'); UI.toast(`✦ 样本 ${samplesTaken}/${SAMPLE_COUNT} 已入库`);
-        for (let i = 0; i < 40; i++) fx.spark.emit(s.x, 1, s.z, (Math.random() - .5) * 8, 3 + Math.random() * 5, (Math.random() - .5) * 8, 0.8, 2);
-        if (samplesTaken >= SAMPLE_COUNT) { missions[2].done = true; advanceMission(); }
-      }
+    for (const s of liveSamples()) {
+      // Under a drift the crystal is not where the map put it, it is half a metre down the sand the
+      // front just dropped. It does not yield here — but the panel says why (see 覆沙 below), because
+      // the one thing that must never happen is the game going quiet on a player parked on the objective.
+      if (s.taken || s.buried >= SAND.DEAD || Math.hypot(phys.x - s.x, phys.z - s.z) >= 4.2) continue;
+      s.taken = true; s.group.visible = false; samplesTaken++;
+      missions[2].n = samplesTaken;
+      renderMissions(); audio.radio('beep');
+      UI.toast(`✦ 样本 ${samplesTaken}/${missions[2].total} 已入库`);
+      for (let i = 0; i < 40; i++) fx.spark.emit(s.x, 1, s.z, (Math.random() - .5) * 8, 3 + Math.random() * 5, (Math.random() - .5) * 8, 0.8, 2);
+      if (samplesTaken >= missions[2].total) { missions[2].done = true; advanceMission(); }
     }
   }
   if (launchArmed && launch.phase === 'idle' && mAct() === 'watch') {
@@ -1718,7 +1868,7 @@ function interactivePoints() {
   return [
     ...base.teleports.map(p => at('pad', p.x, p.z, 3.9, p.key)),
     ...(base.gridRigs || []).map(r0 => at('tap', r0.x, r0.z, LINK_RADIUS, r0.key)),
-    ...(base.samples || []).map((s0, i) => at('sample', s0.x, s0.z, 4.2, s0.id ?? i)),
+    ...liveSamples().map((s0, i) => at('sample', s0.x, s0.z, 4.2, s0.id ?? i)),
     at('leak', base.leakPoint.x, base.leakPoint.z, 12, 'tanks'),
     at('watch', base.watchPos.x, base.watchPos.z, 26, 'deck'),
   ];
@@ -1732,7 +1882,7 @@ window.__RSB = {
     grid.online = GRID_COUNT; grid.battery = 1; grid.dead = false;
     missions.forEach(m => { if (m.id !== 'watch') m.done = true; });
     missions[0].n = GRID_COUNT;
-    samplesTaken = SAMPLE_COUNT; missions[2].n = SAMPLE_COUNT;
+    samplesTaken = missions[2].total; missions[2].n = samplesTaken;
     advanceMission();
   },
   startStorm: () => { env?.toggleWeather(); },
@@ -1758,6 +1908,27 @@ window.__RSB = {
     lance: !!stormPlay.lance, aim: stormPlay.aim?.key || null,
     lost: +(filmGauge() * FILM.YIELD * 100).toFixed(1) }),
   setFilm: (array, self) => { base.gridRigs.forEach(r => { r.film = array; r.cleaned = false; }); roverFilm = self; },
+  // The sample map as the storm is rewriting it. `p` is which side of the island's wake the site sits
+  // on for the current heading — the number that decides whether the front scours there or drops its
+  // load — and `dust` is what the air currently holds over it. Together they are the whole ledger:
+  // with `buried` beside them, a verification can tell whether a site went under because the physics
+  // said so or in spite of it. `total` is the mission denominator, so growth is visible in the same read.
+  sites: () => base.samples.map(s => ({
+    id: s.id, at: [Math.round(s.x), Math.round(s.z)], site: siteName(s), buried: +s.buried.toFixed(3),
+    seen: s.seen, taken: s.taken, visible: s.group.visible, p: +exposure(s.x, s.z).toFixed(2),
+    dust: +stormField.local(s.x, s.z).toFixed(3), lens: s.lens.visible,
+    total: missions[2].total, n: samplesTaken })),
+  // Set the cover on one site (or every site) by hand. Two uses: framing the buried lens and the
+  // emerging crystal for a screenshot pair, and proving the collect gate and the wheel-scour are
+  // actually reading `buried` rather than tripping over something else.
+  bury(v, id = null) {
+    for (const s of base.samples) if ((id === null || s.id === id) && !s.taken) {
+      s.buried = THREE.MathUtils.clamp(v, 0, 1);
+      if (s.buried < SAND.DEAD) s.seen = true;
+      dressSample(s);
+    }
+    return this.sites();
+  },
   // The optical fix as the cockpit sees it *and* as the HUD says it: the chip's own text is the only
   // proof that a state reached the player rather than only the simulation, and the arrow's opacity is
   // the difference between "locked out" and "the arrow simply has no target yet".

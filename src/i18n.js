@@ -87,8 +87,8 @@ const EN = {
   '重启基地电网 {n}/{total} · 开上各区光台并保持':
     'Restore the base grid {n}/{total} · drive onto each pad and hold',
   '修复储罐区泄漏 · 靠近白雾长按 E': 'Seal the tank-farm leak · hold E in the white vent cloud',
-  '采集火星样本 {n}/{total} · 驶近发光信标':
-    'Collect Martian samples {n}/{total} · drive into the glowing beacons',
+  '采集火星样本 {n}/{total} · 驶近发光晶体，沙暴会改写样本点':
+    'Collect Martian samples {n}/{total} · drive to the glowing crystals; storms rewrite the map',
   '返回发射观礼台 · 见证星舰升空': 'Return to the viewing deck · watch Starship leave',
 
   // ── HUD, toasts, hints ──────────────────────────────────────────────────────────
@@ -128,6 +128,16 @@ const EN = {
     '⚠ {name} array is {pct}% dust-covered — output is down. Drive to the tap and hold F to blow it off',
   '✔ {name} 阵列已吹净 — 出力恢复，光台重新亮起来':
     '✔ {name} array blown clean — output restored, the tap is bright again',
+  // ── the third tax: the front rewrites the sample map, burying some sites and uncovering others ──
+  外缘: 'outer edge', 覆沙: 'Sand cover',
+  '沙暴会埋掉一些，也会刮出另一些': 'A storm buries some and uncovers others',
+  '每块岩石都是一页未读的书。风暴翻过一页，就会盖住另一页。':
+    'Every rock is an unread page. A storm turns one over and buries another.',
+  '绕圈开快些，用车轮把沙刮开': 'drive a fast lap around it — the wheels throw the sand off',
+  '✦ 沙暴刮开了{site}的覆沙 — 新的样本点露头了':
+    '✦ The storm has blown the cover off the {site} — a new sample site has surfaced',
+  '⚠ 沙暴把{site}的样本埋住了 — 驶近绕几圈，用车轮把覆沙刮开':
+    '⚠ The storm has buried the {site} sample — drive close and circle it; the wheels scour the cover off',
   // ── the second tax: suspended fines scramble the rover's optical fix ──
   // '#nav-chip-tag' is absent from STATIC on purpose, like the film tag above: the chip's own label
   // is a state (不稳 at 94 %, 失锁 below the blind line), so only UI.setNav is allowed to say it.

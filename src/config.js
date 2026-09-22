@@ -41,4 +41,3 @@ export const START = { pos:[0, -26, 0.6], heading: 0 };   // south of the gate, 
 export const SHIP_POS = [-60, -60];
 export const LEAK_POS = [86, 44];
 export const TERRAIN = { size: 300, seg: 220 };
-export const SAMPLE_COUNT = 6;

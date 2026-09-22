@@ -417,11 +417,24 @@ export function createMapChart({ side = 400, scale = 2 } = {}) {
       label(g, t('危险区'), X, Y - r - 8, { size: 9, color: RED, track: .18 });
     }
 
+    // A site lying under the sand the last front dropped is not "somewhere you have not been yet" —
+    // it is right there and unreachable until you scour it. The pin carries that: the crystal green
+    // drains toward the lens's own ochre as the cover rises, and past the work line the diamond goes
+    // hollow and dashed, which is the same sentence the sand dome on the ground is saying.
+    const mix = (a, b, k) => Math.round(a + (b - a) * k);
     for (const sm of st.samples || []) {
       const [X, Y] = P(sm.x, sm.z);
+      const k = Math.max(0, Math.min(1, (sm.buried || 0) / 0.5));
       g.save(); g.translate(X, Y); g.rotate(Math.PI / 4);
-      g.strokeStyle = sm.taken ? 'rgba(160,150,132,.45)' : GREEN;
-      g.fillStyle = sm.taken ? 'rgba(0,0,0,0)' : 'rgba(142,224,106,.32)';
+      if (sm.taken) {
+        g.strokeStyle = 'rgba(160,150,132,.45)'; g.fillStyle = 'rgba(0,0,0,0)';
+      } else if (k >= 1) {
+        g.strokeStyle = 'rgba(213,164,105,.95)'; g.fillStyle = 'rgba(185,138,92,.20)';
+        g.setLineDash([2.6, 2.2]);
+      } else {
+        g.strokeStyle = `rgba(${mix(142, 213, k)},${mix(224, 164, k)},${mix(106, 105, k)},.95)`;
+        g.fillStyle = `rgba(${mix(142, 205, k)},${mix(224, 158, k)},${mix(106, 101, k)},${(0.32 - 0.11 * k).toFixed(3)})`;
+      }
       g.lineWidth = 1.4; g.beginPath(); g.rect(-3.6, -3.6, 7.2, 7.2); g.fill(); g.stroke();
       g.restore();
     }

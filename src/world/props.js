@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { heightAt, claimLot, resetLots } from './height.js';
-import { ZONES, SHIP_POS, LEAK_POS, SAMPLE_COUNT } from '../config.js';
+import { ZONES, SHIP_POS, LEAK_POS } from '../config.js';
 import { mulberry32, vnoise } from '../utils/noise.js';
 import { loadModel, cloneModel } from './assets.js';
 import { mergeInto, noMerge } from './merge.js';
 import { applySurfaceDetail } from './surface_detail.js';
+import { makeDriftMaterial } from './terrain.js';
 import { coverDiscs, discLayout, streetEncroach, STREETS, STREET_HW, CORRIDOR, audit, sealCheck } from './plan.js';
 import { RIM_ROCK } from './rim_rock.js';
 
@@ -368,6 +369,9 @@ export async function buildBase(scene, quality) {
     // scree is *local regolith that the crystal broke*, so it is rust-dark with a mineral sheen,
     // not the pale grey-green the first pass had — that read as a plastic flowerpot
     crystalRubble: new THREE.MeshStandardMaterial({ color: 0x3d2a20, roughness: 0.9, metalness: 0.16, flatShading: true }),
+    // Freshly settled storm sand is terrain, so it is made of the terrain's own language: one
+    // MeshStandardMaterial whose ripple maps are sampled in world space, in terrain.js. See
+    // makeDriftMaterial for why the airborne film's ochre is the wrong colour for a pile of it.
   };
   // Deck furniture lamps join the hero lamps so the day/night cycle drives them instead of leaving
   // them at full emissive under a noon sun. The saturated cyan is the exception: even at the shared
@@ -1536,14 +1540,89 @@ export async function buildBase(scene, quality) {
     });
   }
 
-  // ══════════ SAMPLES — six glowing crystals around the island ══════════
+  // ══════════ SAMPLES — mineral sites a front rewrites ══════════
+  // Nine sites, six of them on the map at the start. The other three are under a sand lens and
+  // stay there until a front's deflation strips them (main.js's 覆沙账本), which is how a storm
+  // adds science as well as burying it. The first six keep the exact anchors and rand() order
+  // they always had, so every placement verified before this block still holds; the three new
+  // ones are appended so they only consume noise *after* the sixth.
   const samples = [];
   {
     const rand = mulberry32(1234);
-    const anchors = [[86, 60], [-80, 66], [95, -30], [-30, 95], [35, -92], [-90, -35]];
-    for (const [ax2, az2] of anchors) {
+    const SITES = [
+      [86, 60], [-80, 66], [95, -30], [-30, 95], [35, -92], [-90, -35],
+      [-46, -86], [-100, 14], [44, 92],   // masked: they surface where the wind takes, not where we hid them
+    ];
+    // A site is named for the district you drive past to reach it, never for a compass point:
+    // the map's N and the props' +z disagree by a mirror, and a wrong bearing in a toast is worse
+    // than no bearing. `near` is resolved against ZONES here, so it cannot drift from the map text.
+    const nearZone = (x, z) => Object.values(ZONES).filter(zz => zz.name)
+      .reduce((a, zz) => Math.hypot(x - zz.pos[0], z - zz.pos[1]) < Math.hypot(x - a.pos[0], z - a.pos[1]) ? zz : a);
+    // One shared hemisphere used to be every lens on the island, and it read as a flat orange balloon:
+    // no grain in the material and no landform in the form either. A drift is *deposition*, so this is
+    // authored as one — crown blown off-centre to the lee, a plan that scallops where the flow
+    // separated, and a foot that feathers out instead of ending on a knife edge. The mesh carries its
+    // own metres, because main.js's sand ledger has to grow and shrink the same landform every frame —
+    // rule B2's ground effect, and the reason it cannot be a baked GLB. The grain comes from terrain.js,
+    // which lays the desert's own ripple across it in world space.
+    const driftRnd = mulberry32(0xd11f);   // its own stream: the audited site anchors cannot move
+    // The skirt is deliberately deep: the cap's boundary has to stay underground on every azimuth of a
+    // dune field whose local relief over a 2 m radius measures up to 0.14 m, or the feathered foot ends
+    // as a visible lip. Measured with the 0.55 it replaced, the worst clearance was 2 cm on one site;
+    // at 0.92 the whole rim ring still buries itself by a hand's width at every cover level.
+    const APRON = 1.34, SKIRT = 0.92;      // how far the foot reaches, and how deep it buries itself
+    // Authored at its mature size, in metres: a full-grown cap is ~4.0 m along the wind, ~3.1 m across
+    // and 0.45 m of crest over a 0.43 m skirt. main.js then blends 0→1 over this shape, so the sand
+    // ledger is a growth curve and not a unit conversion. It used to be the conversion, and the
+    // constants in it multiplied out to an 8.3 × 5.9 × 1.0 m dune burying a fist-sized rock.
+    const FW = 1.65, SIDE = 1.28, HI = 0.47;
+    function makeDriftGeo() {
+      const RINGS = 14, SECT = 44, TAU = Math.PI * 2;
+      // +x is the wind axis: main.js yaws every cap to the heading of the front that built it.
+      const cx = 0.16 + driftRnd() * 0.10, cz = (driftRnd() - 0.5) * 0.14;
+      // three low harmonics: lobed, never star-like
+      const lobes = [[2, 0.055 + driftRnd() * 0.050, driftRnd() * TAU],
+                     [3, 0.034 + driftRnd() * 0.040, driftRnd() * TAU],
+                     [5, 0.014 + driftRnd() * 0.026, driftRnd() * TAU]];
+      const rho = (a) => 1 + lobes.reduce((m, [k, q, p]) => m + q * Math.sin(k * a + p), 0);
+      const pos = [], idx = [];
+      for (let j = 0; j <= RINGS + 3; j++) {
+        const u = j <= RINGS ? j / RINGS : 1 + (j - RINGS) * (APRON - 1) / 3;
+        for (let i = 0; i < SECT; i++) {
+          const a = i / SECT * TAU, r = u * rho(a);
+          const px = Math.cos(a) * r, pz = Math.sin(a) * r;
+          let y;
+          if (u <= 1) {
+            // the crown, measured from its own blown centre and renormalised against the lobed rim
+            const dx = px - cx, dz = pz - cz;
+            const t = Math.min(1, Math.hypot(dx, dz) / rho(Math.atan2(dz, dx)));
+            // cos^1.55 arrives on the rim along a horizontal tangent: a drift's foot is feathered sand
+            const crest = Math.max(0, Math.cos(t * Math.PI / 2)) ** 1.55;
+            y = crest * (0.88 + 0.24 * vnoise(px * 1.7 + 3, pz * 1.7 + 7));
+          } else {
+            y = -(u - 1) / (APRON - 1) * SKIRT;
+          }
+          pos.push(px * FW, y * HI, pz * SIDE);        // metres, and the wind axis is the long one
+        }
+      }
+      for (let j = 0; j < RINGS + 3; j++) {
+        for (let i = 0; i < SECT; i++) {
+          const a = j * SECT + i, b = j * SECT + (i + 1) % SECT;
+          const c = (j + 1) * SECT + i, d = (j + 1) * SECT + (i + 1) % SECT;
+          idx.push(a, b, c, b, d, c);              // windings face +y, which is up
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setIndex(idx);
+      geo.computeVertexNormals();
+      return geo;
+    }
+    const driftSand = makeDriftMaterial();
+    SITES.forEach(([ax2, az2], si) => {
       const x = ax2 + (rand() - 0.5) * 14, z = az2 + (rand() - 0.5) * 14;
       const y = heightAt(x, z);
+      const masked = si >= 6;
       const g4 = new THREE.Group(); g4.position.set(x, y, z);
       const c = cloneModel(models['crystal']);
       templateRoots.add(c);
@@ -1551,19 +1630,41 @@ export async function buildBase(scene, quality) {
       seat(c, 0.1);
       c.traverse(o => { if (o.isMesh) o.material = M.crystal; });
       noMerge(c); g4.add(c);
-      scree(x, z, c.scale.x * 1.9, rand() * 6.28);
+      const rubble = scree(x, z, c.scale.x * 1.9, rand() * 6.28);
       // No light column: a beam riding on top of a rock is the one cue that says "video-game
       // pickup". The mineral's own glow plus the ground ring carry it, and the map does the rest.
       const pad2 = new THREE.Mesh(new THREE.RingGeometry(1.05, 1.42, 28),
         new THREE.MeshBasicMaterial({ color: 0x8fdccf, transparent: true, opacity: 0.10, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
-      pad2.rotation.x = -Math.PI / 2; pad2.position.y = 0.07; g4.add(pad2);
+      pad2.rotation.x = -Math.PI / 2; pad2.position.y = 0.07; noMerge(pad2); g4.add(pad2);
+      // The cap is sunk a hand's width so its feathered foot always has ground to disappear into;
+      // a sand drift does not end on a knife edge, and this one's parent already sits on the survey.
+      const lens = new THREE.Mesh(makeDriftGeo(), driftSand);
+      const spin = rand() * 6.28;
+      lens.scale.setScalar(1); lens.position.y = -0.10;
+      lens.rotation.y = spin;
+      lens.castShadow = true; lens.receiveShadow = true;
+      noMerge(lens); g4.add(lens);
+      // The group is never hidden for a masked site: a buried mineral is a sand mound, which is
+      // exactly what the lens is, and hiding it would delete the only thing on the ground that says
+      // "dig here". main.js dresses every site from its ledger before the first frame, so the mound
+      // is already there when the player takes the wheel and the crystal underneath is not.
       G.add(g4);
-      samples.push({ group: g4, crystal: c, x, z, taken: false });
-    }
+      // Box3 reads world matrices, and g4 has not been rendered yet to fill its own in.
+      g4.updateMatrixWorld(true);
+      const rise = new THREE.Box3().setFromObject(c).max.y - heightAt(x, z);
+      // A masked site starts under a drift, not under a tomb: 0.75 is deep enough to hide the crystal
+      // and shallow enough that one scoured flank brings it back out inside a single crossing.
+      samples.push({
+        id: si, near: nearZone(x, z).name, group: g4, crystal: c, ring: pad2, lens, rubble, x, z,
+        taken: false, buried: masked ? 0.75 : 0, seen: !masked, buriedWarned: false,
+        seatY: c.position.y, rise: Math.max(0.9, rise), footY: rubble.position.y,
+        spread: 0.86 + (spin / 6.28) * 0.3, yawJit: (spin - Math.PI) * 0.14,
+      });
+    });
     infoZones.push({
       key: 'samples', pos: [0, 0], r: 9999, tag: 'FIELD SCIENCE',
-      name: '火星矿物样本', params: ['撞击玻璃 / 层状硅酸盐 / 橄榄石', '驾驶驶近即可自动采集', `集齐 ${SAMPLE_COUNT} 块解锁发射窗口`],
-      fact: '每块岩石都是一页未读的书。',
+      name: '火星矿物样本', params: ['撞击玻璃 / 层状硅酸盐 / 橄榄石', '驾驶驶近即可自动采集', '沙暴会埋掉一些，也会刮出另一些'],
+      fact: '每块岩石都是一页未读的书。风暴翻过一页，就会盖住另一页。',
     });
   }
 

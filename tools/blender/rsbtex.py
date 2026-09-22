@@ -445,6 +445,103 @@ def sign_face_maps(tag, w_m, h_m, title="DANGER", lines=(), pm=420.0,
     return maps, w_m, h_m
 
 
+def _plates(U, V, tile, n, seed):
+    """Wrapping Voronoi: the site id of the plate covering each pixel, and its distance in
+    metres to that plate's boundary.
+
+    Thresholded value noise is the obvious way to cut rock into flat panels and it produces a
+    camouflage pattern, because a noise field's isolines are smooth curves. Basalt jointing is a
+    network of straight cracks meeting at hard corners, which is what a Voronoi gives — and it
+    returns an id per pixel, so the map can give every facet its own step, tone and polish
+    instead of one continuous field pretending to be broken."""
+    rng = np.random.default_rng(seed)
+    P = rng.random((n, 2)) * tile
+    idd = np.zeros(U.shape, np.int64)
+    d1 = np.full(U.shape, 1e9)
+    d2 = np.full(U.shape, 1e9)
+    for k in range(n):
+        du = np.abs(U - P[k, 0]); du = np.minimum(du, tile - du)
+        dv = np.abs(V - P[k, 1]); dv = np.minimum(dv, tile - dv)
+        d = np.hypot(du, dv)
+        win = d < d1
+        d2 = np.where(win, d1, np.minimum(d2, d))
+        d1 = np.where(win, d, d1)
+        idd = np.where(win, k, idd)
+    return idd, (d2 - d1) * 0.5
+
+
+# ─────────────────────────── basalt boulder ───────────────────────────
+def boulder_maps(tag="rock_basalt", pm=240.0, tile=3.2, n_plates=26,
+                 tint=(0.74, 0.685, 0.635)):
+    """A clast of basalt, weathered from the inside out. Nothing here is modelled because a
+    rim boulder is read at 60 m and looked at at 6 m, and its whole job is to look like rock
+    rather than like a shaded ball:
+
+      * `plates` — cleavage. The surface is a mosaic of flat facets, each one a discrete step
+        in height and a discrete value in tone, separated by a 50 mm joint. This is the term
+        that kills the icosphere look, and it is why the field is a Voronoi rather than noise.
+      * `pit`    — saltation bites, thrown on a wrapping lattice so the tile has no seam.
+      * `mant`   — the mantle. Fines shelter in the joints and the pit floors, so the rock
+        lightens exactly where a brush could not reach.
+      * `rough`  — the joint *polishes* the facets it bounds: a wind-faceted face is smoother
+        than the matrix around it, and each plate takes its own degree of that.
+
+    The scale of the plate field is the whole argument, and the first forge of this map got it
+    wrong: 44 plates in a 1.6 m tile is a 0.24 m mosaic, and a 7 m boulder tiled 4.8 times
+    across renders as a football of grout lines. Real columnar jointing breaks a clast of this
+    size into a few tens of decimetre-scale faces, so the tile is 3.2 m and holds 26 plates —
+    0.6 m facets, two and a bit repeats across the biggest clast, which is what lets the eye
+    read one continuous stone rather than a wallpaper.
+    """
+    u_m = v_m = tile
+    w = h = int(round(tile * pm))
+    U, V = _mesh(w, h, pm)
+
+    idd, edge = _plates(U, V, tile, n_plates, 4211)
+    rng = np.random.default_rng(9042)
+    step = rng.random(n_plates) * 2 - 1        # each plate sits at its own level
+    hue = rng.random(n_plates) * 2 - 1         # ...and is its own shade, fresh to varnished
+    polish = rng.random(n_plates)              # ...and has caught its own amount of wind
+    joint = 1.0 - np.clip(edge / 0.050, 0.0, 1.0)
+
+    swell = _pnoise(w, h, 3, 3, 771) - 0.5
+    grit = _pnoise(w, h, int(tile / 0.035), int(tile / 0.035), 2909) - 0.5
+
+    # impact pits — centre, radius and depth per strike, distances taken wrapped so a pit that
+    # straddles the tile edge reassembles itself on the other side. Seven to a 3.2 m tile, and
+    # they are dimples in an exposed face, not a stipple pattern: at the density the first forge
+    # used they read as the surface's own texture and the rock looked like foam.
+    pit = np.zeros((h, w), float)
+    rp = np.random.default_rng(517)
+    for k in range(7):
+        cu, cv = rp.random(2)
+        rad = 0.09 + rp.random() * 0.21
+        du = np.abs(U - cu * tile); du = np.minimum(du, tile - du)
+        dv = np.abs(V - cv * tile); dv = np.minimum(dv, tile - dv)
+        q = np.hypot(du, dv) / rad
+        pit += np.where(q < 1.0, -(1.0 - q * q) * 0.9 + np.clip((q - 0.72) / 0.28, 0, 1) * 0.22, 0.0)
+    pit = np.clip(pit, -1.0, 0.35)
+
+    height = step[idd] * 0.62 + swell * 0.16 + grit * 0.10 + pit * 0.80 - joint * 0.42
+    mant = np.clip(0.30 + joint * 0.55 - pit * 0.55 + swell * 0.5, 0.0, 1.0)
+    # Basalt is dark, and the ring's boulders have to be the darkest thing on the island or they
+    # vanish into the dune they sit on. The joint reads dark because it is a shadowed fracture,
+    # the pit floors follow it down, and their lips stay fresh-broken and bright.
+    #
+    # The per-plate tone step is deliberately smaller than the per-plate height step. Height is
+    # what makes a facet: the normal map turns the same number into a lit face and a shaded one,
+    # and no albedo is needed. Putting the same amplitude into the albedo as well double-counts
+    # the geometry and is what made the first version check instead of stone.
+    tone = np.clip(96 + step[idd] * 13 + hue[idd] * 15 + swell * 22 - joint * 34
+                   + pit * 20 + mant * 22, 28, 176)
+    rough = np.clip(206 - polish[idd] * 46 + joint * 26 + mant * 18 + grit * 10, 96, 255)
+    maps = {"basecolor": _save(np.dstack([tone * tint[0], tone * tint[1], tone * tint[2]]),
+                               tag + "_col"),
+            "rough": _save(rough, tag + "_rgh"),
+            "normal": _save(height_to_normal(height, 8.0), tag + "_nrm")}
+    return maps, u_m, v_m
+
+
 PANELS = {
     # Every tint is baked into the map: the exporter carries a multiply chain as nothing.
     "crew_paint":  lambda: panel_maps(tag="crew_paint", tint=(0.905, 0.878, 0.816), base=224,
@@ -517,6 +614,10 @@ ALL = dict(PANELS, **{"steel": steel_maps, "tps": tps_maps,
        "hazard_face": lambda: sign_face_maps("hazard_face", 2.20, 1.10, title="DANGER",
                                              lines=("PROPULSION LEAK · BOG RETURN 3",
                                                     "FLAMMABLE · NO ENTRY · 5 m")),
+       # The rim rampart's basalt. 230 px/m over a 1.6 m field is 368 px: a boulder is a single
+       # rounded mass, so unlike a wall of panels it needs no fine detail to read — it needs the
+       # cleavage and the pits at the right scale, and the maps get stretched across it by uv_cube.
+       "rock_basalt": boulder_maps,
        })
 
 

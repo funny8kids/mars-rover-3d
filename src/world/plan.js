@@ -116,6 +116,59 @@ export function audit(items) {
   return { blocks, tight, intrusions };
 }
 
+// Does a ring of discs actually close? `audit` cannot answer this for the crater rampart: its discs
+// are deliberately one object and deliberately interpenetrate, so every pair is exempt by the rule
+// above. The question that matters is the one the exemption throws away — is there any path a rover
+// centre can take from inside the ring to outside it. Flood the annulus over the cells no padded
+// disc covers, starting from the inner edge; anything that reaches the outer edge is a hole.
+// Cell size is the test's resolution (≈1.4 m of arc at the inner edge), so this is a cross-check on
+// the placement arithmetic rather than a replacement for it — it catches a mis-sequenced ring, not
+// a 40 cm slot.
+export function sealCheck(discs, { r0 = 104, r1 = 130, body = 1.6, na = 480, nr = 28 } = {}) {
+  const TAU = Math.PI * 2;
+  const open = new Uint8Array(na * nr);
+  const dr = (r1 - r0) / nr;
+  for (let j = 0; j < nr; j++) {
+    const r = r0 + (j + 0.5) * dr;
+    for (let i = 0; i < na; i++) {
+      const th = (i / na) * TAU;
+      const x = Math.cos(th) * r, z = Math.sin(th) * r;
+      let blocked = false;
+      for (const d of discs) {
+        const dx = x - d.x, dz = z - d.z;
+        if (dx * dx + dz * dz < (d.r + body) * (d.r + body)) { blocked = true; break; }
+      }
+      open[j * na + i] = blocked ? 0 : 1;
+    }
+  }
+  // BFS from the inner edge outwards; `i` wraps, `j` does not.
+  const seen = new Uint8Array(na * nr);
+  const queue = [];
+  for (let i = 0; i < na; i++) if (open[i]) { seen[i] = 1; queue.push(i); }
+  let outer = 0;
+  const reachOuter = new Uint8Array(na);
+  for (let q = 0; q < queue.length; q++) {
+    const c = queue[q], i = c % na, j = (c - i) / na;
+    if (j === nr - 1) { outer++; reachOuter[i] = 1; }
+    const nb = [((i + 1) % na) + j * na, ((i - 1 + na) % na) + j * na];
+    if (j + 1 < nr) nb.push(i + (j + 1) * na);
+    if (j > 0) nb.push(i + (j - 1) * na);
+    for (const n of nb) if (open[n] && !seen[n]) { seen[n] = 1; queue.push(n); }
+  }
+  // Widest contiguous run of leaked angles, in metres of arc at the outer edge.
+  let run = 0, widest = 0;
+  for (let k = 0; k < na * 2 && run <= na; k++) {
+    if (!reachOuter[k % na]) { run = 0; continue; }
+    run++; widest = Math.max(widest, Math.min(run, na));
+  }
+  const holes = (() => {
+    let n = 0;
+    for (let i = 0; i < na; i++) if (reachOuter[i] && !reachOuter[(i - 1 + na) % na]) n++;
+    return n;
+  })();
+  return { closed: outer === 0, holes, widest_m: +(widest / na * TAU * r1).toFixed(1) };
+}
+
 export function distToSeg(px, pz, a, b) {
   const dx = b[0] - a[0], dz = b[1] - a[1];
   const t = Math.max(0, Math.min(1, ((px - a[0]) * dx + (pz - a[1]) * dz) / (dx * dx + dz * dz || 1)));

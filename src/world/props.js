@@ -5,7 +5,8 @@ import { mulberry32, vnoise } from '../utils/noise.js';
 import { loadModel, cloneModel } from './assets.js';
 import { mergeInto, noMerge } from './merge.js';
 import { applySurfaceDetail } from './surface_detail.js';
-import { coverDiscs, discLayout, streetEncroach, STREETS, STREET_HW, CORRIDOR, audit } from './plan.js';
+import { coverDiscs, discLayout, streetEncroach, STREETS, STREET_HW, CORRIDOR, audit, sealCheck } from './plan.js';
+import { RIM_ROCK } from './rim_rock.js';
 
 // ─── RED STARBASE · compact diorama ───
 // One ~110 m island, six readable landmarks, everything hand-placed.
@@ -33,7 +34,7 @@ export async function buildBase(scene, quality) {
   const HERO = ['habitat_dome', 'hab_link', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
     'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'reactor_tap', 'lox_stand', 'roadster', 'lamp',
     'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut', 'barrier_kit', 'flag_mast',
-    'hazard_sign', 'telemetry_board', 'feeder_pillar'];
+    'hazard_sign', 'telemetry_board', 'feeder_pillar', 'rim_rock'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA',
     'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
@@ -194,7 +195,10 @@ export async function buildBase(scene, quality) {
   // on their own. Baking would sweep every mesh up into the scene root and leave `post` and `bay`
   // empty shells; the run that clones them then instals nothing. Its own parts still collapse,
   // one batch per material, when the assembled barrier run is merged later.
-  const keepsParts = new Set(['crystal', 'barrier_kit']);
+  // `rim_rock` is a third of the same kind, and the reason is harder: its three nodes are
+  // alternative clasts, and each one's collision discs in rim_rock.js are measured about *that
+  // node's* origin. Baking the kit into one mesh would delete the nodes the rampart clones from.
+  const keepsParts = new Set(['crystal', 'barrier_kit', 'rim_rock']);
   for (const [name, root] of Object.entries(models)) {
     if (root && !keepsParts.has(name)) mergeInto(root);
   }
@@ -386,17 +390,17 @@ export async function buildBase(scene, quality) {
     chipGeo.computeVertexNormals();
   }
   const screeRnd = mulberry32(0x5eed);
-  const scree = (x, z, s, ry, parent) => {
+  const scree = (x, z, s, ry, parent, n = 16, mat = M.crystalRubble) => {
     const grp = new THREE.Group();
     grp.position.set(x, heightAt(x, z), z);
     grp.rotation.y = ry;
     // Fracture debris is densest right at the source and thins out fast; an even scatter out to 3 m
     // reads as a gravel field rather than the foot of a crystal.
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < n; i++) {
       const a = screeRnd() * Math.PI * 2;
       const rad = (0.30 + screeRnd() * 0.42) * s;
       const dx = Math.cos(a) * rad, dz = Math.sin(a) * rad;
-      const m = new THREE.Mesh(chipGeo, M.crystalRubble);
+      const m = new THREE.Mesh(chipGeo, mat);
       const cs = (0.055 + screeRnd() * 0.10) * s;
       m.position.set(dx, heightAt(x + dx, z + dz) - heightAt(x, z) - cs * 0.35, dz);
       m.scale.set(cs, cs * (0.6 + screeRnd() * 0.5), cs);
@@ -526,11 +530,13 @@ export async function buildBase(scene, quality) {
   };
   // The report the old layout could not produce: which districts touch each other, which ones are
   // standing in a carriageway, and how much of the drawn geometry is actually collision-bearing.
+  // `rim` is the one measurement `audit` structurally cannot make — see sealCheck in plan.js.
+  let rimReport = null;
   const auditPlan = () => {
     const a = audit(colliders.filter(c => c.floor === undefined)
       .map(c => ({ x: c.x, z: c.z, r: c.r, zone: c.zone, prop: c.prop, id: c.prop })));
     return { ...a, discs: colliders.length, lots: lots.length, zones: [...new Set(lots.map(l => l.id.split(':')[0]))],
-             pads: padAudit.filter(p => p.room < 0 || p.rimRoom < 0 || p.road > 0).length, padItems: padAudit };
+             rim: rimReport, pads: padAudit.filter(p => p.room < 0 || p.rimRoom < 0 || p.road > 0).length, padItems: padAudit };
   };
   const infoZones = [];
   const sparkPoints = [];
@@ -1778,6 +1784,95 @@ export async function buildBase(scene, quality) {
       // rover out of the very stand it had to park in.
       lot('grid-rig', rx, rz, 2.6, 2.6);
     }
+  }
+
+  // ══════════ RIM RAMPART — the playfield's edge is walled with basalt, not with a smoothstep ══════════
+  {
+    // A5's permanent-loss case had no object in it at all. Past ISLAND.radius the ground climbs 8.5 m
+    // to a crater rim and then drops 30 m into a void the terrain mesh does not even cover, so a
+    // rover that crests that lip carrying 4 m/s slides the far face — and there is no driving out of
+    // a 62° slope, which left the rescue loop re-dropping it onto the same flat nothing forever.
+    // Prevention has to be something the driver can see coming. A fence of 340 steel posts was the
+    // first idea and it is the wrong one: the edge of a crater is *talus*, and talus is also the only
+    // shape that stops a rover without looking like level design. So the lip is packed with clasts
+    // from `rim_rock` (tools/blender/build_rimrock.py), pitched around the ring so that each
+    // neighbour pair overlaps by a body width and a half past touching.
+    //
+    // The reason that asset exists at all is C3. Its footprint is authored *as* the discs exported to
+    // rim_rock.js and the mesh is swept off them, so the wall that stops the rover is literally the
+    // wall that draws — the builder measures the disagreement at 2–4 mm and fails the export over,
+    // where a hand-typed bounding disc lied by 331 mm and this section would have been invisible
+    // rubber walls again.
+    ZONE = 'rim';
+    const kit = models.rim_rock;
+    const RING_R = 117.0;         // the flat apron at the foot of the rim wall: the rise term is
+                                  // still exactly zero here, so no clast is seated on a scree face
+    const BODY = 1.6;             // physics.js pads every collider by precisely this much
+    const SEAL = 1.5;             // metres two neighbouring covers are driven *past* touching
+    const SEQ = ['mega', 'block', 'mega', 'slab'];   // widest first, so the wrap pair always closes
+    const clast = {};
+    for (const n of SEQ) clast[n] = kit.getObjectByName(n);
+    const basalt = Array.isArray(clast.mega.material) ? clast.mega.material[0] : clast.mega.material;
+    const ramp = new THREE.Group();
+    ramp.name = 'rim-rampart';
+    G.add(ramp);                  // deliberately not a `put` template root: the merge pass bakes the
+                                  // whole ring — clasts and talus — into one batch per material
+    const rnd = mulberry32(0x0a17);
+    const v = new THREE.Vector3();
+    const TAU = Math.PI * 2;
+    let th = 0, rocks = 0;
+    while (th < TAU - 1e-9 && rocks < 400) {
+      const name = SEQ[rocks % SEQ.length], spec = RIM_ROCK[name];
+      const ux = Math.cos(th), uz = Math.sin(th);
+      // Wobble along the radius only: the ring's pitch, and with it the seal, is tangential.
+      const rr = RING_R + (rnd() - 0.5) * 0.6;
+      const x = ux * rr, z = uz * rr, e = 2.6;
+      const hi = heightAt(x - ux * e, z - uz * e), ho = heightAt(x + ux * e, z + uz * e);
+      const ht = heightAt(x - uz * e, z + ux * e), hb = heightAt(x + uz * e, z - ux * e);
+      const pitch = Math.atan2(ho - hi, 2 * e), roll = Math.atan2(hb - ht, 2 * e);
+      const o = cloneModel(clast[name]);
+      // The base ring is authored 0.18 m below the node origin, and a flat base on a sampled chord
+      // still stands off the ground at its corners — so the steeper the seat, the deeper it buries.
+      o.position.set(x, heightAt(x, z) - 0.10 - 2.2 * Math.hypot(pitch, roll), z);
+      o.rotation.y = -th + (rnd() - 0.5) * 0.17;
+      o.rotateZ(pitch);           // the clone's own +X is radial and +Z tangential, so these are
+      o.rotateX(roll);            // pitches along the ring, not world axes tipped by the yaw
+      ramp.add(o);
+      // The discs are laid down *through the clone's matrix*: whatever transform drew the footprint
+      // is the transform that stops the rover, so the two cannot drift as the wobble changes.
+      o.updateMatrixWorld(true);
+      for (const [dx, dz, r] of spec.discs) {
+        v.set(dx, 0, dz).applyMatrix4(o.matrixWorld);
+        colliders.push({ x: +v.x.toFixed(2), z: +v.z.toFixed(2), r, prop: `rim:rampart#${rocks}`, zone: 'rim' });
+      }
+      // Its own broken-off chips at the foot: a 3 m boulder meeting a dune along one clean ellipse is
+      // a sticker. Also the only thing that can hide a seat that is a few centimetres off.
+      scree(x, z, spec.reachT * 1.35, rnd() * TAU, ramp, 7, basalt);
+      th += (spec.reachT + RIM_ROCK[SEQ[(rocks + 1) % SEQ.length]].reachT + 2 * BODY - SEAL) / RING_R;
+      rocks++;
+    }
+    // Warn the driver in the one language they read at speed. Deliberately sparse — eight boards
+    // around 735 m of rim is a hint, one every 12 m is a fence — and set back off the wall so the
+    // boards are not themselves a pinch point. The hubward aim is the leak board's convention: the
+    // exporter turns the authored +Y face into the app's −Z, so `atan2(x, z)` reads face-on from the
+    // middle of the island rather than showing the back legs.
+    let boards = 0;
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * TAU + 0.31;
+      const bx = Math.cos(a) * (RING_R - 8.2), bz = Math.sin(a) * (RING_R - 8.2);
+      if (samples.some(s => Math.hypot(s.x - bx, s.z - bz) < 11)) continue;
+      const bRy = Math.atan2(bx, bz);
+      beginProp(`rim-board${boards}`);
+      put('hazard_sign', bx, bz, 1, bRy, 0);
+      endProp({ legs: [[-0.72, 0, 0.55, 0.55], [0, 0, 0.55, 0.55], [0.72, 0, 0.55, 0.55]],
+                at: [bx, bz], ry: bRy });
+      boards++;
+    }
+    // `audit` exempts same-object overlaps, which is exactly right for an interlocking wall and
+    // completely blind to a hole in one. This is the measurement that replaces the check the
+    // exemption gave up: flood the annulus over every point a rover centre could hold, and if open
+    // ground still reaches the outside, the ring has a gap in it.
+    rimReport = { ...sealCheck(colliders.filter(c => c.prop.startsWith('rim:rampart'))), rocks, boards };
   }
 
   // Collapse the hand-built groups and the several hundred loose struts, tiles and crates placed

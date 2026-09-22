@@ -93,13 +93,20 @@ function recentre(root) {
   root.updateMatrixWorld(true);
 }
 
+// `rim_rock` opts out because it is a kit of *alternatives*: three sibling nodes that are each
+// cloned and placed on their own, with a collision table measured about each node's own origin.
+// Recentring moves every child by the union bbox's centre — harmless when a pack's parts travel
+// together, and a silent half-metre lie the moment they are placed separately. Everything else in
+// the library has been laid out under the recentre it gets, so the exemption stays name-specific.
+const NO_RECENTRE = new Set(['rim_rock']);
+
 // name may carry a subfolder prefix, e.g. 'kenney/space/hangar_largeA'
 export function loadModel(name) {
   if (!cache.has(name)) {
     cache.set(name, loader.loadAsync(`./assets/${name}.glb`).then((gltf) => {
       const root = gltf.scenes[0];
       unstub(root);
-      recentre(root);
+      if (!NO_RECENTRE.has(name.split('/').pop())) recentre(root);
       return root;
     }));
   }

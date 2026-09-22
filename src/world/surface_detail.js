@@ -56,10 +56,20 @@ const PARS = /* glsl */`
   #endif
 `;
 
-const PATCH = /* glsl */`
+// Two passes in one string, because only one of them is manufacturing.
+//
+// `panel` is the built world: joints on a 2.6 m module, a lipped seam, a rivet at each corner, and the
+// lower roughness of machined metal. `dust` is the weather, which lands on everything.
+//
+// Natural stone takes only the second. A panel joint and a module-corner rivet cast onto a boulder are
+// straight grey lines across a curved face, and raycasting the dune views proved this patch — not the
+// drift shader, not the terrain — was drawing the seamed "tent" facets all over the open desert.
+function patch(panel) {
+  return /* glsl */`
   {
     vec3 nrm = normalize( vRsbN );
     vec2 uv = rsbFace( vRsbW, nrm );
+    ${panel ? /* glsl */`
     float major = rsbGrid( uv, ${MODULE}, ${MODULE} * 0.011 );
     float minor = rsbGrid( uv, ${MODULE * 0.25}, ${MODULE} * 0.004 ) * 0.40;
     float joint = max( major, minor );
@@ -70,6 +80,7 @@ const PATCH = /* glsl */`
     diffuseColor.rgb += vec3( 0.085, 0.080, 0.074 ) * rsbLip( uv, ${MODULE} );
     diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.40, 0.41, 0.43 ), riv * 0.55 );
     diffuseColor.rgb *= 0.91 + grit * 0.16;
+    gRsbRough = 1.0 - joint * 0.34 - riv * 0.38 + grit * 0.09;` : ''}
 
     // Weathering: fine dust films every upward face, runoff streaks the sides.
     float dust = rsbNoise( uv * 2.1 + 7.0 ) * 0.65 + rsbNoise( uv * 7.3 ) * 0.35;
@@ -78,13 +89,16 @@ const PATCH = /* glsl */`
       clamp( nrm.y, 0.0, 1.0 ) * dust * 0.55 );
     float side = 1.0 - abs( nrm.y );
     diffuseColor.rgb *= 1.0 - side * smoothstep( 0.55, 0.96, rsbNoise( vec2( uv.x * 5.5, uv.y * 0.75 ) ) ) * 0.18;
-
-    gRsbRough = 1.0 - joint * 0.34 - riv * 0.38 + grit * 0.09;
   }
 `;
+}
+
+// Grown or broken, not built: no module, no fasteners. `rock_basalt` is the forged rim/clast kit, and it
+// is the only natural material in here — the drift sand has its own shader and is skipped above.
+const NATURAL = /^rock_basalt$/;
 
 const skip = (mt) => !mt || !mt.isMeshStandardMaterial || mt.transparent === true
-  || /^light_|glass|plant|leaf|crystal|pad_glow/.test(mt.name || '')
+  || /^light_|glass|plant|leaf|crystal|pad_glow|drift_/.test(mt.name || '')
   || (mt.emissive && (mt.emissive.r + mt.emissive.g + mt.emissive.b) / 3 * (mt.emissiveIntensity ?? 1) > 0.25);
 
 export function applySurfaceDetail(root) {
@@ -94,6 +108,7 @@ export function applySurfaceDetail(root) {
     for (const mt of (Array.isArray(o.material) ? o.material : [o.material])) {
       if (skip(mt) || seen.has(mt)) continue;
       seen.add(mt);
+      const natural = NATURAL.test(mt.name || '');
       const base = mt.onBeforeCompile;
       mt.onBeforeCompile = (shader, renderer) => {
         base?.(shader, renderer);
@@ -113,11 +128,14 @@ export function applySurfaceDetail(root) {
         vRsbN = normalize( mat3( modelMatrix ) * rsbNormal );`);
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\n' + VARY + PARS)
-          .replace('#include <color_fragment>', '#include <color_fragment>\n' + PATCH)
-          .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+          .replace('#include <color_fragment>', '#include <color_fragment>\n' + patch(!natural));
+        if (!natural) {
+          shader.fragmentShader = shader.fragmentShader
+            .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         roughnessFactor = clamp( roughnessFactor * gRsbRough, 0.04, 1.0 );`);
+        }
       };
-      mt.customProgramCacheKey = () => 'rsb-surface-detail';
+      mt.customProgramCacheKey = () => natural ? 'rsb-surface-dust' : 'rsb-surface-detail';
     }
   });
 }

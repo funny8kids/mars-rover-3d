@@ -1709,12 +1709,21 @@ export async function buildBase(scene, quality) {
     // has to sit on ground the model has never seen.
     const soot = new THREE.MeshStandardMaterial({ color: 0x2a2825, roughness: 0.72, metalness: 0.5 });
     ZONE = 'grid';
-    // A tap has to stand beside its pad, out of the carriageway, and clear of everything the
+    // The tap has to stand beside its pad, out of the carriageway, and clear of everything the
     // district already owns. It used to wear a hand-typed 4.4 m offset, which in the habitat put
     // the rig four metres inside a hangar. So it asks the plan for a free lot instead.
-    const siteFor = (px, pz, away, w, d) => {
+    //
+    // It must also stand outside the pad's own trigger circle. That circle is r 3.9 m and the rig's
+    // collision disc is r 1.84 m, so a lot on the ring drives the substation through the middle of
+    // the stand the pad is asking you to park in: measured at pad:industry, the rig at 3.90 m left
+    // 0.46 m of hull room at the centre and made the whole approach side illegal, which is what kept
+    // handing the connectivity audit an unstick instead of a park. minR keeps the disc clear of the
+    // ring by one body width, so every point inside the trigger circle stays drivable.
+    const TAP_STANDOFF = 3.9 + 1.84 + 1.6;
+    const siteFor = (px, pz, away, w, d, minR = 0) => {
       const legal = [], best = [];
       for (const rr of [3.9, 5.0, 6.3, 7.8, 9.5, 11.5]) {
+        if (rr < minR) continue;
         for (let i = 0; i < 16; i++) {
           const b = away + i * Math.PI / 8 - Math.PI;
           const x = px + Math.sin(b) * rr, z = pz + Math.cos(b) * rr;
@@ -1736,7 +1745,7 @@ export async function buildBase(scene, quality) {
     };
     for (const tp of teleports) {
       const rad = Math.hypot(tp.x, tp.z) || 1;
-      const site = siteFor(tp.x, tp.z, Math.atan2(tp.x / rad, tp.z / rad), 2.6, 2.6);
+      const site = siteFor(tp.x, tp.z, Math.atan2(tp.x / rad, tp.z / rad), 2.6, 2.6, TAP_STANDOFF);
       const rx = site.x, rz = site.z;
       const yaw = Math.atan2(tp.x - rx, tp.z - rz);
       // A substation is a building, so it takes a footing of its own like every other tap on the
@@ -1758,12 +1767,23 @@ export async function buildBase(scene, quality) {
       tap.traverse(shade);
       templateRoots.add(tap);          // already baked as a template; re-merging would copy it
       G.add(tap);
-      // cable run back to the pad so the two read as one installation — the ground falls away
-      // between the two bases, so each anchor has to be sampled where it actually lands
-      for (let i = 1; i <= 4; i++) {
-        const lz = -1.6 - (i / 5) * 2.0;
+      // The tap feeds its pad, and the run between them has to read as one installation from the
+      // road. The four 11 cm anchor blocks this replaces were invisible past a few metres. This is
+      // a duct now: sections sampled where they actually land, because the ground falls away between
+      // the two graded bases and a single rigid span would float mid-run or bury itself at an end.
+      // Both ends have to be anchored to something the eye can find, or the run reads as a random
+      // dash in the middle of the paving — so it starts at the transformer drum's own face and ends
+      // on the pad's bright apron, where dark-on-light carries it. The span is measured, not typed:
+      // the tap stands wherever the plan gave it a lot. Local +Z is the side the rig was yawed to
+      // face, which is its pad. Kept as primitives rather than authored because every section's
+      // height comes from a live terrain sample.
+      const ductFrom = 1.05, ductTo = Math.hypot(tp.x - rx, tp.z - rz) - 3.05;
+      const ductSpan = (ductTo - ductFrom) / 7;
+      for (let i = 0; i < 7; i++) {
+        const lz = ductFrom + (i + 0.5) * ductSpan;
         const wx = rx + Math.sin(rig.rotation.y) * lz, wz = rz + Math.cos(rig.rotation.y) * lz;
-        box(0.11, 0.13, 0.11, soot, 0, heightAt(wx, wz) + 0.06 - (rig.position.y), lz, rig);
+        box(0.52, 0.19, ductSpan * 0.96, soot, 0, heightAt(wx, wz) + 0.085 - (rig.position.y), lz, rig);
+        box(0.2, 0.06, 0.2, soot, 0, heightAt(wx, wz) + 0.205 - (rig.position.y), lz, rig);
       }
 
       const coreMat = new THREE.MeshStandardMaterial({ color: 0x101a1f, emissive: 0x4fe2ff, emissiveIntensity: 0, roughness: 0.2, metalness: 0.1 });

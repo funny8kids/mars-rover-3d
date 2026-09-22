@@ -91,6 +91,16 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 .grid-pip{width:30px;height:4px;border-radius:2px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.08);transition:.4s}
 .grid-pip.on{background:var(--cyan);border-color:var(--cyan);box-shadow:0 0 10px rgba(60,210,230,.8)}
 .grid-pip.link{background:var(--amber);border-color:var(--amber);box-shadow:0 0 12px rgba(255,150,50,.9);animation:pulse-batt .55s ease-in-out infinite}
+/* A storm's bill, kept beside the thing it costs: dust settled on the solar arrays and on the
+   rover's own panels. Ochre for the dirt, cyan for the moment the lance is blowing it off. */
+#film-row{margin-top:7px;display:flex;flex-direction:column;gap:4px;font-family:var(--mono)}
+#film-lance{display:none;font-size:9px;letter-spacing:.2em;color:var(--cyan);text-align:right}
+#film-row.lancing #film-lance{display:block;animation:pulse-batt .5s ease-in-out infinite}
+.film-line{display:flex;align-items:center;gap:7px;justify-content:flex-end;font-size:9px;color:#8d7a63;letter-spacing:.14em}
+.film-bar{position:relative;flex:0 0 92px;height:5px;border:1px solid rgba(255,255,255,.09);border-radius:3px;overflow:hidden;background:rgba(8,6,4,.6)}
+.film-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#7d5530,#d8a268);box-shadow:0 0 9px rgba(216,162,104,.5);transition:width .3s linear}
+#film-row.warn #film-array-fill{background:linear-gradient(90deg,#c9702a,#ffc17a);box-shadow:0 0 12px rgba(255,170,80,.8)}
+#film-row.lancing .film-bar i{background:linear-gradient(90deg,#2f9fb5,#8ff0ff);box-shadow:0 0 12px rgba(110,230,255,.7)}
 #topbar{position:absolute;top:14px;right:18px;display:flex;gap:14px;font-family:var(--mono);font-size:11px;color:#8a8478}
 #toast{position:absolute;top:64px;left:50%;transform:translateX(-50%);background:rgba(10,8,6,.8);border:1px solid var(--line);
   color:#ffd9a0;padding:10px 26px;border-radius:999px;letter-spacing:.15em;font-size:14px;opacity:0;transition:.4s;pointer-events:none!important;

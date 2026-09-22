@@ -36,6 +36,7 @@
       <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 驾驶（低重力漂移）</span>
       <span><kbd>空格</kbd> 手刹</span><span><kbd>E</kbd> 交互 / 修复</span>
       <span><kbd>P</kbd> 拍照模式</span><span><kbd>T</kbd> 切换天气</span><span><kbd>N</kbd> 快进至深夜</span>
+      <span><kbd>F</kbd> 吹扫积尘（耗电）</span>
       <span><kbd>R</kbd> 计时赛</span><span><kbd>Esc</kbd> 菜单</span>
     </div>
   </div>
@@ -58,6 +59,11 @@
   <div id="power-hud">
     <div id="battery-row"><span id="battery-tag">电力</span><div id="battery-bar"><i id="battery-fill"></i></div><span id="battery-pct">100%</span></div>
     <div id="grid-row"></div>
+    <div id="film-row" class="hidden">
+      <div id="film-lance">F · 吹扫中</div>
+      <div class="film-line"><span class="fl-tag" id="film-array-tag">阵列积尘</span><div class="film-bar"><i id="film-array-fill"></i></div></div>
+      <div class="film-line"><span class="fl-tag" id="film-rover-tag">车身积尘</span><div class="film-bar"><i id="film-rover-fill"></i></div></div>
+    </div>
   </div>
   <div id="topbar">
     <span id="tb-time"></span><span id="tb-weather"></span><span id="tb-quality"></span><span id="tb-fps"></span>
@@ -91,6 +97,7 @@
     <button id="t-brake">刹车</button>
     <button id="t-drift">漂移</button>
     <button id="t-inter">交互</button>
+    <button id="t-lance">吹扫</button>
   </div>
 </div>
 

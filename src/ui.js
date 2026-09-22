@@ -66,6 +66,22 @@ export const UI = {
       this.pips[k].classList.toggle('link', p > 0.02 && p < 0.99);
     }
   },
+  // The other half of the power HUD's story: 电力 is what the rover has, 积尘 is what the last
+  // storm took from it. The row hides itself while both surfaces are still clean so the corner
+  // stays quiet until weather has actually written a bill.
+  // { value, self, worst, lancing, warn, tag } — `value` is the array the bar is measuring, which
+  // narrows to the one under the lance; `worst` is the whole fleet's, and decides whether the row
+  // exists at all, so finishing one array never closes the ledger on the rest.
+  setFilm({ value, self, worst, lancing, warn, tag }) {
+    const row = $('film-row');
+    if (worst < 0.03 && self < 0.03) { row.classList.add('hidden'); return; }
+    row.classList.remove('hidden');
+    $('film-array-tag').textContent = tag;
+    $('film-array-fill').style.width = `${Math.round(value * 100)}%`;
+    $('film-rover-fill').style.width = `${Math.round(self * 100)}%`;
+    row.classList.toggle('warn', !!warn);
+    row.classList.toggle('lancing', !!lancing);
+  },
   setTop(time, weather, quality, fps) {
     $('tb-time').textContent = `LMT ${time}`;
     $('tb-weather').textContent = tx(weather);

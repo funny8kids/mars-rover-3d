@@ -43,7 +43,7 @@ export class StormField {
     this.speed = 0;              // wind speed, m/s
     this.gust = 0;               // 0..1 gust envelope target
     this.gustEnv = 0;            // gust envelope with the high-frequency wobble applied
-    this.dustLoad = 0;           // 0..1 deposited film — only washing removes it
+    this.dustLoad = 0;           // 0..1 island-wide deposit: softens the ground, is not the ledger
     this.enabled = true;
     this.pinned = false;         // QA holds one phase; see pin()
   }
@@ -68,6 +68,30 @@ export class StormField {
     this.trail = this.edge - 260;      // the slab depth the front is dragging behind it
     return this;
   }
+  // Queue the next front instead of rolling dice on it. `lead` is the seconds of warning the
+  // player gets before the leading edge starts walking across the island, so the mission chain can
+  // make a storm a deadline with a name — "复电四区，然后你有 100 秒" — rather than background noise.
+  arm(lead = 100) {
+    this.enabled = true; this.pinned = false;
+    this.phase = 'calm'; this.t = 0;
+    this.hold = Math.max(4, lead - HOLD.watch);
+    return this;
+  }
+
+  // What the HUD is allowed to claim about the weather. Not "storming: yes/no" but what is coming,
+  // in how long, and from which quarter — the three things that make a warning actionable. During
+  // calm there is no front yet, so the count runs down to the *alarm* instead of to an arrival.
+  outlook(focus) {
+    const alarm = this.phase === 'watch' || this.phase === 'front';
+    const eta = this.eta(focus.x, focus.z);
+    return {
+      phase: this.phase, alarm,
+      in: alarm ? Math.max(0, eta) : this.phase === 'calm' ? Math.max(0, this.hold - this.t) : 0,
+      bearing: (Math.atan2(this.wx, this.wz) * 180 / Math.PI + 360) % 360,
+      speed: this.speed, load: this.dustLoad,
+    };
+  }
+
   unpin() { this.pinned = false; this.enabled = true; this.hold = lerp(...HOLD.calm); return this; }
 
   // Put the field into a phase. The mission chain schedules storms through here instead of
@@ -167,8 +191,9 @@ export class StormField {
 
     const here = this.local(roverPos.x, roverPos.z);
     // Deposition is what a storm *leaves behind*: it accumulates while dust is airborne and
-    // survives the clear sky, which is the whole reason the array needs washing after weather
-    // instead of simply resuming on its own.
+    // survives the clear sky. This one number is the terrain's share of that — how soft the settled
+    // sand reads under the wheels. What the *base* pays for is tracked per surface in main.js, where
+    // the rover can reach a given array with its lance and clear that one and not the whole island.
     this.dustLoad = clamp(this.dustLoad + here * dt * 0.010, 0, 1);
     if (this.phase === 'calm') this.dustLoad = clamp(this.dustLoad - dt * 0.0006, 0, 1);
     return here;
@@ -202,8 +227,6 @@ export class StormField {
     if (this.phase !== 'watch' && this.phase !== 'front') return -1;
     return (this.edge - this.along(x, z)) / LEAD_SPEED;
   }
-
-  wash() { this.dustLoad = 0; }
 
   get state() {
     return {

@@ -1799,7 +1799,11 @@ export async function buildBase(scene, quality) {
       // the additive halo meshes must not cast — a shadow-casting light shaft reads as a solid pole
       for (const o of rig.children) if (o !== beam && o !== plate) { o.castShadow = true; o.receiveShadow = true; }
 
-      gridRigs.push({ key: tp.key, name: tp.name, tp, x: rx, z: rz, power: 0, shown: -1, core, beam, plate, mats: [coreMat, plateMat, beamMat] });
+      // `film` is the dust the last front left on this tap's array. The model is a merged clone and
+      // cannot carry a per-copy material without six new shader programs, so the coating is expressed
+      // through the two emissive readouts props.js already gives each rig its own copy of — see
+      // 沙尘作为账本 in main.js, which integrates it from the storm field's local reading.
+      gridRigs.push({ key: tp.key, name: tp.name, tp, x: rx, z: rz, power: 0, shown: -1, film: 0, filmWarned: false, cleaned: false, core, beam, plate, mats: [coreMat, plateMat, beamMat] });
       // The tap plate is 1.35 m across; the r=2.2 drum it used to wear was wide enough to keep the
       // rover out of the very stand it had to park in.
       lot('grid-rig', rx, rz, 2.6, 2.6);

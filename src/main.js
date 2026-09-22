@@ -77,6 +77,9 @@ const mAct = () => missions[activeMission]?.id;
 // brightens district by district instead of all at once at the end.
 const grid = { battery: 1, online: 0, target: null, linkT: 0, dead: false, recover: 0, lowWarned: false };
 const LINK_RADIUS = 9, LINK_TIME = 4, LINK_DRAIN = 0.02, LINK_MIN = 0.12;
+// The dust a front actually leaves behind, per surface — see 沙尘作为账本 below.
+let roverFilm = 0;
+const stormPlay = { lance: false, events: 0, phase: 'calm' };
 const launch = { phase: 'idle', t: 0, cd: 11, y: 0, vy: 0, tilt: 0, intensity: 0, flash: 0, doneAt: 0 };
 let showOn = 0;          // night light-show timer
 let demoPin = null;      // demo cinematic: hold the rover parked
@@ -436,7 +439,15 @@ function updateGrid(dt, st) {
     // st.stormF alone was the dust sitting *on top of the panel*, which is zero while a front is
     // still a kilometre out — so an array in full view of a wall of dust kept generating at noon.
     // sunShade is the column between the panel and the sun, which is what actually sets the yield.
-    const sun = Math.max(0, st.dayF) * (1 - Math.max(st.stormF, st.sunShade) * 0.8);
+    const air = 1 - Math.max(st.stormF, st.sunShade) * 0.8;
+    // The film is the term that makes a storm cost something *after* it has gone. Measured before
+    // this line existed: the sky cleared, and the array was back at rated output while still drawn
+    // ochre — the picture and the rules disagreed, and nothing in the game ever asked the player to
+    // do anything about weather. An array coated by a passed front throws away most of its yield
+    // under a perfectly blue sky, and only the rover's lance takes it back.
+    const rig = pad.key === 'hub' ? null : base.gridRigs.find(r => r.tp === pad);
+    const film = 1 - (rig ? rig.film : 0) * FILM.YIELD;
+    const sun = Math.max(0, st.dayF) * air * film;
     const rate = pad.key === 'hub' ? 0.155 : 0.05 + 0.09 * sun;
     grid.battery = Math.min(1, grid.battery + rate * dt);
   }
@@ -507,10 +518,22 @@ function updateGrid(dt, st) {
   // and the additive hex plate under it must stop tinting the pad disc until dusk.
   for (const r of base.gridRigs) {
     const p = r.power, beat = 0.72 + 0.28 * Math.sin(elapsed * 2.6 + r.x * 0.3);
-    r.core.material.emissiveIntensity = p * (0.10 + st.nightF * 5.3) * beat;
-    r.core.rotation.y += dt * (0.4 + p * 2.6);
-    r.mats[1].opacity = p * (0.02 + 0.73 * st.nightF) * beat;
-    r.mats[2].opacity = p * (0.012 + 0.05 * st.nightF) * (1 - st.stormF * 0.6);
+    // A coated installation is a dimmer, browner installation. The deck hex and the night shaft are
+    // the two things about a tap you can read from 60 m, so clouding them from cyan to dust-ochre is
+    // both the cost of a storm and the feedback for having washed it away — no number needed, and no
+    // new geometry to look like programmer art.
+    const f = r.film, clear = 1 - f * 0.62;
+    r.mats[1].color.copy(RIG_PLATE).lerp(RIG_DUST, f);
+    r.mats[2].color.copy(RIG_BEAM).lerp(RIG_DUST, f);
+    // The rotor is the one part of a tap that owns its own material, so the coating lands on it
+    // too: iron dulled to a matte, dust-brown film. Without this the daytime read of a choked
+    // district was nothing at all — the plate and the shaft are both dusk-only by design.
+    r.mats[0].color.copy(RIG_CORE).lerp(RIG_DUST, f * 0.62);
+    r.mats[0].roughness = 0.2 + f * 0.55;
+    r.core.material.emissiveIntensity = p * (0.10 + st.nightF * 5.3) * beat * clear;
+    r.core.rotation.y += dt * (0.4 + p * 2.6) * clear;   // the rotor slows when the array is choked
+    r.mats[1].opacity = p * (0.02 + 0.73 * st.nightF) * beat * clear;
+    r.mats[2].opacity = p * (0.012 + 0.05 * st.nightF) * (1 - st.stormF * 0.6) * clear;
     if (r === grid.target && grid.linkT > 0) {
       // the tap you are currently welding flickers in amber so the hold has a target
       r.mats[1].opacity = 0.25 + 0.6 * Math.abs(Math.sin(elapsed * 7));
@@ -526,6 +549,117 @@ function onGridComplete() {
   UI.toast('✦ 全区复电 — 基地电网满载，灯光亮度全开');
   audio.radio('good');
   advanceMission();
+}
+
+// ═════════════════════════════ 沙尘作为账本：沉积 → 出力 → 吹扫 ═════════════════════════════
+// A front that only changes the fog is a screensaver. What a Martian storm actually does is leave
+// its fine fraction settling on every surface it passed over, and that film is what the base keeps
+// paying for long after the sky is blue again.
+//
+// Measured before this block existed, none of that was true in the rules: solar yield lerped on
+// *airborne* dust alone (main.js's `st.stormF` term), so the instant the front moved on the array was
+// back at rated output while still drawn ochre — the picture said one thing and the simulation
+// charged you another, and no weather event in the game ever asked the player to do anything about
+// it. `StormField.dustLoad` already integrated an island-wide deposit, but it had exactly one
+// consumer (a wind-softness term) and no way to be reduced: its own `wash()` was dead code.
+//
+// So deposition is now per surface and integrated from the field's reading *at that surface's own
+// coordinates*: a tap the fingers reached cakes faster than one the front broke around, the ranking
+// survives the storm, and the only thing that clears it is the rover driving there and spending
+// charge on its dust-off lance. That is the loop the art direction wanted — weather that writes a
+// bill, and a vehicle that pays it.
+const FILM = {
+  DEPOSIT: 0.050,     // 1/s of array coverage at full airborne load — a peak front coats a tap in ~20 s
+  RIDE: 0.075,        // 1/s onto the rover's own paint while it stands in the dust
+  SCOUR: 0.0075,      // per m/s·s the airflow over the bodywork takes back off
+  LANCE_R: 9,         // m — the lance's reach; deliberately a tap's own link ring, one idiom
+  LANCE_TAP: 0.30,    // 1/s of film blown off an array inside the reach
+  LANCE_SELF: 0.55,   // 1/s off the rover's own panels
+  LANCE_DRAIN: 0.011, // battery/s — the act of cleaning spends the resource cleaning protects
+  LANCE_MIN: 0.02,
+  YIELD: 0.85,        // how much of a fully coated array's output the film takes away
+  WARN: 0.35,         // below this an array's losses are noise; above it, say so once
+};
+// The tap's two readouts at distance, and the colour of the dust that buries them — the same ochre
+// the particle pools and the rover's paint film use, so one storm cannot tint three ways.
+const RIG_PLATE = new THREE.Color(0x4fe2ff), RIG_BEAM = new THREE.Color(0x6fe8ff);
+const RIG_CORE = new THREE.Color(0x101a1f);   // the rotor's authored iron, before a front buries it
+const RIG_DUST = new THREE.Color(0xb98a5c);
+
+const filmGauge = () => base.gridRigs.reduce((a, r) => Math.max(a, r.film), 0);
+
+const mmss = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+// The top bar used to pick one of three words, which meant a storm could never be *seen coming*:
+// the wall sits on the horizon for forty seconds before a single mote reaches you, and the HUD said
+// 晴朗 through all of it. It now carries the field's own countdown, and after the front has gone it
+// carries the bill — the deposited film is the part of a storm that is still costing the base.
+function weatherLabel(st) {
+  const o = stormField.outlook(phys);
+  const film = Math.round(filmGauge() * 100);
+  const sky = st.stormF > 0.5 ? t('沙尘暴') : st.nightF > 0.5 ? t('夜晚') : t('晴朗');
+  const cost = film > 3 ? ` · ${t('阵列积尘')} ${film}%` : '';
+  if (o.alarm) return `⚠ ${t('沙暴前沿')} ${mmss(o.in)}${cost}`;
+  if (o.phase === 'peak' || o.phase === 'clearing') return `◈ ${t('沙暴过境')}${cost}`;
+  if (o.phase === 'aftermath') return `${t('暴后降尘')}${cost}`;
+  // In the calm gap the same slot counts down to the next alarm, so weather is something you plan a
+  // drive around instead of something that happens to you mid-mission.
+  if (o.phase === 'calm' && o.in < 70) return `${sky} · ${t('下一场沙暴')} ${mmss(o.in)}`;
+  return sky + cost;
+}
+
+function updateStormPlay(dt, st, inp) {
+  for (const r of base.gridRigs) {
+    const here = stormField.local(r.x, r.z);
+    if (here > 0) r.film = Math.min(1, r.film + here * dt * FILM.DEPOSIT);
+    if (r.film > FILM.WARN && !r.filmWarned) {
+      r.filmWarned = true;
+      UI.toast(t('⚠ {name} 阵列积尘 {pct}% — 出力下降，驶近光台长按 F 吹扫')
+        .replace('{name}', t(r.name)).replace('{pct}', Math.round(r.film * 100)));
+      audio.radio('bad');
+    } else if (r.film < FILM.WARN * 0.3) r.filmWarned = false;
+  }
+  roverFilm = THREE.MathUtils.clamp(
+    roverFilm + st.stormF * dt * FILM.RIDE - phys.speed * dt * FILM.SCOUR, 0, 1);
+
+  const open = !!inp.keys.has('KeyF') && !photo.on && !paused && grid.battery > FILM.LANCE_MIN;
+  stormPlay.lance = open;
+  if (!open) { stormPlay.aim = null; return; }
+
+  grid.battery = Math.max(0, grid.battery - FILM.LANCE_DRAIN * dt);
+  roverFilm = Math.max(0, roverFilm - FILM.LANCE_SELF * dt);
+  let best = null, bd = FILM.LANCE_R;
+  for (const r of base.gridRigs) {
+    const d = Math.hypot(phys.x - r.x, phys.z - r.z);
+    if (d < bd && r.film > 0.001) { bd = d; best = r; }
+  }
+  stormPlay.aim = best;
+  if (best) {
+    best.film = Math.max(0, best.film - FILM.LANCE_TAP * dt);
+    if (best.film < 0.02 && !best.cleaned) {
+      best.cleaned = true;
+      UI.toast(t('✔ {name} 阵列已吹净 — 出力恢复，光台重新亮起来').replace('{name}', t(best.name)));
+      audio.radio('good');
+    } else if (best.film > 0.05) best.cleaned = false;
+  }
+  // The lance is a jet of gas, so it shows the thing it is doing: the dust coming *off* the target,
+  // thrown downwind of the beam. Emitting at the far end rather than the muzzle keeps the plume on
+  // the array you are cleaning instead of in your own face.
+  const yaw = phys.yaw;
+  const mx = phys.x + Math.sin(yaw) * 1.5, mz = phys.z + Math.cos(yaw) * 1.5;
+  const tx = best ? best.x : mx + Math.sin(yaw) * 7, tz = best ? best.z : mz + Math.cos(yaw) * 7;
+  const ty = best ? surfaceAt(best.x, best.z) + 1.4 : 1.2;
+  const dx = tx - mx, dz = tz - mz, dl = Math.max(0.001, Math.hypot(dx, dz));
+  for (let i = 0; i < 3; i++) {
+    const s = 7 + Math.random() * 5;
+    fx.dust.emit(mx + (Math.random() - .5) * .6, 0.9 + Math.random() * .5, mz + (Math.random() - .5) * .6,
+      (dx / dl) * s * 0.55, 1.4 + Math.random() * 1.6, (dz / dl) * s * 0.55, 0.55, 2.2);
+    if (best && Math.random() < 0.5) {
+      const a = Math.random() * 6.283;
+      fx.dust.emit(tx + Math.cos(a) * 1.4, ty + Math.random() * 2.2, tz + Math.sin(a) * 1.4,
+        Math.cos(a) * 2.6, 0.8 + Math.random() * 1.4, Math.sin(a) * 2.6, 0.9, 3.0);
+    }
+  }
 }
 
 
@@ -965,6 +1099,9 @@ function update(dt) {
   const st = env.state;
   const inp = input.read();
   if (teleOpen) { inp.gas = inp.brake = inp.steer = inp.drift = inp.interact = 0; }
+  // Deposition, the lance and their battery bill run before the sag is read, so the frame the
+  // player spends charge cleaning is the same frame the motors notice it.
+  updateStormPlay(dt, st, inp);
   // drive physics — a flat battery kills the motors, and the last 20 % sags so that running
   // dry is a slow, obvious slide into trouble rather than a sudden loss of control
   const sag = grid.dead ? 0 : THREE.MathUtils.clamp((grid.battery - 0.06) / 0.16, 0.42, 1);
@@ -1004,8 +1141,9 @@ function update(dt) {
   // A storm's deposit is only believable if it lands on the thing you are sitting in. Driving
   // scours the windward body panels, so the film climbs with deposition load but is rubbed back
   // down by ground speed — the same balance that leaves the panels clean after a run and filthy
-  // after an hour parked in the front.
-  rover.setDust(THREE.MathUtils.clamp(st.stormLoad - phys.speed * 0.006, 0, 1));
+  // after an hour parked in the front. It is now its own accumulator rather than a copy of the
+  // island-wide load, which is what lets the lance take it off and the paint stay clean afterwards.
+  rover.setDust(roverFilm);
   // wheels
   const omega = (phys.speed * Math.sign(phys.vx * Math.sin(pose.yaw) + phys.vz * Math.cos(pose.yaw) || 1)) / 0.46;
   // the modelled wheels show the angle the physics is actually using, so the tyres and the
@@ -1309,7 +1447,7 @@ function update(dt) {
     nightF: st.nightF, camPos: camera.position,
     camFwd: camera.getWorldDirection(tmpV.set(0, 0, 1)), camUp: camera.up,
     roverPos: rover.group.position, leakActive: !leakFixed, launchIntensity: launch.audioLevel || 0,
-    padPos: base.launchPadPos,
+    padPos: base.launchPadPos, blast: stormPlay.lance ? 1 : 0,
   });
 
   // post uniforms
@@ -1340,7 +1478,7 @@ function update(dt) {
   fu.uVignette.value = 0.26 + stormF * 0.22;
   // Lens grit reads as the storm passing *over* you, and the film that survives is the deposition
   // the array and the paint are wearing — a clear sky after a peak should still be dirty.
-  fu.uDirt.value = Math.min(1, stormF * 0.62 + st.stormLoad * 0.5);
+  fu.uDirt.value = Math.min(1, stormF * 0.62 + roverFilm * 0.55);
   fu.uFlash.value = launch.flash;
   // at night a full-strength bloom turns every lamp into a disc that lifts the whole
   // sky and erases the stars, so the night frames get a tighter bloom budget
@@ -1359,11 +1497,23 @@ function update(dt) {
 
   // HUD
   UI.setSpeed(phys.speed * 3.6);
-  if (Math.floor(elapsed * 2) !== Math.floor((elapsed - dt) * 2)) {
-    UI.setTop(st.clock, stormF > 0.5 ? '沙尘暴' : st.nightF > 0.5 ? '夜晚' : '晴朗',
+  if (Math.floor(elapsed * 4) !== Math.floor((elapsed - dt) * 4)) {
+    UI.setTop(st.clock, weatherLabel(st),
       // A tier name that no longer describes what is on screen is a lie in the corner of the HUD,
       // so the auto-degrade says so where the player chose the tier.
       quality.label + (degradeLevel ? ' · 已降档' : ''), Math.round(fpsAvg));
+    // The gauge is the base's own bill for the last front: the dirtiest array out of the six. While
+    // the lance is on a target the bar narrows to *that* array and names it, because a gauge pinned
+    // at the fleet maximum reports nothing at the one moment it is being watched.
+    const aim = stormPlay.aim;
+    UI.setFilm({
+      value: aim ? aim.film : filmGauge(),
+      self: roverFilm,
+      worst: filmGauge(),
+      lancing: stormPlay.lance,
+      warn: filmGauge() >= FILM.WARN,
+      tag: aim ? `${t('阵列积尘')} · ${t(aim.name)}` : t('阵列积尘'),
+    });
   }
 }
 
@@ -1507,6 +1657,19 @@ window.__RSB = {
   },
   unpinStorm: () => stormField.unpin().state,
   storm: () => stormField?.state,
+  // Queue a front with a chosen warning window instead of waiting for the dice. E3's mission chain
+  // schedules storms through this, so a front can be pointed at a beat of the chain rather than
+  // landing in the middle of the one run that must not be interrupted.
+  armStorm: (lead = 100) => stormField.arm(lead).state,
+  outlook: () => stormField.outlook(phys),
+  // The dust ledger as the simulation sees it: each array's own coverage, the rover's film, whether
+  // the lance is running, and what the worst-covered array is currently paying in yield.
+  film: () => ({ arrays: base.gridRigs.map(r => [r.key, +r.film.toFixed(3)]),
+    worst: +filmGauge().toFixed(3), rover: +roverFilm.toFixed(3),
+    lance: !!stormPlay.lance, aim: stormPlay.aim?.key || null,
+    lost: +(filmGauge() * FILM.YIELD * 100).toFixed(1) }),
+  setFilm: (array, self) => { base.gridRigs.forEach(r => { r.film = array; r.cleaned = false; }); roverFilm = self; },
+  lance: (v) => { input.inp.keys[v ? 'add' : 'delete']('KeyF'); },
   // What the weather is actually paying the rover this frame: the air speed out there, the tiny
   // force it buys on a 260 kg chassis, the dust read through the tyres, the deposited film on the
   // paint, and the wind band's live gain. A wind effect you cannot read a number off is a wind

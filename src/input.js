@@ -84,10 +84,25 @@ export function createInput(canvasEl) {
     const btn = (id, prop) => {
       const b = document.getElementById(id);
       if (!b) return;
+      const off = () => touch[prop] = 0;
       b.addEventListener('touchstart', e => { e.preventDefault(); touch[prop] = 1; });
-      b.addEventListener('touchend', () => touch[prop] = 0);
+      b.addEventListener('touchend', off);
+      // touchend is not guaranteed: an incoming call, a system gesture or the browser stealing the
+      // touch fires touchcancel instead and the finger's release never reaches us.
+      b.addEventListener('touchcancel', off);
     };
     btn('t-gas', 'gas'); btn('t-brake', 'brake'); btn('t-drift', 'drift'); btn('t-inter', 'interact');
+    // The dust lance is a held key rather than an analog axis, so the touch button feeds the same
+    // set the keyboard does — one source of truth, and the lance behaves identically on both.
+    const lance = document.getElementById('t-lance');
+    if (lance) {
+      const off = () => inp.keys.delete('KeyF');
+      lance.addEventListener('touchstart', e => { e.preventDefault(); inp.keys.add('KeyF'); });
+      lance.addEventListener('touchend', off);
+      // A stuck lance is not a stuck throttle, it is a slow drain to 0% battery, and the tow-home
+      // recovery then respawns the rover with the button still held — a loop the player cannot leave.
+      lance.addEventListener('touchcancel', off);
+    }
   }
   return { inp, read, bindStick, isTouch: 'ontouchstart' in window };
 }

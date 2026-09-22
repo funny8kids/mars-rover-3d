@@ -116,7 +116,7 @@ export class GameAudio {
     const g = this.ctx.createGain(); g.gain.value = vol;
     s.connect(g); g.connect(this.master); s.start();
   }
-  update(dt, { speed01, rpm, power, stormF, windLoad, windGust, nightF, camPos, camFwd, camUp, roverPos, leakActive, launchIntensity, padPos }) {
+  update(dt, { speed01, rpm, power, stormF, windLoad, windGust, nightF, camPos, camFwd, camUp, roverPos, leakActive, launchIntensity, padPos, blast }) {
     if (!this.ready) return;
     const t = this.ctx.currentTime, L = this.ctx.listener;
     if (L.positionX) {
@@ -147,8 +147,14 @@ export class GameAudio {
     this.windF.frequency.setTargetAtTime(200 + wLoad * 190 + wGust * Math.sin(t * 0.83) * 150, t, 0.4);
     this.windF.Q.setTargetAtTime(0.4 + wLoad * 0.5, t, 0.5);
     this.lowpass.frequency.setTargetAtTime(20000 - stormF * 9000, t, 0.35);   // muffled during storm
-    this.hissG.gain.setTargetAtTime(leakActive ? 0.10 : 0, t, 0.4);
-    if (leakActive && this.leakPos) this._setP(this.hissP, this.leakPos.x, this.leakPos.y, this.leakPos.z);
+    // The dust-off lance shares the leak's noise voice: both are gas under pressure through a
+    // nozzle, and a second generator for a three-second action is not a cost this scene should
+    // carry. The panner follows whichever of the two is actually sounding, so the hiss you hear
+    // from the cab is the one coming off the vehicle and not from the tank farm.
+    const b = blast || 0;
+    this.hissG.gain.setTargetAtTime((leakActive ? 0.10 : 0) + b * 0.075, t, b ? 0.06 : 0.4);
+    if (b && roverPos) this._setP(this.hissP, roverPos.x, roverPos.y + 0.5, roverPos.z);
+    else if (leakActive && this.leakPos) this._setP(this.hissP, this.leakPos.x, this.leakPos.y, this.leakPos.z);
     if (padPos) this._setP(this.rumbleP, padPos.x, padPos.y + 6, padPos.z);
     const li = launchIntensity || 0;
     this.rumbleG.gain.setTargetAtTime(li * 0.85, t, 0.1);

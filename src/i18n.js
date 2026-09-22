@@ -118,6 +118,14 @@ const EN = {
     '✦ Starship has left the atmosphere — may it find a home among the stars',
   '⚠ 沙尘暴来袭…': '⚠ Dust storm incoming…',
   '沙尘消散 · 天空恢复': 'The dust has settled — the sky is clear',
+  // ── the dust ledger: a front deposits, the arrays pay, the rover's lance clears ──
+  阵列积尘: 'Array dust',
+  沙暴前沿: 'front in', 沙暴过境: 'Storm passing', 暴后降尘: 'Dust settling',
+  下一场沙暴: 'next storm',
+  '⚠ {name} 阵列积尘 {pct}% — 出力下降，驶近光台长按 F 吹扫':
+    '⚠ {name} array is {pct}% dust-covered — output is down. Drive to the tap and hold F to blow it off',
+  '✔ {name} 阵列已吹净 — 出力恢复，光台重新亮起来':
+    '✔ {name} array blown clean — output restored, the tap is bright again',
   '时间快进至深夜 — 银河可见': 'Time advanced to midnight — the galaxy is out',
   '⚠ 检测到帧率偏低 — 已自动降采样': '⚠ Low frame rate — resolution reduced automatically',
   '⚠ 已自动关闭部分特效以保证流畅': '⚠ Some effects switched off to keep the frame rate',
@@ -209,6 +217,10 @@ const STATIC = [
   ['#start-btn', 'textContent', 'S T A R T  R O V E R'],
   ['.mp-title', 'textContent', 'Mission log'],
   ['#battery-tag', 'textContent', 'Power'],
+  // '#film-array-tag' is deliberately absent: the HUD rewrites it four times a second to name
+  // whichever array the lance is on, so a static entry here would be overwritten anyway.
+  ['#film-rover-tag', 'textContent', 'Rover dust'],
+  ['#film-lance', 'textContent', 'F · blowing off'],
   ['#race-board-btn', 'textContent', 'Leaderboard'],
   ['#race-check', 'textContent', 'Checkpoints 0/5'],
   ['#board-pop h3', 'textContent', 'Base lap · leaderboard'],
@@ -216,11 +228,13 @@ const STATIC = [
   ['#photo-share', 'textContent', 'Share screenshot'],
   ['#t-gas', 'textContent', 'Gas'], ['#t-brake', 'textContent', 'Brake'],
   ['#t-drift', 'textContent', 'Drift'], ['#t-inter', 'textContent', 'Act'],
+  ['#t-lance', 'textContent', 'Blow'],
   ['.controls-hint', 'innerHTML',
     '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive (low-gravity drift)</span>'
     + '<span><kbd>Space</kbd> handbrake</span><span><kbd>E</kbd> interact / repair</span>'
     + '<span><kbd>P</kbd> photo mode</span><span><kbd>T</kbd> weather</span>'
-    + '<span><kbd>N</kbd> skip to midnight</span><span><kbd>R</kbd> time trial</span>'
+    + '<span><kbd>N</kbd> skip to midnight</span><span><kbd>F</kbd> dust lance (costs power)</span>'
+    + '<span><kbd>R</kbd> time trial</span>'
     + '<span><kbd>Esc</kbd> menu</span>'],
   ['.photo-tip', 'innerHTML',
     'Photo mode — drag to orbit · wheel to zoom · <kbd>C</kbd> shutter · <kbd>P</kbd> exit'],

@@ -1469,6 +1469,22 @@ renderer.setAnimationLoop(tick);
 // The autopilot audit is longer than any tool call may block for, so its state lives out here
 // between calls rather than inside one.
 let qaDrive = null;
+let qaTrace = [];
+// Every place the game ever asks a player to steer, with the exact radius the game itself uses to
+// decide "you have arrived" (the pad trigger, the link radius, the sample pickup, the repair range,
+// the deck's countdown ring). Both connectivity instruments read this one list, so the driving audit
+// and the geometry scan cannot quietly disagree about what "reachable" means.
+function interactivePoints() {
+  const at = (kind, x, z, r, label) => ({ kind, name: `${kind}:${label}`, x, z, r });
+  return [
+    ...base.teleports.map(p => at('pad', p.x, p.z, 3.9, p.key)),
+    ...(base.gridRigs || []).map(r0 => at('tap', r0.x, r0.z, LINK_RADIUS, r0.key)),
+    ...(base.samples || []).map((s0, i) => at('sample', s0.x, s0.z, 4.2, s0.id ?? i)),
+    at('leak', base.leakPoint.x, base.leakPoint.z, 12, 'tanks'),
+    at('watch', base.watchPos.x, base.watchPos.z, 26, 'deck'),
+  ];
+}
+
 window.__RSB = {
   chart: () => chart, openMap: () => openTeleport(),
   get state() { return { started, paused, bootMs: Math.round(startedAt), pos: [phys?.x, phys?.y, phys?.z], speed: phys?.speed, yaw: phys?.yaw, fps: fpsAvg, mission: activeMission, launch: launch.phase, launchY: launch.y, samples: samplesTaken, leak: leakFixed, quality: qKey, battery: grid.battery, gridOnline: grid.online, gridDead: grid.dead, faults: updateFaults, rescue: rescue.phase, rescueEvents: rescue.events.length }; },
@@ -1506,12 +1522,14 @@ window.__RSB = {
   stormRef: () => stormField,
   phys: () => phys, env: () => env, launchRef: launch,
   warp: (x, z, face, search) => warpTo(x, z, face, search ?? 8),
+  pois: () => interactivePoints(),
   sampleList: () => (base?.samples || []).map(s => [Math.round(s.x), Math.round(s.z), !!s.taken]),
   taps: () => (base?.gridRigs || []).map(r => [r.key, +r.x.toFixed(1), +r.z.toFixed(1), +r.power.toFixed(2), !!r.online]),
   // the raw collision set — the pin/unstick audit needs to see the cylinders the physics loop reads
   colliders: () => (base?.colliders || []).map(c => [+c.x.toFixed(2), +c.z.toFixed(2), +c.r.toFixed(2), c.floor === undefined ? 0 : +c.floor.toFixed(2)]),
   solids: () => base?.colliders,
   plan: () => base?.plan ? base.plan() : null,
+  path: () => qaTrace,
   // The unstick's own view: is the body ring buried right now, and what has the rescue done so far.
   // `forceUnstick` fires the state machine by hand so a verification can watch it work instead of
   // waiting 2.2 s for a wedge that may not exist.
@@ -1566,16 +1584,20 @@ window.__RSB = {
 
       // every waypoint a player is ever asked to steer to, plus the carriageway itself walked end
       // to end: covering the districts proves the shortcuts work, covering the streets proves the
-      // grid has no pinch points between the landmarks.
-      const spots = [...base.teleports.map(p => ({ name: p.key, x: p.x, z: p.z })),
-        ...(base.gridRigs || []).map(r => ({ name: `tap:${r.key}`, x: r.x, z: r.z }))];
-      for (const st of STREETS) {
-        const n = Math.round(Math.hypot(st.b[0] - st.a[0], st.b[1] - st.a[1]) / 40);
-        for (let i = 0; i <= n; i++) {
-          const f = i / n;
-          spots.push({ name: `${st.id}:${i}`, x: st.a[0] + (st.b[0] - st.a[0]) * f, z: st.a[1] + (st.b[1] - st.a[1]) * f });
+      // grid has no pinch points between the landmarks. `poisOnly` drops the street nodes so a run
+      // can spend its whole budget pressing on the interactive points instead.
+      const spots = interactivePoints();
+      if (!opts.poisOnly) {
+        for (const st of STREETS) {
+          const n = Math.round(Math.hypot(st.b[0] - st.a[0], st.b[1] - st.a[1]) / 40);
+          for (let i = 0; i <= n; i++) {
+            const f = i / n;
+            spots.push({ kind: 'street', name: `${st.id}:${i}`, x: st.a[0] + (st.b[0] - st.a[0]) * f,
+                         z: st.a[1] + (st.b[1] - st.a[1]) * f, r: 11 });
+          }
         }
       }
+      for (const p of spots) { p.best = 1e9; p.bestAt = null; p.since = null; p.dwell = 0; p.held = 0; p.park = undefined; p.retried = false; }
       const route = [];
       let at = [phys.x, phys.z];
       const pending = spots.slice();
@@ -1598,16 +1620,20 @@ window.__RSB = {
         }
       }
       s = qaDrive = {
-        route, cells, budget: opts.seconds ?? 300, stallCells: new Map(), events: [], samples: [],
-        wp: 0, dist: 0, t: 0, gated: 0, peakSpeed: 0,
+        route, spots, cells, budget: opts.seconds ?? 300, stallCells: new Map(), events: [], samples: [],
+        wp: 0, dist: 0, t: 0, gated: 0, peakSpeed: 0, retries: 0,
         prevPos: [phys.x, phys.z], prevDead: grid.dead,
-        markT: 0, markX: phys.x, markZ: phys.z, recoverUntil: -9, aim: phys.yaw, turnDir: 0,
+        markT: 0, markX: phys.x, markZ: phys.z, recoverUntil: -9, holdUntil: -9, aim: phys.yaw, turnDir: 0,
         runFrames: 0,
         // the acceptance bar wants "zero clipping" measured, not eyeballed: how deep the body ring
         // ever sat inside a solid, and how far the hull ever sank under its own surface
         loop: !!opts.loop, laps: 1, worstPen: 0, penPos: null, penFrames: 0,
         worstSink: 0, sinkPos: null, sinkFrames: 0, maxStep: 0, visited: new Set(),
-        clipLog: [],
+        clipLog: [], trace: [],
+        // The wind pushes the rover, so two runs of the same route are not the same drive. The
+        // audit does not reset the weather (resetting it would hide a real failure mode) — it
+        // reports how much storm the run drove through, so a missed point can be read honestly.
+        stormMax: 0, windMax: 0, stormFrames: 0,
       };
     }
     const NONE = [];
@@ -1659,6 +1685,41 @@ window.__RSB = {
       .sort((a, b) => a.d - b.d).slice(0, 4)
       .map(o => `${o.c.prop || o.i}@${o.c.x.toFixed(1)},${o.c.z.toFixed(1)},r${o.c.r.toFixed(1)} gap${(o.d - o.c.r - 1.6).toFixed(2)}`);
 
+    // How much room the body ring has at a spot: distance to the nearest solid disc, minus that
+    // disc's radius, minus the 1.6 m hull. Negative means the spot is inside a wall.
+    const marginAt = (x, z) => {
+      const list = s.cells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) || NONE;
+      let m = 99;
+      for (const c of list) m = Math.min(m, Math.hypot(x - c.x, z - c.z) - c.r - 1.6);
+      return m;
+    };
+    // The trigger circle is a working area, not a pin. Every light pad has its reactor rig standing
+    // on the 3.9 m ring itself (measured: grid:grid-rig at 3.90 m, 6 cm of body clearance), so the
+    // centre is only worth driving at from the side that is open. A player reads the pad and stops
+    // in the gap they can see; the audit does the same — it takes, once per waypoint, the standable
+    // point inside the circle that has the most clearance and a straight approach from where the
+    // rover is, and falls back to the centre if the whole circle is walled in.
+    const parkSpot = tgt => {
+      let best = null;
+      for (let ring = 0; ring <= Math.max(0.1, tgt.r - 0.5); ring += 0.5) {
+        const n = ring < 0.1 ? 1 : Math.max(12, Math.round(ring * 8));
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2;
+          const x = tgt.x + Math.sin(a) * ring, z = tgt.z + Math.cos(a) * ring;
+          const m = marginAt(x, z);
+          // 0.4 m of hull clearance is what a driver actually settles for on a pad half-occupied by
+          // its own reactor rig; demanding a full metre instead leaves no legal point inside the
+          // circle, and then the audit aims straight through the rig and earns an unstick.
+          if (m < 0.4) continue;
+          const d = Math.hypot(x - phys.x, z - phys.z);
+          if (rangeOf(phys.x, phys.z, Math.atan2(x - phys.x, z - phys.z)) < d) continue;
+          const score = m - ring * 0.25;   // room to sit in, and deep enough to register the pad
+          if (!best || score > best.score) best = { x, z, d, m, score };
+        }
+      }
+      return best ? { x: best.x, z: best.z } : null;
+    };
+
     input.inp.keys.add('KeyW');
     const wall = performance.now();
     const frames = Math.round(Math.min(s.budget - s.t, opts.chunk ?? 100) / dt);
@@ -1666,6 +1727,7 @@ window.__RSB = {
     for (; f < frames && (s.loop || s.wp < s.route.length); f++) {
       const tgt = s.route[s.wp];
       const recovering = s.t < s.recoverUntil;
+      const holding = s.t < s.holdUntil;
       if (recovering) {
         input.inp.gas = 0;
         input.inp.brake = 1;                    // back out, swinging toward whichever side is open
@@ -1673,27 +1735,58 @@ window.__RSB = {
         const openRight = rangeOf(phys.x, phys.z, phys.yaw + Math.PI / 2);
         s.turnDir = openLeft >= openRight ? 1 : -1;
         input.inp.steer = s.turnDir;
+      } else if (holding) {                     // parked: brake on, hands off the wheel
+        input.inp.gas = 0; input.inp.brake = 1; input.inp.steer = 0;
       } else {
         input.inp.brake = 0;
-        const b = pick(tgt.x, tgt.z);
+        // The last approach is a parking manoeuvre, not an avoidance problem. Every light pad has its
+        // reactor rig standing on the 3.9 m trigger ring itself (surf 2.06 m), so the whisker planner
+        // steers around the rig, reads "missed by one metre", and reports a working pad as dead. Aimed
+        // straight in at crawl speed the real collision response slides the hull off the disc, which
+        // is exactly what a player does with the wheel.
+        const dNow = Math.hypot(phys.x - tgt.x, phys.z - tgt.z);
+        const parking = dNow < 9;
+        if (parking && tgt.park === undefined) tgt.park = parkSpot(tgt);
+        // The parking spot is picked from where the rover stood when it entered the circle. An
+        // unstick puts the rover somewhere else entirely, and then it grinds toward a spot it can no
+        // longer see: the losing run of pad:industry ended 6.1 m out on the far side of its own ring
+        // point. Re-pick whenever the chosen spot has fallen behind a wall.
+        if (parking && tgt.park && s.runFrames % 20 === 0) {
+          const pa = Math.atan2(tgt.park.x - phys.x, tgt.park.z - phys.z);
+          if (rangeOf(phys.x, phys.z, pa) < Math.hypot(phys.x - tgt.park.x, phys.z - tgt.park.z)) {
+            tgt.park = parkSpot(tgt) || tgt.park;
+          }
+        }
+        const park = parking && tgt.park ? tgt.park : { x: tgt.x, z: tgt.z };
+        const b = parking ? { a: Math.atan2(park.x - phys.x, park.z - phys.z),
+                              r: Math.hypot(park.x - phys.x, park.z - phys.z) } : pick(tgt.x, tgt.z);
         s.aim = b.a;
         const err = wrap(b.a - phys.yaw);
         // The wheel model is inverted relative to bearing math: positive steer rotates yaw
         // downwards, so closing a negative heading error takes positive pedal. Commanding
         // sign(err) instead makes the autopilot fight its own target and wander off the map.
         if (Math.abs(err) < 1.6 || !s.turnDir) s.turnDir = -Math.sign(err) || 1;
-        input.inp.steer = s.turnDir * Math.min(1, Math.abs(err) * 1.2);
-        input.inp.gas = b.r < 3 ? 0.3 : Math.abs(err) > 1.2 ? 0.45 : 1;
+        input.inp.steer = s.turnDir * Math.min(1, Math.abs(err) * (parking ? 2.2 : 1.2));
+        input.inp.gas = (parking || b.r < 3) ? 0.35 : Math.abs(err) > 1.2 ? 0.45 : 1;
       }
       const before = [phys.x, phys.z];
       const throttle = input.inp.gas;
       update(dt);
       s.t += dt;
-      input.inp.brake = recovering ? 1 : 0;     // read() re-derives pedals from the key set
+      // A connectivity audit measures the roads, not the power mission. A dead cell force-teleports
+      // the rover back to the hub, and that discontinuity eats the clock and shows up as "never
+      // reached" — so `keepPower` tops the cell up every quarter-second for the whole run. The
+      // 5-minute full-route regression is deliberately NOT given this: it drains for real.
+      if (opts.keepPower && s.runFrames % 15 === 0) { grid.battery = 1; grid.dead = false; grid.lowWarned = false; }
+      input.inp.brake = (recovering || holding) ? 1 : 0;   // read() re-derives pedals from the key set
       const step = Math.hypot(phys.x - before[0], phys.z - before[1]);
       s.dist += step;
       s.maxStep = Math.max(s.maxStep, step);
       s.peakSpeed = Math.max(s.peakSpeed, phys.speed);
+      const _sf = env.state.stormF;
+      if (_sf > s.stormMax) s.stormMax = _sf;
+      if (stormField.speed > s.windMax) s.windMax = stormField.speed;
+      if (_sf > 0.15) s.stormFrames++;
       const pen = penAt(phys.x, phys.z);
       if (pen.p > 0.05) {
         s.penFrames++;
@@ -1747,7 +1840,36 @@ window.__RSB = {
         Math.round(phys.yaw * 57.3), Math.round(s.aim * 57.3),
         Math.round(rangeOf(phys.x, phys.z, Math.atan2(tgt.x - phys.x, tgt.z - phys.z))),
         +input.inp.gas.toFixed(2), +input.inp.steer.toFixed(2)]);
-      if (Math.hypot(phys.x - tgt.x, phys.z - tgt.z) < 11) { s.visited.add(tgt.name); s.wp++; }
+      // "Reached" is the game's own trigger radius, not "came vaguely near": a light pad needs 3.9 m
+      // and a sample 4.2 m, so an audit that counts a 10 m fly-past as a visit would prove nothing.
+      // A point the driver cannot line up is abandoned after GRACE seconds — it then shows in the
+      // report as a miss with its closest approach, instead of stalling the rest of the route.
+      const dT = Math.hypot(phys.x - tgt.x, phys.z - tgt.z);
+      if (dT < tgt.best) { tgt.best = dT; tgt.bestAt = [+phys.x.toFixed(1), +phys.z.toFixed(1)]; }
+      if (tgt.since === null) tgt.since = s.t;
+      // Dwell is the second half of the proof. Touching a circle for one frame at 14 m/s is not a
+      // stop the player can act on — the game only offers the pad prompt and the link below walking
+      // speed — so every point gets its own seconds spent inside its radius while slow enough.
+      if (phys.speed < 2.5) for (const p of s.spots)
+        if (Math.hypot(phys.x - p.x, phys.z - p.z) <= p.r) p.dwell += dt;
+      if (tgt.best <= tgt.r) s.visited.add(tgt.name);
+      // A fly-through only proves the road exists. `pause` parks the rover inside the trigger circle
+      // with the brake on — the state a player actually has to reach to work a pad or lift a sample —
+      // and it turns the dwell column into measured standing time instead of one frame of a pass.
+      const arrived = tgt.best <= tgt.r || s.t - tgt.since > (opts.grace ?? 25);
+      if (arrived && !tgt.held) { tgt.held = +opts.pause || 0; s.holdUntil = s.t + tgt.held; }
+      if (arrived && s.t >= s.holdUntil) {
+        // Running out of patience on a point is not evidence that the map is broken: an unstick can
+        // carry the rover off-route and spend the whole grace window on the detour. So a missed point
+        // goes back on the tail of the route once, aimed at from wherever the rover now stands. Two
+        // misses is a real defect, and the report labels which points needed the second try.
+        if (tgt.best > tgt.r && !tgt.retried && s.t < s.budget - 90) {
+          tgt.retried = true; tgt.since = null; tgt.held = 0; tgt.park = undefined;
+          s.route.push(tgt); s.retries++;
+        }
+        s.wp++;
+      }
+      if (s.runFrames % 15 === 0) s.trace.push([+phys.x.toFixed(1), +phys.z.toFixed(1)]);
       // A five-minute run is longer than one lap of the map. Recycling the waypoint list keeps the
       // rover rolling instead of parking it at the finish line, and it never teleports: the next lap
       // starts from wherever the last one ended.
@@ -1760,11 +1882,25 @@ window.__RSB = {
     keys.forEach(k => input.inp.keys.delete(k));
     input.inp.gas = 0; input.inp.steer = 0; input.inp.brake = 0;
     const done = s.t >= s.budget || (!s.loop && s.wp >= s.route.length);
+    qaTrace = s.trace;
     if (done) qaDrive = null;
     const stalls = [...s.stallCells.values()].sort((a, b) => b.n - a.n);
+    // D1's acceptance bar reads this block: every interactive point, the closest the wheel ever got,
+    // against the radius that point actually needs. `never` means the budget ran out before the route
+    // reached it — not a wall, just a short clock.
+    const pois = s.spots.filter(p => p.kind !== 'street');
+    const hit = pois.filter(p => p.best <= p.r).length;
     return { done, simSeconds: +s.t.toFixed(1), metres: Math.round(s.dist), laps: s.laps,
-             frames: s.runFrames,
+             frames: s.runFrames, retries: s.retries,
+             connectivity: { points: pois.length, touched: hit,
+               trace: s.trace.length,
+               detail: pois.map(p => `${p.name} ${p.best === 1e9 ? 'never' : p.best.toFixed(1)}/${p.r}m` +
+                 ` dwell${(p.dwell || 0).toFixed(1)}s${p.retried ? ' retried' : ''} parkΔ` +
+                 (p.park ? Math.hypot(p.park.x - p.x, p.park.z - p.z).toFixed(1) : 'none') +
+                 `${p.best <= p.r ? '' : ' ✕@' + (p.bestAt || []).join(',') + '→park' + Object.values(p.park || []).join(',')}`) },
              mps: s.t > 0 ? +(s.dist / s.t).toFixed(2) : 0, peakSpeed: +s.peakSpeed.toFixed(1),
+             weather: { stormMax: +s.stormMax.toFixed(2), windMax: +s.windMax.toFixed(1),
+               stormPct: Math.round(100 * s.stormFrames / Math.max(1, s.runFrames)) },
              reached: [...s.visited], of: s.route.length,
              stuckPockets: stalls.length,
              stuckFrames: stalls.reduce((a, b) => a + b.n, 0),
@@ -1797,9 +1933,7 @@ window.__RSB = {
     const CLEAR = 1.6, TURN = 2.9 / Math.tan(0.60), CELL = 2, NH = 16, STEP = Math.PI * 2 / NH;
     const solids = base.colliders.filter(c => c.floor === undefined);
     const cname = c => c.prop || c.name || `${Math.round(c.x)},${Math.round(c.z)}r${c.r}`;
-    const pois = [...base.teleports.map(p => ({ n: p.key, x: p.x, z: p.z })),
-      ...(base.gridRigs || []).map(r => ({ n: 'tap:' + r.key, x: r.x, z: r.z })),
-      ...(base.samples || []).map((sm, i) => ({ n: 'sample:' + (sm.id ?? i), x: sm.x, z: sm.z }))];
+    const pois = interactivePoints();
     const wrapA = v => Math.atan2(Math.sin(v), Math.cos(v));
 
     // ── clearance oracle: metres between the body's skin and the nearest solid (>0 free, <0 buried)
@@ -1937,7 +2071,7 @@ window.__RSB = {
         const d = Math.hypot(GX(i) - p.x, GZ(j) - p.z);
         if (d < bd && free[i * H + j] && reached[i * H + j]) { bd = d; best = [Math.round(GX(i)), Math.round(GZ(j))]; }
       }
-      return { poi: p.n, at: [Math.round(p.x), Math.round(p.z)],
+      return { poi: p.name, at: [Math.round(p.x), Math.round(p.z)], r: p.r,
         slack: +slack[pi * H + pj].toFixed(2), park: best ? Math.round(bd) : null };
     });
 
@@ -2027,8 +2161,12 @@ window.__RSB = {
       freeCells: free.reduce((a, v) => a + v, 0),
       slotCount: wedges.length, trapCount: traps.length, traps,
       slots: wedges.filter(w => !w.trap && w.entered).slice(0, 12),
+      // "Too far to touch" is the only reachability defect a point of interest can have: the nearest
+      // legal parking cell sits outside the radius the game itself needs. A marker whose centre is
+      // buried in its own prop — every reactor tap IS a solid rig, and the pads carry a pedestal —
+      // is not a defect, you park beside those, so `slack` is reported per verdict and not judged.
       unreachable: verdicts.filter(v => v.park === null),
-      tight: verdicts.filter(v => v.park && (v.park > 6 || v.slack < 0.6)),
+      tight: verdicts.filter(v => v.park && v.park > v.r + 2),
       slivers: slivers.slice(0, 10),
       terrain: { maxSlopeDeg: Math.round(Math.atan(maxSlope) * 180 / Math.PI), maxAt,
         steepCells: steep, steepList, bumpCount: bumpList.length, bumps: bumpList.slice(0, 12) } };

@@ -250,18 +250,35 @@ if ( gPave > 0.004 ) {
   // the filler went dark, the plaza read as a lattice of floating dashes instead of a continuous
   // deck — the eye needs a run of unbroken surface before it accepts the joints as grooves.
   float w = 0.013 + 0.008 * rsbHash( id + 3.7 );    // no two seams are the same width
-  float jx = 1.0 - smoothstep( w, w + 0.012, a.x );
-  float jy = 1.0 - smoothstep( w, w + 0.012, a.y );
+  // The seam is drawn at whatever width the pixel can actually resolve. A fixed 0.012-unit transition
+  // collapses to a hard step the moment one pixel spans more ground than that — and from the rover seat
+  // a plaza pixel spans tens of centimetres — so every joint degenerated into a single-pixel black line
+  // that the eye stitched into long streaks raking across the deck. Growing the window with the
+  // screen-space derivative keeps what a sub-pixel groove can honestly report, which is its coverage,
+  // not its shape.
+  vec2 d = fwidth( vWP.xz ) / 2.6;                  // one pixel, in slab units
+  vec2 hw = max( vec2( 0.006 ), d * 0.9 );
+  float jx = 1.0 - smoothstep( w - hw.x, w + hw.x, a.x );
+  float jy = 1.0 - smoothstep( w - hw.y, w + hw.y, a.y );
   float joint = max( jx, jy );
+  // Past a few pixels per plate even that stops resolving, and what remains is not a groove but
+  // slightly darker, slightly rougher concrete. So the seam's contrast eases to a floor instead of
+  // continuing to bite: 0.02 is a 5 cm pixel, 0.16 is a 42 cm one.
+  float gSeam = 1.0 - smoothstep( 0.02, 0.16, max( d.x, d.y ) );
 
   // plate faces: two-tone sintered grey, a few slabs laid down as darker repair stock
   float tone = rsbHash( id );
   float repair = step( 0.86, rsbHash( id + 11.3 ) );
   vec3 slab = mix( vec3( 0.86, 0.88, 0.96 ), vec3( 1.10, 1.05, 0.99 ), tone );
   slab *= mix( 1.0, 0.72, repair );
-  // diamond tread, faint, only legible at driving distance
-  float tread = step( 0.5, fract( ( g.x + g.y ) * 3.4 ) ) * step( 0.5, fract( ( g.x - g.y ) * 3.4 ) );
-  slab *= 0.97 + tread * 0.05;
+  // Diamond tread, faint, only legible at driving distance — and it has to be *told* that. A hard step()
+  // on a 0.76 m lattice is about the most alias-primitive thing a shader can write: unresolved, it beats
+  // against the pixel grid into moiré exactly like the sand ripple did. Resolved the same way, and
+  // switched off entirely once a pixel is more than half a plate wide.
+  float te = clamp( max( hw.x, hw.y ) * 3.4, 0.02, 0.5 );
+  float tread = smoothstep( 0.5 - te, 0.5 + te, fract( ( g.x + g.y ) * 3.4 ) )
+              * smoothstep( 0.5 - te, 0.5 + te, fract( ( g.x - g.y ) * 3.4 ) );
+  slab *= 0.97 + tread * 0.05 * gSeam;
   float grit = rsbNoise( vWP.xz * 2.9 );
   float drift = rsbNoise( vWP.xz * 0.13 );
   slab *= 0.90 + 0.18 * grit;
@@ -278,7 +295,7 @@ if ( gPave > 0.004 ) {
   // grid of glowing orange dashes rather than shadowed seams.
   float silt = smoothstep( 0.30, 0.62, rsbNoise( vWP.xz * 1.1 ) );
   vec3 siltC = vec3( 0.072, 0.046, 0.032 );
-  diffuseColor.rgb = mix( diffuseColor.rgb, siltC, joint * gPave * ( 0.42 + silt * 0.34 ) );
+  diffuseColor.rgb = mix( diffuseColor.rgb, siltC, joint * gPave * ( 0.42 + silt * 0.34 ) * mix( 0.55, 1.0, gSeam ) );
   // dust drifts in off the dunes and lies along the downwind edge of each plate — pale, unlike the
   // joint filler, which is scoured regolith packed into a shadowed groove
   float edge = smoothstep( 0.30, 0.47, f.y * 0.7 + f.x * 0.3 + 0.35 ) * ( 1.0 - joint );
@@ -289,7 +306,8 @@ if ( gPave > 0.004 ) {
   // and much smoother than the deck around it, it wears away inside the joints, and it spalls.
   float vLine, vEdge;
   rsbMark( vWP.xz, vLine, vEdge );
-  float dash = step( 0.5, fract( ( vWP.x + vWP.z ) * 0.55 ) );
+  float de = clamp( fwidth( vWP.x + vWP.z ) * 0.55 * 0.9, 0.01, 0.5 );
+  float dash = smoothstep( 0.5 - de, 0.5 + de, fract( ( vWP.x + vWP.z ) * 0.55 ) );
   float wear = 0.70 + 0.30 * rsbNoise( vWP.xz * 2.6 );
   float paint = clamp( max( vLine, vEdge ) * ( 1.0 - joint * 0.8 ) * gPave * wear * 1.7, 0.0, 1.0 );
   vec3 markC = mix( vec3( 0.52, 0.465, 0.345), vec3( 0.045, 0.034, 0.028 ), 1.0 - dash );
@@ -299,11 +317,11 @@ if ( gPave > 0.004 ) {
   // relief: tilt each slab a hair off-level, then fold the bevelled groove walls into the normal.
   // The slope lives where the joint smoothstep transitions, not in its centre, so the wall term
   // peaks mid-bevel and the plate faces stay flat.
-  float tx = clamp( ( a.x - w ) / 0.030, 0.0, 1.0 );
-  float ty = clamp( ( a.y - w ) / 0.030, 0.0, 1.0 );
+  float tx = clamp( ( a.x - ( w - hw.x ) ) / ( 0.030 + 2.0 * hw.x ), 0.0, 1.0 );
+  float ty = clamp( ( a.y - ( w - hw.y ) ) / ( 0.030 + 2.0 * hw.y ), 0.0, 1.0 );
   vec2 wall = vec2( 6.0 * tx * ( 1.0 - tx ) * sign( f.x ), 6.0 * ty * ( 1.0 - ty ) * sign( f.y ) );
   vec2 tilt = vec2( rsbHash( id + 1.7 ), rsbHash( id + 8.3 ) ) - 0.5;
-  gPaveN = ( wall * 0.62 + tilt * 0.055 ) * gPave;
+  gPaveN = ( wall * 0.62 + tilt * 0.055 ) * gPave * mix( 0.30, 1.0, gSeam );
   gPaveR = clamp( ( joint * 0.55 + stain * -0.45 + grit * 0.10 ) * gPave - paint * 0.34, -0.5, 0.6 );
 }
 `;

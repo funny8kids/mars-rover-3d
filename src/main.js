@@ -15,6 +15,7 @@ import { createPost } from './fx/post.js';
 import { createSkidMarks } from './fx/skids.js';
 import { GameAudio } from './audio/audio.js';
 import { UI, fmtTime } from './ui.js';
+import { createMapChart } from './ui/chart.js';
 import { t, mountLangButton, onChange } from './i18n.js';
 import { STREETS } from './world/plan.js';
 
@@ -84,7 +85,7 @@ const photo = { on: false, yaw: 0, pitch: 0.25, dist: 14, dragging: false, lx: 0
 let degradeLevel = 0;
 
 // ───────────────────────── teleport network ─────────────────────────
-let padHere = null, teleOpen = false, teleEl = null, teleMap = null, teleHint = null;
+let padHere = null, teleOpen = false, teleEl = null, chart = null, teleHint = null;
 let lastPadShown = false;
 function buildTeleportUI() {
   teleEl = document.createElement('div');
@@ -92,10 +93,11 @@ function buildTeleportUI() {
   teleEl.innerHTML = `
     <div class="tp-head"><span class="tp-title">${t('✦ 传送网络 · TELEPORT NETWORK')}</span>
       <button class="tp-close" aria-label="close">✕</button></div>
-    <div class="tp-body"><canvas class="tp-map" width="252" height="252"></canvas><div class="tp-list"></div></div>
-    <div class="tp-tip">${t('数字键 1-6 直接跃迁 · 按 G 在光台上就地开启 · M 全区地图')}</div>`;
+    <div class="tp-body"><div class="tp-plate"></div><div class="tp-list"></div></div>
+    <div class="tp-tip">${t('数字键 1-7 直接跃迁 · 按 G 在光台上就地开启 · M 全区地图')}</div>`;
   document.body.appendChild(teleEl);
-  teleMap = teleEl.querySelector('.tp-map');
+  chart = createMapChart({ side: 400 });
+  teleEl.querySelector('.tp-plate').appendChild(chart.canvas);
   teleEl.querySelector('.tp-close').onclick = closeTeleport;
   teleHint = document.createElement('div');
   teleHint.id = 'tele-hint'; teleHint.className = 'hidden';
@@ -112,16 +114,19 @@ function buildTeleportUI() {
   mute.onclick = () => { audio.setMuted(!audio.muted); draw(); };
   document.body.appendChild(mute);
   teleHint._mute = mute;
-  teleMap.addEventListener('click', e => {
-    const r = teleMap.getBoundingClientRect();
-    const mx = (e.clientX - r.left) / r.width * 2 - 1, mz = (e.clientY - r.top) / r.height * 2 - 1;
-    let best = null, bd = 0.22;
+  // The chart is square and metric now, so a click resolves in metres instead of on a
+  // normalised spoke diagram: nearest pad within 15 m wins, offline or not, and an offline pad
+  // answers with the reason rather than nothing happening.
+  chart.canvas.addEventListener('click', e => {
+    const p = chart.toWorld(e.clientX, e.clientY);
+    let best = null, bd = 15;
     for (const tp of base.teleports) {
-      if (tp.online === false) continue;
-      const d = Math.hypot(tp.x / 132 - mx, tp.z / 132 - mz);
+      const d = Math.hypot(tp.x - p.x, tp.z - p.z);
       if (d < bd) { bd = d; best = tp; }
     }
-    if (best) teleportTo(best); else UI.toast('⛔ 该区电网未恢复 — 光台无法成像');
+    if (!best) return;
+    if (best.online === false) UI.toast('⛔ 该区电网未恢复 — 光台无法成像');
+    else teleportTo(best);
   });
 }
 function openTeleport() {
@@ -178,27 +183,18 @@ function teleportTo(tp, opt = {}) {
   if (!opt.silent) UI.toast(`✦ 跃迁完成 — ${tp.name}`);
   if (opt.silent) audio.radio('bad'); else if (audio.play) audio.play('warp', 0.4); else audio.radio('good');
 }
+// objectiveTarget() hands back a Vector3 and this runs every frame the panel is open, so the
+// map mutates one plain object rather than allocating on the HUD's behalf.
+const mapObjective = { x: 0, z: 0 };
 function drawTeleMap() {
-  const g = teleMap.getContext('2d'), W = 252, c = W / 2, k = (W / 2 - 10) / 132;
-  g.clearRect(0, 0, W, W);
-  g.fillStyle = 'rgba(255,150,90,.08)';
-  g.beginPath(); g.arc(c, c, 118 * k, 0, 7); g.fill();
-  g.strokeStyle = 'rgba(255,170,110,.35)'; g.lineWidth = 1.5; g.stroke();
-  g.strokeStyle = 'rgba(255,255,255,.14)'; g.lineWidth = 5;
-  for (const tp of base.teleports) {
-    g.beginPath(); g.moveTo(c, c); g.lineTo(c + tp.x * k, c + tp.z * k); g.stroke();
-  }
-  for (const tp of base.teleports) {
-    const x = c + tp.x * k, y = c + tp.z * k;
-    const live = tp.online !== false;
-    g.fillStyle = padHere === tp ? '#7df2ff' : live ? '#38c7e0' : '#5b4f45';
-    g.beginPath(); g.arc(x, y, 6, 0, 7); g.fill();
-    g.fillStyle = live ? '#e9e4da' : '#8a7d70';
-    g.font = '11px sans-serif'; g.textAlign = 'center';
-    g.fillText(t(tp.name), x, y - 10);
-  }
-  g.fillStyle = '#ffbe5c';
-  g.beginPath(); g.arc(c + phys.x * k, c + phys.z * k, 4, 0, 7); g.fill();
+  const o = objectiveTarget();
+  let obj = null;
+  if (o) { obj = mapObjective; obj.x = o.x; obj.z = o.z; }
+  chart.draw({
+    x: phys.x, z: phys.z, yaw: phys.yaw, time: elapsed,
+    teleports: base.teleports, padHere, objective: obj, samples: base.samples,
+    danger: leakFixed ? null : { x: base.leakPoint.x, z: base.leakPoint.z, r: 15 },
+  });
 }
 
 // ───────────────────────── loading ─────────────────────────
@@ -1418,7 +1414,7 @@ addEventListener('resize', () => {
 
 addEventListener('keydown', e => {
   if (!started) return;
-  if (teleOpen && /^Digit[1-6]$/.test(e.code)) { const tp = base.teleports[+e.code.slice(5) - 1]; if (tp && tp.online !== false) teleportTo(tp); else if (tp) UI.toast('⛔ 该区电网未恢复 — 光台无法成像'); return; }
+  if (teleOpen && /^Digit[1-9]$/.test(e.code)) { const tp = base.teleports[+e.code.slice(5) - 1]; if (tp && tp.online !== false) teleportTo(tp); else if (tp) UI.toast('⛔ 该区电网未恢复 — 光台无法成像'); return; }
   if (e.code === 'KeyG') {
     if (teleOpen) closeTeleport();
     else if (padHere) openTeleport();
@@ -1474,6 +1470,7 @@ renderer.setAnimationLoop(tick);
 // between calls rather than inside one.
 let qaDrive = null;
 window.__RSB = {
+  chart: () => chart, openMap: () => openTeleport(),
   get state() { return { started, paused, bootMs: Math.round(startedAt), pos: [phys?.x, phys?.y, phys?.z], speed: phys?.speed, yaw: phys?.yaw, fps: fpsAvg, mission: activeMission, launch: launch.phase, launchY: launch.y, samples: samplesTaken, leak: leakFixed, quality: qKey, battery: grid.battery, gridOnline: grid.online, gridDead: grid.dead, faults: updateFaults, rescue: rescue.phase, rescueEvents: rescue.events.length }; },
   skipMissions: () => {
     base.gridRigs.forEach(r => { r.online = true; r.power = 1; r.tp.online = true; });
@@ -2170,9 +2167,10 @@ onChange(() => {
   // rewrite them where they stand — and repaint the map canvas, whose labels are drawn, not DOM.
   const q = s => document.querySelector(s);
   if (q('.tp-title')) q('.tp-title').textContent = t('✦ 传送网络 · TELEPORT NETWORK');
-  if (q('.tp-tip')) q('.tp-tip').textContent = t('数字键 1-6 直接跃迁 · 按 G 在光台上就地开启 · M 全区地图');
+  if (q('.tp-tip')) q('.tp-tip').textContent = t('数字键 1-7 直接跃迁 · 按 G 在光台上就地开启 · M 全区地图');
   const fab = q('#tele-fab'); if (fab) fab.textContent = t('✦ 传送 · MAP');
   teleHint?._mute?._draw();
+  chart?.invalidate();
   if (teleOpen) { closeTeleport(); openTeleport(); }
 });
 

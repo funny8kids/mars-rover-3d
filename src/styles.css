@@ -139,13 +139,17 @@ body.no-ui #hud,body.no-ui #photo-ui .photo-tip{opacity:0}
 #tele-fab{position:fixed;left:18px;bottom:18px;z-index:36;background:var(--panel);border:1px solid var(--cyan);
   color:var(--cyan);border-radius:999px;padding:9px 18px;letter-spacing:.2em;font-size:12px;backdrop-filter:blur(6px)}
 #tele-fab:hover{background:rgba(60,200,225,.14)}
-#teleport-ui{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:45;width:min(620px,92vw);
-  background:rgba(10,8,14,.9);border:1px solid var(--line);border-radius:14px;padding:0 0 14px;backdrop-filter:blur(10px)}
+#teleport-ui{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:45;width:min(760px,94vw);
+  background:rgba(10,8,14,.92);border:1px solid var(--line);border-radius:14px;padding:0 0 14px;backdrop-filter:blur(10px)
+  ;max-height:94vh;overflow:auto}
 .tp-head{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--line)}
 .tp-title{color:var(--cyan);font-size:13px;letter-spacing:.28em}
 .tp-close{background:none;border:1px solid var(--line);color:#c9beac;border-radius:6px;width:26px;height:26px}
 .tp-body{display:flex;gap:18px;padding:16px 20px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
-.tp-map{width:252px;height:252px;border-radius:50%;border:1px solid var(--line);background:radial-gradient(circle at 50% 50%,rgba(255,150,90,.10),rgba(0,0,0,.35) 70%);cursor:pointer}
+/* The chart is a drawn plate, so it is square, framed and metric — not a porthole. */
+.tp-plate{flex:none;display:flex;justify-content:center}
+.tp-map{max-width:100%;height:auto;border-radius:6px;border:1px solid rgba(236,214,180,.26);
+  background:#0a0807;box-shadow:0 12px 34px rgba(0,0,0,.55);cursor:crosshair;display:block}
 .tp-list{display:flex;flex-direction:column;gap:8px;min-width:230px;flex:1}
 .tp-item{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.04);border:1px solid var(--line);
   border-radius:8px;padding:9px 12px;color:#e8dcc8;font-size:13px;letter-spacing:.06em;text-align:left}

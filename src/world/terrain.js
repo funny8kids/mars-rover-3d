@@ -1,8 +1,10 @@
 import * as THREE from 'three';
-import { heightAt, installSurfaceGrid, surfaceAt, pavedAt, paveGeometry, deckAt, lotAt } from './height.js';
-import { TERRAIN, ZONES, ISLAND } from '../config.js';
+import { heightAt, installSurfaceGrid, surfaceAt, surfaceSlope, pavedAt, paveGeometry, deckAt, lotAt } from './height.js';
+import { TERRAIN, ISLAND } from '../config.js';
 import { fbm, vnoise, mulberry32, smoothstep } from '../utils/noise.js';
 import { loadModel, cloneModel } from './assets.js';
+import { RIM_ROCK } from './rim_rock.js';
+import { mergeInto } from './merge.js';
 
 // The dune field is one 512² tile repeated 26× over 300 m, so at 2.2 cm per texel it carries every
 // grain the player drives through. A normal map alone was not enough: on a roughness-0.94 diffuse
@@ -418,34 +420,129 @@ export function createTerrain(scene) {
   return mesh;
 }
 
-// Kenney Nature Kit boulders — real modeled rocks instead of jagged icospheres.
-export async function createRocks(scene) {  const names = ['rock_largeA', 'rock_largeB', 'rock_largeC', 'rock_smallA', 'rock_smallB',
-    'rock_smallC', 'rock_smallD', 'rock_smallFlatA', 'rock_smallFlatB', 'rock_smallG'];
-  const models = await Promise.all(names.map(n => loadModel(`kenney/nature/${n}`)));
+// The open-desert boulders, built from the same `rim_rock` kit as the rampart.
+//
+// Four things this used to get wrong, all of them measured.
+//
+// Bound: the scatter reached r=211 while the terrain mesh is a 300 m square, so 49 of the 64 boulders
+// were laid on analytic ground past the last drawn triangle — invisible from the plateau, hanging in
+// mid-air from any view over the rim. The bound is now the mesh's shortest half-extent minus a
+// margin, so every rock sits on ground that exists.
+//
+// Solidity: none of them were solid. A boulder you can drive through is scenery, not an obstacle, so
+// the footprints go back to the caller for the collision set — the same 碰撞体与外观 mismatch the
+// rampart was built to end.
+//
+// Siting: it kept rocks out of every zone circle plus 12 m, and with twelve zones that blanket the
+// island. Surveyed on the finished site plan, 0% of the ground inside r=112 passed and 100% of what
+// was left was the 12 m band at the foot of the rim wall — every boulder in the world parked in one
+// ring, and none on the dunes the player drives across. The test is now the one the plan itself
+// answers: engineered ground (a zone pad, a roadway, a building deck) stays clear, everything else is
+// desert. Which is also why this runs after buildBase and terrain.regrade() rather than before.
+//
+// Material: even after those three were fixed, a frame off the dune was a bright yellow stone wearing
+// a teal cap. The Kenney Nature Kit glbs are the island's only untextured assets — `rock_largeA`
+// ships 0 textures, 146 verts and two flat colour factors, #f2be9e and #73eddd. That saturated
+// cartoon-Earth palette sits in no Martian light, and a saturated rock is precisely the programmer
+// art the rest of this pass exists to remove. The rim kit is already forged with `rock_basalt` maps,
+// so the dunes now use it too: same stone as the rampart, one merged batch for all the basalt on the
+// island, and — because that kit's footprint *is* the disc table in rim_rock.js rather than a guess
+// at it — the scatter inherits C3 for free instead of approximating a silhouette with a box.
+const SCATTER_R = ISLAND.rim + 12;   // 144 m: past the crest, inside the mesh's 150 m half-width
+export async function createRocks(scene, avoid = []) {
+  const kit = await loadModel('rim_rock');   // already fetched by buildBase's hero list
+  // A weighted bag rather than a uniform pick. Six archetypes also means six silhouettes — with the
+  // ring's three alone, a dune frame came back as 64 copies of one shape.
+  //
+  // The weights are set from the field, not from intuition. Measured on the first six-archetype
+  // scatter, 47 of the 64 stones came out flatter than 0.45 height-to-width and the median was 0.37:
+  // the three flat families (cobble/slab/ledge, authored at 0.23–0.38) owned two thirds of the bag,
+  // so a backlit frame showed a row of identical tortoise shells and the angular clasts that carry
+  // the read were rare. Basalt fields really are dominated by chips, so the chips stay the single
+  // most common pick — but the blocky families now outnumber them, because what a player judges the
+  // island by is the mid-field, and the mid-field was all pancake.
+  const BAG = ['cobble', 'cobble', 'cobble', 'cobble', 'slab', 'slab', 'ledge',
+    'block', 'block', 'block', 'shard', 'shard', 'shard', 'mega', 'mega'];
+  const clast = {};
+  for (const name of new Set(BAG)) clast[name] = kit.getObjectByName(name);
   const rand = mulberry32(777);
   const group = new THREE.Group();
-  const placed = [];
+  group.name = 'rock-scatter';
+  const placed = [], solids = [];
+  const n = new THREE.Vector3(), v = new THREE.Vector3();
+  const UP = new THREE.Vector3(0, 1, 0);
+  const qTilt = new THREE.Quaternion(), qYaw = new THREE.Quaternion();
   let guard = 0;
-  while (placed.length < 64 && guard++ < 900) {
+  // Rejection is the cost of doing business here — paved ground and steep faces are most of the
+  // island — so the budget has to be far above the count it is chasing.
+  while (placed.length < 64 && guard++ < 8000) {
     const a = rand() * Math.PI * 2;
-    const r = 40 + Math.pow(rand(), 0.7) * (ISLAND.rim + 40);
+    const r = 26 + Math.pow(rand(), 0.62) * (SCATTER_R - 26);
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (pavedAt(x, z) > 0.02) continue;              // no boulder on engineered ground
+    if (surfaceSlope(x, z) > 0.5) continue;          // one clinging to a 27° face reads as a mistake
+    const name = BAG[Math.floor(rand() * BAG.length)];
+    const spec = RIM_ROCK[name];
+    // Size comes from the archetype first and the draw second. The kit already spans a 0.94 m cobble
+    // to a 4.4 m shard, so the runtime scale only has to keep that spread from collapsing; the
+    // earlier 0.22–0.84 range turned every one of the six into the same pebble anyway.
+    const s = 0.42 + Math.pow(rand(), 1.6) * 0.62;
+    // Y is drawn from its own range, not from s. Coupling them (±18%) meant a stone's height-to-width
+    // ratio was fixed by its archetype, so the bag's flat families could only ever produce flat
+    // stones; ±37% around s lets a cobble sit up as a chip and a block slump as a slab. Purely
+    // cosmetic — the exported discs are laid at local y=0, so a Y scale cannot move the collision.
+    const sy = s * (0.70 + rand() * 0.75);
+    // Uniform in XZ and independent in Y is the whole constraint: the exported discs are circles in
+    // the plan, so any anisotropic horizontal scale would make this table a lie again.
+    const rad = spec.discs.reduce((m, [dx, dz, dr]) =>
+      Math.max(m, Math.hypot(dx, dz) * s + dr * s), 0);
     let ok = true;
-    for (const zn of Object.values(ZONES)) {
-      if (Math.hypot(x - zn.pos[0], z - zn.pos[1]) < zn.radius + 12) ok = false;
+    // What has to be spaced is the gap, not the centres: two discs 2 m apart still hold the 3.2 m
+    // body between them, and the deadlock scan calls that a slot.
+    for (const p of placed) if (Math.hypot(x - p[0], z - p[1]) < p[2] + rad + 3.6) ok = false;
+    for (const c of avoid) {
+      if (c.floor === undefined && Math.hypot(x - c.x, z - c.z) < c.r + rad + 2.6) { ok = false; break; }
     }
-    for (const p of placed) if (Math.hypot(x - p[0], z - p[1]) < 9) ok = false;
     if (!ok) continue;
-    placed.push([x, z]);
-    const m = cloneModel(models[Math.floor(rand() * models.length)]);
-    const s = 0.8 + rand() * 2.6;
-    m.scale.setScalar(s);
-    m.position.set(x, surfaceAt(x, z) - 0.25, z);
-    m.rotation.y = rand() * Math.PI * 2;
-    group.add(m);
+    const o = cloneModel(clast[name]);
+    o.scale.set(s, sy, s);
+    qYaw.setFromAxisAngle(UP, rand() * Math.PI * 2);
+    // Match the sole to the slope it stands on, sampled at the rock's own width — a 0.6 m chord
+    // (normalAt's) is weather noise under a 6 m clast. Surface-grid truth, not the analytic field,
+    // because the mesh is what the rover drives on and what these discs are drawn to agree with.
+    const e = Math.max(1.2, spec.reachT * s);
+    n.set(
+      -(surfaceAt(x + e, z) - surfaceAt(x - e, z)) / (2 * e), 1,
+      -(surfaceAt(x, z + e) - surfaceAt(x, z - e)) / (2 * e)
+    ).normalize();
+    o.quaternion.copy(qTilt.setFromUnitVectors(UP, n)).multiply(qYaw);
+    o.position.set(x, surfaceAt(x, z), z);
+    o.updateMatrixWorld(true);
+    // Measured seating, not a constant: aim the lowest point of the transformed stone a little under
+    // the surveyed surface, so the sole seals into the sand at any tilt instead of standing off it at
+    // its corners the way a flat chord does.
+    const bb = new THREE.Box3().setFromObject(o);
+    o.position.y += (surfaceAt(x, z) - 0.045 * spec.h * sy) - bb.min.y;
+    o.updateMatrixWorld(true);
+    group.add(o);
+    placed.push([x, z, rad]);
+    // Same discipline as the rampart: the discs go through the clone's world matrix, so whatever
+    // transform drew this stone is the transform that stops the rover — scale, tilt, yaw and all.
+    // They share one `prop` name the way the rampart's four do, so grouping colliders by prop is
+    // grouping them by the boulder they belong to.
+    for (const [dx, dz, dr] of spec.discs) {
+      v.set(dx, 0, dz).applyMatrix4(o.matrixWorld);
+      solids.push({ x: +v.x.toFixed(2), z: +v.z.toFixed(2), zone: 'scatter',
+        prop: `scatter:rock#${placed.length - 1}`, r: +(dr * s).toFixed(2) });
+    }
   }
   scene.add(group);
-  return group;
+  // 64 boulders are ~190 draw calls across the main and shadow passes, and the measured cost of the
+  // scatter was almost entirely that submission, not its triangles. The rocks never move, so they go
+  // through the same collapsing as the rest of the static base: measured after the merge, the whole
+  // scatter is one mesh on one material and costs 2 draw calls (1 039 → 1 041).
+  mergeInto(group);
+  return solids;
 }
 
 // The terrain mesh samples the surface every 1.4 m and a normal map can only fake relief per
@@ -475,7 +572,7 @@ export function createStones(scene, count = 3600) {
   let n = 0, guard = 0;
   while (n < count && guard++ < count * 4) {
     const a = rand() * Math.PI * 2;
-    const r = 5 + Math.pow(rand(), 0.6) * (ISLAND.rim + 30);
+    const r = 5 + Math.pow(rand(), 0.6) * (SCATTER_R - 5);
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     // Gravel belongs on the dune, not on engineered ground: a chip sitting on a sawn level reads as
     // litter, and every footing the site plan cuts changes the height under a previously placed one.

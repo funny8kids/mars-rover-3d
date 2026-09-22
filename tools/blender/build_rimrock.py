@@ -1,5 +1,5 @@
-# Blender builder for the rim rampart — the three basalt clasts the island's perimeter is built
-# from, and the collision outlines that come off the same geometry.
+# Blender builder for the island's basalt clasts — the six shapes the rim rampart and the dune
+# scatter are both built from, and the collision outlines that come off the same geometry.
 #
 # Why this asset exists at all: the playfield ends at r=118 and the crater rim falls away to a
 # 62° cliff. Nothing marked that, so a rover carrying 4 m/s over the lip slid down, could not
@@ -25,7 +25,9 @@
 # So the dependency runs the other way now. A clast's footprint IS a small set of ground discs,
 # authored here as numbers (`FOOT`); the mesh's plan outline is traced off exactly those circles
 # (`rho`), and everything that makes it read as broken basalt — the fracture faces, the crown,
-# the flank relief — is authored in *height*, which cannot move a silhouette at all. The
+# the flank relief — is authored in *height*, which cannot move a silhouette at all. (The inner
+# radial stations are the one place plan is free, and they are only ever pulled inward, so the
+# outline they can never reach is still the only thing `verify` measures.) The
 # collision table is then the authoring, not an estimate of it, and the only error left is the
 # sagitta between the 112-gon the mesh actually has and the arcs it samples: a few millimetres.
 # That is the C3 bar met exactly rather than approached, and `verify` is what proves it — it
@@ -60,17 +62,49 @@ SRC_JS = os.path.abspath(os.path.join(OUT, "..", "..", "src", "world", "rim_rock
 # circle — far enough out to break the roundness, not far enough to read as a petal, which is what
 # a first pass here did and what made the plan view look like a cloud rather than a rock.
 NODES = [
-    # name, tall, fracture cuts, seed, footprint discs (cx, cy, r)
+    # name, tall, fracture cuts, seed, footprint discs (cx, cy, r), foot, shape, crest
+    #
+    # `foot` is how much of the clast's height is still standing where its silhouette is. It is the
+    # single most visible number in this file: at the first value used here (0.46, the default of the
+    # original `crown`) every clast is a tortoise shell — a flat top carried on a vertical wall half
+    # its own height, which in the dune scatter showed up as 64 identical dome-and-skirt cobbles each
+    # wearing a pale band at its foot. Real clasts are masses that *taper* into the ground; the flat
+    # faces of blocky lava are fracture shoulders part-way up, which is what `cuts` authors, not the
+    # outline. So foot is now per-archetype, and the low, tabular ones (ledge) keep a taller wall
+    # because a broken plate genuinely does have one.
+    #
+    # `shape` and `crest` are what `foot` turned out not to be enough on its own. Measured on the
+    # first six-archetype dune scatter, re-weighting the bag and decoupling the height scale moved
+    # the population's height-to-width spread exactly as designed and the frame still read as a row
+    # of identical turtle shells — because with one shared crown exponent and the crest at the
+    # centre, every mass tapers the same way, so six archetypes differing in size are one archetype.
+    # `shape` is the crown's curvature (0.25 = tabular bench, 0.85 = pointed); `crest` is where the
+    # tall part of the mass sits in plan, as a fraction of the outline. An off-centre crest gives a
+    # clast a shoulder on one side and a long sloping back on the other, so it reads as stone that
+    # broke off a ledge in a particular direction instead of a dome placed on the ground.
     ("mega",  3.85, 7, 11, [(0.00,  0.00, 2.62), (1.62, -0.28, 1.78),
-                            (-1.52, 0.72, 1.52), (0.30,  1.72, 1.32)]),
+                            (-1.52, 0.72, 1.52), (0.30,  1.72, 1.32)], 0.30, 0.62, (0.18, -0.10)),
     ("block", 2.75, 6, 23, [(0.00,  0.00, 1.98), (1.18, -0.42, 1.30),
-                            (-1.12, 0.62, 1.10)]),
+                            (-1.12, 0.62, 1.10)], 0.23, 0.45, (0.12, 0.08)),
     ("slab",  1.50, 5, 37, [(0.00,  0.00, 1.58), (0.92,  0.44, 1.02),
-                             (-0.86, -0.48, 0.92)]),
+                             (-0.86, -0.48, 0.92)], 0.34, 0.30, (0.05, -0.05)),
+    # Three more archetypes, for the dune scatter — which shows a clast alone in a frame instead of
+    # shoulder-to-shoulder in a wall. A footprint is only ever a blob if all its lobes sit near the
+    # origin, so these are authored as *chains*: lobes strung out along a line. That is what makes a
+    # blade read as a blade and a broken plate as a broken plate from the driver's seat, and it is
+    # free — the collision is still exactly the disc set, so `verify` holds for them as it does for
+    # the ring's three.
+    ("shard", 4.40, 8, 61, [(0.00,  0.00, 1.15), (0.98,  0.32, 0.80),
+                            (-0.94, -0.28, 0.78)], 0.16, 0.85, (0.20, 0.12)),
+    ("ledge", 1.15, 6, 83, [(0.00,  0.00, 1.75), (1.55, -0.35, 1.20),
+                            (-1.45, 0.55, 1.15), (0.35,  1.60, 0.95)], 0.44, 0.25, (-0.10, 0.14)),
+    ("cobble", 0.95, 5, 97, [(0.00, 0.00, 0.95), (0.58, -0.32, 0.62)], 0.11, 0.70, (0.16, -0.14)),
 ]
 
 N = 112          # directions around the outline; 3.2° of arc, so a 2.6 m lobe is off its arc by 1 mm
-RINGS = (0.18, 0.40, 0.60, 0.77, 0.90, 1.0)   # radial stations out to the silhouette, t of rho
+RING_BASE = (0.18, 0.40, 0.60, 0.77, 0.90, 1.0)   # mean radial stations out to the silhouette, t of rho
+RING_JITTER = 0.05    # how far one clast's stations move off that shared table
+RING_WOBBLE = 0.11    # max inward-only perturbation of a station's radius, as a fraction of itself
 
 
 def rho_of(discs):
@@ -89,13 +123,15 @@ def rho_of(discs):
     return rho
 
 
-def crown(t, tall):
-    """The clast's own height profile before anything breaks it: a mass that thickens at the core
-    and stands on a flank, not a dome. t is the fraction of the way out to the silhouette."""
-    return tall * (0.46 + 0.54 * (1.0 - t * t) ** 0.62)
+def crown(t, tall, foot, shape):
+    """The clast's own height profile before anything breaks it: a mass that thickens at the crest
+    and *tapers* into the ground, not a dome on a wall. t is the fraction of the way out to the
+    silhouette, `foot` the fraction of the height still standing at t=1, `shape` how fast that height
+    is given up — see NODES."""
+    return tall * (foot + (1.0 - foot) * (1.0 - t * t) ** shape)
 
 
-def clast(name, discs, tall, seed, cuts, sink=0.18):
+def clast(name, discs, tall, seed, cuts, foot, shape, crest, sink=0.18):
     """One clast: the authored footprint swept up into a fracture-faced mass."""
     rng = random.Random(seed)
     rho = rho_of(discs)
@@ -116,8 +152,12 @@ def clast(name, discs, tall, seed, cuts, sink=0.18):
         rise = (tall * 1.34 - zc) / max(s0, 0.5) * rng.uniform(0.92, 1.16)
         planes.append((math.cos(psi), math.sin(psi), s0, zc, rise))
 
-    def top(x, y, t):
-        z = crown(t, tall)
+    def top(x, y, pr):
+        # Measured from the crest, not the node origin, and expressed as a fraction of the outline so
+        # it means the same thing at every lobe. Clamped at the silhouette: past the crest's own reach
+        # the mass is a low bench, which is what a shoulder breaking back down to the sand looks like.
+        t = min(1.0, math.hypot(x - crest[0] * pr, y - crest[1] * pr) / pr)
+        z = crown(t, tall, foot, shape)
         z += noise.noise(Vector((x * 0.55, y * 0.55, 3.10))) * tall * 0.17
         z += noise.noise(Vector((x * 1.90, y * 1.90, 7.70))) * tall * 0.07
         for (nx, ny, s0, zc, rise) in planes:
@@ -127,22 +167,40 @@ def clast(name, discs, tall, seed, cuts, sink=0.18):
         return max(z, tall * 0.10 - sink)
 
     bm = bmesh.new()
-    # Rings of the polar grid. Every station is a fraction of rho, so all of them are similar copies
-    # of the silhouette — the outline is only ever authored once, at t=1.
+    # Radial stations, moved off the shared table per clast and then wobbled inward. Both are allowed
+    # to pull *inside* the authored silhouette and nowhere else, and that restriction is the whole
+    # point: `verify` reads the mesh's support function, which the u=1 ring alone defines, so an inner
+    # station can be reshaped freely without the collision moving by a micron.
+    #
+    # What that buys is the removal of the kit's worst tell. With one fixed table of similar copies,
+    # every clast on the island wore the same five concentric ridge lines at the same fraction of its
+    # own outline — a self-similarity that survives scaling, which is why it survived the scatter
+    # re-weight untouched. Real jointing does not repeat at rock scale, so neither should the mesh
+    # that is supposed to read as rock.
+    sta = sorted(min(0.95, max(0.07, b + rng.uniform(-RING_JITTER, RING_JITTER)))
+                 for b in RING_BASE[:-1]) + [1.0]
     lat = []
-    for ti, u in enumerate(RINGS):
+    for j, u in enumerate(sta):
+        # Never more than half the way to either neighbour, so the grid cannot fold on itself.
+        lim = min(u - (sta[j - 1] if j else 0.0), (sta[j + 1] if j + 1 < len(sta) else 1.0) - u)
+        amp = min(RING_WOBBLE, 0.5 * lim / u)
         ring = []
         for i in range(N):
             th = i * TAU / N
-            x, y = u * prof[i] * math.cos(th), u * prof[i] * math.sin(th)
-            ring.append(bm.verts.new((x, y, top(x, y, u) if u < 1.0 else top(x, y, 1.0))))
+            pr = prof[i]
+            if u < 1.0:
+                w = 0.5 + 0.5 * noise.noise(Vector((math.cos(th) * 2.4, math.sin(th) * 2.4,
+                                                    seed + u * 4.7)))
+                u *= 1.0 - amp * w
+            x, y = u * pr * math.cos(th), u * pr * math.sin(th)
+            ring.append(bm.verts.new((x, y, top(x, y, pr))))
         lat.append(ring)
-    apex = bm.verts.new((0.0, 0.0, top(0.0, 0.0, 0.0)))
+    apex = bm.verts.new((0.0, 0.0, top(0.0, 0.0, prof[0])))
 
     # The skirt: the silhouette dropped to below grade, so the clast is a solid wall, not a sheet.
     base = [bm.verts.new((v.co.x, v.co.y, -sink)) for v in lat[-1]]
 
-    for j in range(len(RINGS) - 1):
+    for j in range(len(sta) - 1):
         a, b = lat[j], lat[j + 1]
         for i in range(N):
             k = (i + 1) % N
@@ -253,8 +311,8 @@ def build_kit(spread=0.0):
     purge()
     kit = empty("rim_rock_kit")
     report = {}
-    for (i, (name, tall, cuts, seed, discs)) in enumerate(NODES):
-        o, _ = clast(name, discs, tall, seed, cuts)
+    for (i, (name, tall, cuts, seed, discs, foot, shape, crest)) in enumerate(NODES):
+        o, _ = clast(name, discs, tall, seed, cuts, foot, shape, crest)
         o.parent = kit
         # The three clasts are alternatives, not parts of one assembly, so they share the node
         # origin and the app places each by name. Spreading them along Blender Y (the app's Z, so

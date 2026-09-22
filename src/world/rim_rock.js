@@ -9,20 +9,35 @@
 // runs along the ring's tangent, which is what decides the pitch that keeps the ring sealed.
 
 export const RIM_ROCK = {
-  mega: { h: 4.068, reachT: 3.424, bulge_mm: 3, gap_mm: 0, discs: [
+  mega: { h: 4.006, reachT: 3.424, bulge_mm: 3, gap_mm: 0, discs: [
     [0.0, -0.0, 2.62],
     [1.62, 0.28, 1.78],
     [-1.52, -0.72, 1.52],
     [0.3, -1.72, 1.32]
   ] },
-  block: { h: 2.875, reachT: 2.553, bulge_mm: 2, gap_mm: 0, discs: [
+  block: { h: 2.884, reachT: 2.553, bulge_mm: 2, gap_mm: 0, discs: [
     [0.0, -0.0, 1.98],
     [1.18, 0.42, 1.3],
     [-1.12, -0.62, 1.1]
   ] },
-  slab: { h: 1.532, reachT: 2.04, bulge_mm: 2, gap_mm: 0, discs: [
+  slab: { h: 1.557, reachT: 2.04, bulge_mm: 2, gap_mm: 0, discs: [
     [0.0, -0.0, 1.58],
     [0.92, -0.44, 1.02],
     [-0.86, 0.48, 0.92]
+  ] },
+  shard: { h: 4.594, reachT: 1.831, bulge_mm: 2, gap_mm: 0, discs: [
+    [0.0, -0.0, 1.15],
+    [0.98, -0.32, 0.8],
+    [-0.94, 0.28, 0.78]
+  ] },
+  ledge: { h: 1.205, reachT: 2.789, bulge_mm: 3, gap_mm: 0, discs: [
+    [0.0, -0.0, 1.75],
+    [1.55, 0.35, 1.2],
+    [-1.45, -0.55, 1.15],
+    [0.35, -1.6, 0.95]
+  ] },
+  cobble: { h: 0.956, reachT: 1.282, bulge_mm: 1, gap_mm: 0, discs: [
+    [0.0, -0.0, 0.95],
+    [0.58, 0.32, 0.62]
   ] },
 };

@@ -233,15 +233,17 @@ async function boot() {
   setBar(22, ' sculpting 火星孤岛 · 300m 程序化沙丘…'); await raf();
   terrain = createTerrain(scene);
   setBar(44, '撞击坑与岩石风化场…'); await raf();
-  await createRocks(scene);
   setBar(56, '载入 Blender 建模的星舰基地资产…'); await raf();
   base = await buildBase(scene, { particles: 1 });
   // The site plan cuts its footings into the analytic ground as props are placed, which happens
   // after the terrain mesh was built. Re-survey the mesh now so what is drawn matches what physics
   // and the props were seated on — otherwise every graded lot shows a slab of dune under it.
   terrain.regrade();
-  // Scattered gravel is the last thing laid down: it has to know which ground the site plan turned
-  // into engineered decks, or a chip ends up floating over a footing it was cut through.
+  // Boulders and gravel come after that survey for the same reason: `pavedAt` and `surfaceAt` only
+  // describe the engineered ground once the plan exists, and a rock's seat has to be the ground the
+  // player sees. Their measured footprints then join the collision set here — a boulder you can
+  // drive through is scenery, not an obstacle.
+  base.colliders.push(...await createRocks(scene, base.colliders));
   createStones(scene);
   // the hub tap is the always-live mains feed; every other district starts blacked out
   for (const r of base.gridRigs) { r.online = r.key === 'hub'; r.power = r.online ? 1 : 0; r.tp.online = r.online; }

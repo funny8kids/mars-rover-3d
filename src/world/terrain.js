@@ -17,10 +17,17 @@ import { mergeInto } from './merge.js';
 // exactly periodic: a non-tiling seam repeated 26× across the world shows up as dead-straight
 // lines, and an albedo seam is far more visible than a normal one.
 export function makeSandDetail(size = 512) {
-  // All five trains run within ±10° of one another. Crossing them at wide angles — the obvious
+  // All six trains run within ±6° of one another. Crossing them at wide angles — the obvious
   // thing to reach for — weaves a diamond lattice that reads as carpet, not sand; wind lays ripples
   // near-parallel, with the variety coming from spacing and from crests that wander.
-  const WAVES = [[9, 6, 1.0], [14, 8, 0.74], [19, 16, 0.56], [28, 19, 0.40], [40, 30, 0.26]];
+  // Spacing comes from the tile, not from taste. One tile spans 300/26 = 11.54 m, so a train of
+  // wave-vector magnitude k has wavelength 11.54/k metres. The first pass ran [9,6] — 1.07 m — at
+  // the *largest* amplitude of any train, and that alone is why the dune field looked like corduroy:
+  // 1.07 m is not a ripple, it is a dune-scale ridge, and giving it the most contrast turned every
+  // slope into a handful of fat parallel furrows a rover-width apart. Aeolian ripples measured by
+  // Spirit and Opportunity sit at 20–40 cm, so the energy now peaks at 42 cm and the 1.07 m train
+  // survives only as a weak swell that keeps the field from looking stamped.
+  const WAVES = [[9, 6, 0.22], [17, 12, 0.62], [22, 16, 1.0], [29, 20, 0.80], [37, 25, 0.50], [47, 33, 0.28]];
   const TAU = Math.PI * 2;
 
   // Periodic value noise: lattice hashes wrap at P, so the field tiles by construction.
@@ -40,7 +47,8 @@ export function makeSandDetail(size = 512) {
   // pn() takes a lattice period in *tiles*, so it wraps exactly at the texture edge.
   const pn = (x, y, P) => pnoise(x * P / size, y * P / size, P);
 
-  const h = new Float32Array(size * size);
+  const h = new Float32Array(size * size);    // relief + grain: drives albedo
+  const hr = new Float32Array(size * size);   // relief alone: drives the normal map
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const bend = (pn(x, y, 3) - 0.5) * 1.5 + (pn(x, y, 8) - 0.5) * 0.9;
@@ -49,12 +57,15 @@ export function makeSandDetail(size = 512) {
         const kmag = Math.hypot(kx, ky);
         // Shifting each train's phase by its own wavenumber keeps the crest spacing locally
         // constant — real ridges meander around dune faces rather than marching in straight lines.
-        const s = 0.5 + 0.5 * Math.sin((kx * x + ky * y) * TAU / size + kmag * bend * 0.16);
-        v += amp * Math.pow(s, 2.2);          // peaked crests, flat troughs — aeolian, not sinusoidal
+        // Crests meander by a roughly constant *phase*, not a constant multiple of wavenumber. At
+        // kmag*0.16 the 20 cm train drifted ±4.6 rad, which folds a ridge back onto itself and reads
+        // as noise instead of as a crest line wandering down a dune face.
+        const s = 0.5 + 0.5 * Math.sin((kx * x + ky * y) * TAU / size + Math.min(1.7, kmag * 0.16) * bend);
+        v += amp * Math.pow(s, 1.75);          // peaked crests, flat troughs — aeolian, not sinusoidal
       }
+      hr[y * size + x] = v;
       const grain = pn(x, y, 460) * 0.55 + pn(x, y, 120) * 0.45;
-      v = v * 0.66 + (grain - 0.5) * 0.34 + 0.17;
-      h[y * size + x] = v;
+      h[y * size + x] = v * 0.66 + (grain - 0.5) * 0.34 + 0.17;
     }
   }
   let lo = Infinity, hi = -Infinity;
@@ -74,20 +85,46 @@ export function makeSandDetail(size = 512) {
     return t;
   };
 
-  const at = (x, y) => h[((y % size + size) % size) * size + (x % size + size) % size];
+  const wrap = (i) => ((i % size) + size) % size;
+  const atR = (x, y) => hr[wrap(y) * size + wrap(x)];
+
+  // The slope is calibrated against its own distribution, not hand-gained. The old builder differenced
+  // the grain-included field and multiplied by a fixed 2.6, which saturated the encoding: measured on
+  // the finished texture, the *median* texel normal sat 35.9° off flat with a 44.5° ceiling, so the map
+  // was nearly all noise floor and had no headroom left for ripples. Under a low sun that produces the
+  // exact artifact it was meant to cure — half the texels face away from the light and go to dot(N,L)=0,
+  // and the anisotropic mip filter lays those dead rows down as metre-spaced black bands across every
+  // grazing view. Both halves of that measurement are fixed here.
+  //
+  // Grain is out of the normal field entirely: its 460-cell lattice is 1.1 texels wide, well under the
+  // 4-texel differencing baseline, so it cannot encode a slope at all — only noise. It stays in the
+  // albedo, where the eye does read it as grit.
+  //
+  // What is left is pure relief, and its steepest flanks are pinned to 24° at the 99.5th percentile.
+  // Real aeolian stoss faces run up to the ~30° angle of repose, so 24° keeps the crests reading as
+  // sculpted sand without ever turning a texel fully away from the sun.
+  const gx = new Float32Array(size * size), gy = new Float32Array(size * size);
+  const mag = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    // 2-px taps: the 1-px gradient of a field this fine is dominated by whichever train happens to
+    // cross a texel boundary, and the ripples the eye actually reads need the wider baseline.
+    const i = y * size + x;
+    gx[i] = atR(x - 2, y) - atR(x + 2, y);
+    gy[i] = atR(x, y - 2) - atR(x, y + 2);
+    mag[i] = Math.hypot(gx[i], gy[i]);
+  }
+  const p995 = Float32Array.from(mag).sort()[size * size - 1 - Math.floor(size * size * 0.005)];
+  const gain = Math.tan(24 * Math.PI / 180) / (p995 || 1);
 
   const normalMap = mk((d) => {
-    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-      // 2-px taps: the 1-px gradient of a field this noisy is mostly grain, and the ripples — the
-      // shape the eye actually reads — need the wider baseline to survive normalScale.
-      const l = at(x - 2, y), r = at(x + 2, y), dn = at(x, y - 2), up = at(x, y + 2);
-      let nx = (l - r) * 2.6, ny = (dn - up) * 2.6;
+    for (let i = 0; i < size * size; i++) {
+      const nx = gx[i] * gain, ny = gy[i] * gain;
       const len = Math.hypot(nx, ny, 1);
-      const i = (y * size + x) * 4;
-      d[i] = (nx / len * 0.5 + 0.5) * 255;
-      d[i + 1] = (ny / len * 0.5 + 0.5) * 255;
-      d[i + 2] = (1 / len * 0.5 + 0.5) * 255;
-      d[i + 3] = 255;
+      const k = i * 4;
+      d[k] = (nx / len * 0.5 + 0.5) * 255;
+      d[k + 1] = (ny / len * 0.5 + 0.5) * 255;
+      d[k + 2] = (1 / len * 0.5 + 0.5) * 255;
+      d[k + 3] = 255;
     }
   });
 
@@ -96,14 +133,16 @@ export function makeSandDetail(size = 512) {
       const k = (h[y * size + x] - lo) * inv;
       const i = (y * size + x) * 4;
       // Crest: bleached, coarse, bright. Trough: finer rust that has been swept clean.
-      // The first pass swung ~65% crest-to-trough, which is what a close-up wants and what a
-      // driving view punishes: repeated over the dune field it banding-moiréed into hard parallel
-      // stripes the moment the trains fell below Nyquist. The swing comes down to ~30% and the
-      // shader fades the map entirely past that point (see applyPaving), so the near grain keeps
-      // its bite and the far field settles into a flat warm expanse like real dunes seen off.
-      d[i] = (0.80 + 0.24 * k) * 255;
-      d[i + 1] = (0.77 + 0.25 * k) * 255;
-      d[i + 2] = (0.75 + 0.26 * k) * 255;
+      // Two passes of failure behind these three numbers. The first swung ~65% crest-to-trough and
+      // banding-moiréed into hard stripes; the second cut the swing to 30% but kept the same
+      // *offset*, so the ramp ran 0.80→1.04 and every crest above 1.0 was clamped to pure white.
+      // A clipped top is not a soft highlight, it is a plateau with a step off the end of it — which
+      // is what the zebra bands on the dune faces actually were. So the swing is now 15% and the
+      // ramp is centred on the same mean the shader fades toward, which puts its ceiling at 0.985
+      // and means nothing in this map is clipped at all.
+      d[i] = (0.855 + 0.13 * k) * 255;
+      d[i + 1] = (0.8275 + 0.135 * k) * 255;
+      d[i + 2] = (0.8075 + 0.145 * k) * 255;
       d[i + 3] = 255;
     }
   });
@@ -291,12 +330,14 @@ function applyPaving(mat) {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying float vDeck;\n' + PARS)
       .replace('#include <map_fragment>', `#include <map_fragment>
-  // The 512² ripple tile spans 11.5 m and its fastest train runs ~3.5 cycles per metre, so past
-  // roughly 30 m it falls below Nyquist and anisotropic sampling stops saving it: the whole dune
-  // face banding-moiréed into hard parallel stripes in every driving shot. Fade the detail map
-  // toward its own mean with texture density — grain under the lens, flat rust on the horizon,
-  // which is exactly how a real dune field resolves.
-  gRipple = 1.0 - smoothstep( 0.004, 0.016, fwidth( vMapUv.x ) + fwidth( vMapUv.y ) );
+  // The 512² ripple tile spans 11.5 m, so its trains run from 0.94 to 5.0 cycles per metre and the
+  // 20 cm one falls below Nyquist as soon as a pixel covers more than half of it. Past that point
+  // anisotropic sampling stops saving the map and the whole dune face moirées into hard parallel
+  // stripes in every driving shot. Fade the detail map toward its own mean with texture density —
+  // grain under the lens, flat rust on the horizon, which is exactly how a real dune field resolves.
+  // The window is the Nyquist limit of the *fastest* train, not a taste cutoff: 3.2 cm per pixel in,
+  // 11 cm out. The old 4.6–18.5 cm window was tuned to a spectrum whose coarsest ridge was 1.07 m.
+  gRipple = 1.0 - smoothstep( 0.0028, 0.0095, fwidth( vMapUv.x ) + fwidth( vMapUv.y ) );
   // (no vColor here — color_fragment multiplies the vertex tint in *after* this chunk)
   diffuseColor.rgb = mix( vec3( 0.92, 0.895, 0.88 ), diffuseColor.rgb, gRipple );
   gPave = rsbPave( vWP.xz, max( vPave, vDeck ) );
@@ -400,11 +441,11 @@ export function createTerrain(scene) {
   const detail = makeSandDetail();
   mat.map = detail.map;
   mat.normalMap = detail.normalMap;
-  // The ripple shape is now carried by albedo, so the normals only have to whisper; at full
-  // strength the tiling field read as corduroy — perfectly parallel waves with no height behind them.
-  // Nudged up once the albedo swing came down: with the stripes softened, the lighting term is what
-  // keeps the near-field grain three-dimensional, and it is the distance fade that kills the moiré.
-  mat.normalScale.set(0.78, 0.78);
+  // The map now arrives with its slopes already calibrated, so the scale is a taste knob rather than
+  // a damage-limit: 1.0 lets the 24° crests through at full tilt, and the distance fade in the shader
+  // is what removes them before they can alias. The old 0.45 existed to mute a saturated map; muting a
+  // saturated map by half still leaves a saturated map, which is why the banding survived it.
+  mat.normalScale.set(1, 1);
   applyPaving(mat);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;

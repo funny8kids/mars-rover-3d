@@ -13,7 +13,8 @@ varying vec3 vDir;
 uniform vec3 uSunDir;
 uniform vec3 uMoonDir;
 uniform float uMoonF;
-uniform float uDay;      // 0 night .. 1 noon
+uniform float uDay;      // 0 night .. 1 noon, already dimmed by dust
+uniform float uDayRaw;   // the sun's true altitude, so the dust can still light the air
 uniform float uStorm;
 uniform float uTime;
 
@@ -35,7 +36,6 @@ float mesa(float a, float seed, float f){
 void main(){
   vec3 d = normalize(vDir);
   float y = clamp(d.y, -1.0, 1.0);
-  float horizon = pow(1.0 - max(y, 0.0), 3.2);
 
   // mars palettes — Outer Wilds dusk: violet zenith melting into a burnt-pink horizon
   vec3 dayZen  = vec3(0.20, 0.13, 0.27);
@@ -66,6 +66,12 @@ void main(){
   float glow = pow(sdot, 220.0) * 0.9 + pow(sdot, 26.0) * 0.22 + pow(sdot, 3.0) * 0.055;
   vec3 sunCol = mix(vec3(1.0, 0.55, 0.28), vec3(1.0, 0.87, 0.72), dayF);
   sky += sunCol * (disc * 22.0 + glow) * (0.12 + dayF * 0.9) * (1.0 - duskF * 0.15);
+  // Forward scattering off suspended fines. Clearing the disc away with the day factor also threw
+  // away the only thing that made a dust storm read as *dust* rather than brown fog: the sun still
+  // shines through a Martian storm, it just smears into a wide sheath around itself. This is lit by
+  // the sun's real altitude, so it survives the dimming rather than going out with it.
+  float aureole = pow(sdot, 6.0) * 0.75 + pow(sdot, 1.8) * 0.30;
+  sky += vec3(1.0, 0.56, 0.24) * aureole * uStorm * uDayRaw * (1.0 - smoothstep(0.55, 1.0, uStorm) * 0.45);
 
   // stars + milky way at night
   float nightF = 1.0 - smoothstep(0.0, 0.22, sunHeight);
@@ -84,7 +90,7 @@ void main(){
     float tw = 0.72 + 0.28 * sin(uTime * 2.4 + st * 71.0);
     float star = lit * tw * smoothstep(0.26 - mag * 0.1, 0.02, length(cf));
     float mw = band * (0.35 + fbm2(sc * 0.05)) * 0.05;
-    sky += (vec3(0.92, 0.94, 1.0) * star * 3.2 + vec3(0.5, 0.55, 0.78) * mw) * nightF;
+    sky += (vec3(0.92, 0.94, 1.0) * star * 3.2 + vec3(0.5, 0.55, 0.78) * mw) * nightF * (1.0 - uStorm);
   }
 
   // the moon: the night key light has a visible source, so the dune shadows
@@ -129,7 +135,12 @@ void main(){
     float sunward = pow(max(dot(sd, sdSun), 0.0), 1.6);
     // sunward veils catch the key light; the rest of the field stays a cool, thin grey
     vec3 veilCol = mix(vec3(0.55, 0.56, 0.68), vec3(1.00, 0.83, 0.65), 0.25 + sunward * 0.75);
-    sky = mix(sky, veilCol, cover * fade * (0.16 + 0.52 * dayF) * (1.0 - uStorm * 0.55));
+    // A storm lifts its dust *above* the weather layer, so the high veils thicken rather than
+    // being painted out by the ochre below — suppressing them is what turned the old storm sky into
+    // one flat brown disc with no structure and no motion overhead.
+    veilCol = mix(veilCol, vec3(0.85, 0.52, 0.27), uStorm * 0.8);
+    float veilW = (0.16 + 0.52 * dayF) * (1.0 + uStorm * 1.6);
+    sky = mix(sky, veilCol, min(cover * fade * veilW, 0.92));
   }
 
   // Distant mesas. With nothing standing on the horizon line every sightline ended in a hard band
@@ -146,9 +157,23 @@ void main(){
   sky = mix(sky, farRock, smoothstep(farLine + 0.004, farLine - 0.004, y) * ridgeA);
   sky = mix(sky, nearRock, smoothstep(nearLine + 0.004, nearLine - 0.004, y) * ridgeA);
 
-  // storm darkening + ochre soup
-  vec3 stormCol = vec3(0.48, 0.24, 0.11);
-  sky = mix(sky, stormCol * (0.5 + dayF * 0.7), uStorm * 0.85 * (0.4 + 0.6 * horizon));
+  // Dust load by altitude. The column of air you look through is many times longer at the horizon
+  // than overhead, so the same suspension paints a bright butterscotch band on the skyline and only
+  // a thin maroon wash at the zenith. The old version lerped the whole dome toward one brown at one
+  // weight — that flat tint is the other half of why the storm looked like a filter, not weather.
+  float am = min(1.0 / (0.20 + max(y, 0.0) * 1.55), 5.0);
+  vec3 dustLow  = vec3(0.78, 0.44, 0.19);
+  vec3 dustHigh = vec3(0.23, 0.095, 0.055);
+  vec3 dustCol = mix(dustLow, dustHigh, smoothstep(0.03, 0.72, y)) * (0.42 + uDayRaw * 0.78);
+  sky = mix(sky, dustCol, min(uStorm * am * 0.5, 0.93));
+  // Billows blown along the base of the dome. This is the only motion in the storm that is not
+  // particle-sized, and it is what tells you the wall out there is travelling.
+  if (uStorm > 0.02 && y < 0.34){
+    vec2 bp = vec2(atan(d.z, d.x) * 2.6 + uTime * 0.055, y * 7.0 - uTime * 0.022);
+    float band = fbm2(bp) * 0.6 + fbm2(bp * 2.7 + 3.1) * 0.4;
+    float billow = smoothstep(0.44, 0.88, band) * smoothstep(0.34, 0.01, y);
+    sky = mix(sky, dustLow * (0.5 + uDayRaw * 0.8), billow * uStorm * 0.55);
+  }
   gl_FragColor = vec4(sky, 1.0);
   #include <colorspace_fragment>
 }`;
@@ -161,7 +186,7 @@ export function createSky(scene) {
       uSunDir: { value: new THREE.Vector3(0.4, 0.5, 0.2) },
       uMoonDir: { value: new THREE.Vector3(0, 1, 0) },
       uMoonF: { value: 0 },
-      uDay: { value: 0.8 }, uStorm: { value: 0 }, uTime: { value: 0 },
+      uDay: { value: 0.8 }, uDayRaw: { value: 0.8 }, uStorm: { value: 0 }, uTime: { value: 0 },
     },
     side: THREE.BackSide, depthWrite: false, fog: false,
   });
@@ -176,9 +201,10 @@ export function createSky(scene) {
   envScene.add(new THREE.Mesh(geo, mat));
   return {
     mesh, mat, envScene,
-    setSun(dir, day, storm, time, moonDir, moonF) {
+    setSun(dir, day, storm, time, moonDir, moonF, dayRaw) {
       mat.uniforms.uSunDir.value.copy(dir);
       mat.uniforms.uDay.value = day;
+      mat.uniforms.uDayRaw.value = dayRaw ?? day;
       mat.uniforms.uStorm.value = storm;
       mat.uniforms.uTime.value = time;
       if (moonDir) mat.uniforms.uMoonDir.value.copy(moonDir);

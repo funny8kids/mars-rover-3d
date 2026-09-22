@@ -10,6 +10,7 @@ import { RoverPhysics, platformAt } from './vehicle/physics.js';
 import { ChaseCamera } from './camera/chase.js';
 import { createInput } from './input.js';
 import { createFX, updateStorm } from './fx/particles.js';
+import { StormField, createStormWall, placeStormWall } from './world/storm.js';
 import { createPost } from './fx/post.js';
 import { createSkidMarks } from './fx/skids.js';
 import { GameAudio } from './audio/audio.js';
@@ -29,6 +30,20 @@ const input = createInput(canvas);
 const audio = new GameAudio();
 
 let quality, qKey, post, fx, env, sky, terrain, base, rover, phys, chase, skids;
+let stormField = null, stormWall = null;
+const _viewDir = new THREE.Vector3();
+// The wall's own two poles: dust in shadow is a maroon screen, dust backlit by the sun blazes.
+// The shadow pole has to be *far* darker than the sky the wall stands against. Measured 2026-09-22:
+// at (0.40, 0.20, 0.105) linear the ACES curve put the wall's own tone within a whisker of the
+// dust-lit sky behind it, so the front had no silhouette at all — hiding the mesh changed the frame
+// by one histogram bin. Unlit dust a kilometre deep is close to soot.
+const STORM_TINT = new THREE.Color(0.055, 0.021, 0.010);
+// The lit pole sets the hue of the whole front, and it is a *linear* value: after the composer's
+// ACES curve (1.0, 0.60, 0.28) lands at about sRGB 232/191/138 — cream. Measured 2026-09-22 on the
+// framed 150 m shot, the wall's mid band came out at 151/91/64 with a mean light value of 0.55, and
+// a cream-lit dust sheet reads as sunlit cloud, not as a wall of soil crossing the plain. Backlit
+// dust is amber and it is *saturated*: the green channel has to fall faster than the red.
+const STORM_GLOW = new THREE.Color(1.0, 0.46, 0.15);
 let started = false, paused = false;
 let startedAt = 0;       // performance.now() at the moment the world became interactive
 let elapsed = 0;
@@ -302,7 +317,11 @@ function applyQuality() {
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = quality.shadow > 0;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  env = new Environment(scene, sky, quality);
+  // The field and its wall are weather, not quality: rebuilding them on a mode switch would drop
+  // a storm halfway across the island and start a new one.
+  stormField ||= new StormField(surfaceAt);
+  stormWall ||= createStormWall(scene);
+  env = new Environment(scene, sky, quality, stormField);
   if (quality.shadow) env.sun.shadow.mapSize.set(quality.shadow, quality.shadow);
   fx = createFX(scene, quality);
   skids ??= createSkidMarks(scene);
@@ -416,7 +435,10 @@ function updateGrid(dt, st) {
   // ── charge: the hub tap is mains power, the outer pads are solar and die with the dust
   const pad = padHere && padHere.online ? padHere : null;
   if (pad && phys.speed < 1.4 && !grid.dead) {
-    const sun = Math.max(0, st.dayF) * (1 - st.stormF * 0.8);
+    // st.stormF alone was the dust sitting *on top of the panel*, which is zero while a front is
+    // still a kilometre out — so an array in full view of a wall of dust kept generating at noon.
+    // sunShade is the column between the panel and the sun, which is what actually sets the yield.
+    const sun = Math.max(0, st.dayF) * (1 - Math.max(st.stormF, st.sunShade) * 0.8);
     const rate = pad.key === 'hub' ? 0.155 : 0.05 + 0.09 * sun;
     grid.battery = Math.min(1, grid.battery + rate * dt);
   }
@@ -1107,20 +1129,22 @@ function update(dt) {
   teleHint._mute.classList.toggle('hidden', photo.on);
   if (teleOpen) drawTeleMap();
 
-  // environment
-  env.update(dt, rover.group.position, elapsed, renderer);
-  const localStorm = 1 - THREE.MathUtils.clamp((Math.hypot(phys.x - ZONES.storm.pos[0], phys.z - ZONES.storm.pos[1]) - 26) / 70, 0, 1);
-  const stormF = Math.max(st.stormF, localStorm * 0.85);
-  env.fog.density += localStorm * 0.010;
-  const windT = elapsed * 0.4;
+  // environment — the sightline is what the fog's direction-dependent density is sampled along
+  camera.getWorldDirection(_viewDir);
+  env.update(dt, rover.group.position, elapsed, renderer, _viewDir);
+  const stormF = st.stormF;
+  placeStormWall(stormWall, stormField, camera.position, dt, st.sunDir, STORM_TINT, STORM_GLOW, camera.position, env.fog);
   // particles
-  updateStorm(fx, dt, { x: pose.x, y: pose.y + 2, z: pose.z }, stormF, windT, aLvl);
-  fx.dust.update(dt, Math.sin(windT) * 2, Math.cos(windT), aLvl * 0.4);
+  updateStorm(fx, dt, camera.position, stormField, surfaceAt);
+  // Ambient smoke and steam now lean down the actual wind vector instead of a sine, so a plume
+  // and a storm cannot disagree about which way the weather is blowing.
+  const breezeX = stormField.wx * stormField.speed * 0.13, breezeZ = stormField.wz * stormField.speed * 0.13;
+  fx.dust.update(dt, breezeX, breezeZ, aLvl * 0.4);
   fx.driftSmoke.update(dt, 0, 0, aLvl * 0.5);
   fx.spark.update(dt, 0, 0, 0);
   fx.flame.update(dt, 0, 0, aLvl);
-  fx.smoke.update(dt, Math.sin(windT * 0.5) * 1.5, 0, 0);
-  fx.steam.update(dt, Math.sin(windT) * 2, Math.cos(windT), 0);
+  fx.smoke.update(dt, breezeX * 6, breezeZ * 6, 0);
+  fx.steam.update(dt, breezeX * 8, breezeZ * 8, 0);
 
   // shockwave rings fade
   for (let i = shockRings.length - 1; i >= 0; i--) {
@@ -1231,14 +1255,21 @@ function update(dt) {
     sunOnFrame = Math.abs(p.x) < 1.25 && Math.abs(p.y) < 1.25;
     if (sunOnFrame) fu.uSunUV.value.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5);
   }
-  fu.uGodRay.value = quality.godrays && sunOnFrame ? (1 - stormF) * st.dayF * THREE.MathUtils.clamp(camDir.dot(st.sunDir) * 2.2, 0, 1) : 0;
+  fu.uStorm.value = stormF;
+  // Suspended dust is the *medium* god rays need — a clear sky has no volume to light up. The old
+  // `(1 - stormF)` deleted the one thing a low sun through a storm should do, so storms lost their
+  // shafts entirely and the frame went flat. They now fade to a third instead of to zero.
+  fu.uGodRay.value = quality.godrays && sunOnFrame ? (1 - stormF * 0.66) * st.dayF * THREE.MathUtils.clamp(camDir.dot(st.sunDir) * 2.2, 0, 1) : 0;
   fu.uCA.value = 0.12 + Math.min(0.5, phys.speed / 60) + stormF * 0.2 + launch.flash * 0.9;
   fu.uNight.value = st.nightF;
   fu.uGrain.value = 0.028 + st.nightF * 0.006 + stormF * 0.03;
   // 0.55 put the corners at 26% brightness, which turned any dark prop near the frame edge into
-  // a black hole. Storms still want the heavy tunnel; calm daylight wants barely a hint.
-  fu.uVignette.value = 0.26 + stormF * 0.45;
-  fu.uDirt.value = stormF * 0.9;
+  // a black hole. The tunnelling is now carried by the wall mesh and the layered fog, so the
+  // vignette only has to add the pressure on top of what is already in the frame.
+  fu.uVignette.value = 0.26 + stormF * 0.22;
+  // Lens grit reads as the storm passing *over* you, and the film that survives is the deposition
+  // the array and the paint are wearing — a clear sky after a peak should still be dirty.
+  fu.uDirt.value = Math.min(1, stormF * 0.62 + st.stormLoad * 0.5);
   fu.uFlash.value = launch.flash;
   // at night a full-strength bloom turns every lamp into a disc that lifts the whole
   // sky and erases the stars, so the night frames get a tighter bloom budget
@@ -1250,7 +1281,10 @@ function update(dt) {
   post.bloom.threshold = THREE.MathUtils.lerp(2.9, 0.42, st.nightF) * (1 - stormF * 0.45);
   // Daylight frames were crushing to 43% near-black silhouette; night was already balanced
   // at 0.97 by the lamp pass, so the lift tracks the sun rather than the whole clock.
-  renderer.toneMappingExposure = 1.02 - st.nightF * 0.20;
+  // The storm's own lift is small and deliberate: the key is down 68%, so the exposure opens up
+  // for the midtones, but the wall and the sun aureole are already near clipping and a wide
+  // exposure there reintroduces the flat orange field the layering was meant to replace.
+  renderer.toneMappingExposure = 1.02 - st.nightF * 0.20 + stormF * 0.11;
 
   // HUD
   UI.setSpeed(phys.speed * 3.6);
@@ -1375,6 +1409,16 @@ window.__RSB = {
     advanceMission();
   },
   startStorm: () => { env?.toggleWeather(); },
+  // Hold one storm phase in place for a screenshot pair: the wind axis is aimed so the front sits
+  // in front of the current view, which is the framing the wall mesh was built for. Pass a heading
+  // to aim the wind somewhere else — putting the front between the view and the sun is a different
+  // picture entirely, and the one the sun-path extinction term exists to be judged on.
+  pinStorm: (phase = 'front', standoff = 150, heading = null) => {
+    const d = camera.getWorldDirection(tmpV.set(0, 0, 1));
+    return stormField.pin(phase, camera.position, standoff, heading ?? Math.atan2(-d.z, -d.x)).state;
+  },
+  unpinStorm: () => stormField.unpin().state,
+  storm: () => stormField?.state,
   startNight: () => { env?.forceNight(); },
   phys: () => phys, env: () => env, launchRef: launch,
   warp: (x, z, face, search) => warpTo(x, z, face, search ?? 8),

@@ -29,6 +29,7 @@ const FINAL = {
     uDirtTex: { value: null },
     uFlash: { value: 0 },
     uFlashCol: { value: new THREE.Color(1, 0.5, 0.2) },
+    uStorm: { value: 0 },
     uGrade: { value: 1 },
     uNight: { value: 0 },
     uRes: { value: new THREE.Vector2(1, 1) },
@@ -38,7 +39,7 @@ const FINAL = {
 precision highp float;
 varying vec2 vUv;
 uniform sampler2D tDiffuse, uDirtTex;
-uniform float uTime, uGodRay, uCA, uGrain, uVignette, uDirt, uFlash, uGrade, uNight;
+uniform float uTime, uGodRay, uCA, uGrain, uVignette, uDirt, uFlash, uGrade, uNight, uStorm;
 uniform vec2 uSunUV, uRes;
 uniform vec3 uFlashCol;
 float h12(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)))*43758.5453); }
@@ -83,6 +84,15 @@ void main(){
   col = max(col - mix(0.022, 0.004, uNight), vec3(0.0)) * mix(1.10, 1.55, uNight);
   float lum2 = dot(col, vec3(0.299, 0.587, 0.114));
   col = mix(vec3(lum2), col, mix(1.22, 1.10, uNight));
+  // Dust stratification. The column of air between you and a pixel near the bottom of the frame is
+  // far longer than the one to a pixel near the zenith, so the cast has to fall the same way. One
+  // tint multiplied over the whole image is what made the old storm read as a sepia filter rather
+  // than weather standing over you.
+  if (uStorm > 0.001){
+    float low = 1.0 - smoothstep(0.06, 0.82, uv.y);
+    col = mix(col, col * vec3(1.22, 0.80, 0.44), uStorm * low * 0.34);
+    col = mix(col, col * vec3(0.86, 0.74, 0.72), uStorm * (1.0 - low) * 0.22);
+  }
   // screen dirt during storms
   if (uDirt > 0.001){
     vec3 dirt = texture2D(uDirtTex, uv * 1.15 + 0.02).rgb;

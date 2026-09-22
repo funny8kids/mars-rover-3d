@@ -492,6 +492,43 @@ export async function buildBase(scene, quality) {
     lot(keyed, x, z, b.w * s, b.d * s, ry || 0);
     return id;
   };
+  // A lamp's collision is its base drum, not its bounding box. `lamp.glb` spans 2.04 × 1.92 m only
+  // because a 1.9 m cross-arm hangs 3 m above the deck, which the rover drives under; `footOf` would
+  // have wrapped that arm in a wall and parked an invisible metre of barrier on every shoulder.
+  // Measured off the mesh instead: every vertex below 0.25 m fits a 600 × 608 mm rectangle centred
+  // 114 mm off the model origin, so the disc circumscribes that rectangle at its own centre — which
+  // is why the wheel stops at the bolted plinth rather than a metre short of the mast.
+  const LAMP_BASE = [-0.114, 0.60, 0.61];
+  // A drum must not touch another prop's discs: two raw discs with no daylight between them have no
+  // legal position in the crease, which is the "WASD stopped working" bug. 300 mm is well under the
+  // rover's own ground clearance, so a pole that close to a wall is one it can never wedge into.
+  const LAMP_CLEAR = 0.3;
+  const lampDrum = (x, z, s, ry) => {
+    const [ox, w, d] = LAMP_BASE, c = Math.cos(ry), si = Math.sin(ry);
+    return discLayout(w * s, d * s, x + ox * s * c, z - ox * s * si, ry);
+  };
+  // A pole the rover cannot see coming is worse than a pole that is missing, so a lamp is drawn only
+  // where its drum actually fits: clear of every carriageway, and clear of everything already
+  // standing. This catches the two placements that were always wrong but invisible — a street lamp
+  // at an intersection, whose 8.2 m shoulder offset is the crossing lane, and a plaza lamp on the
+  // hub's lamp ring, which swept straight through the building line's hangars.
+  const lampFits = (x, z, s, ry) => {
+    for (const o of lampDrum(x, z, s, ry)) {
+      if (streetEncroach(o.x, o.z, o.r) > 0) return false;
+      for (const q of colliders) {
+        if (q.floor !== undefined) continue;
+        if (Math.hypot(q.x - o.x, q.z - o.z) - q.r - o.r < LAMP_CLEAR) return false;
+      }
+    }
+    return true;
+  };
+  const putLamp = (id, x, z, s, ry) => {
+    if (!lampFits(x, z, s, ry)) return false;
+    put('lamp', x, z, s, ry, 0);
+    const [ox, w, d] = LAMP_BASE, c = Math.cos(ry), si = Math.sin(ry);
+    lot(id, x + ox * s * c, z - ox * s * si, w * s, d * s, ry);
+    return true;
+  };
   // A gantry portal is four stanchions carrying a girder. The bay under it is driveable ground, so
   // the collision is the feet and nothing else — a disc on the centre would wall off the very space
   // the portal is built to enclose, and one oversized disc per foot eats 3.2 m of daylight each.
@@ -866,10 +903,10 @@ export async function buildBase(scene, quality) {
         // A 5.7 m mast landing 1.8 m off the pad centre grew straight up through the teleport disc
         // and hid the markings from the approach. Fast-travel nodes keep their own clear envelope.
         if (Math.hypot(lx - (hx - 8.5), lz - (hz + 11)) < 5.4) continue;
-        put('lamp', lx, lz, 1.25, a, 0);
+        putLamp(`lamp-ring-${i}`, lx, lz, 1.25, a);
       }
       for (const sgn of [-1, 1]) {
-        put('lamp', hx + sgn * 7.6, hz - 19.5, 1.15, sgn > 0 ? -1.57 : 1.57, 0);
+        putLamp(`gate-lamp-${sgn}`, hx + sgn * 7.6, hz - 19.5, 1.15, sgn > 0 ? -1.57 : 1.57);
       }
     }
     infoZones.push({
@@ -1470,10 +1507,15 @@ export async function buildBase(scene, quality) {
     ZONE = 'night';
     const ny = heightAt(nx, nz);
     putSolid('habitat_dome', nx + 6, nz - 4, 0.7, 1.7, 'dome');
+    // A 1.2 m pier on a tripod does not need the r=1.6 armour it used to wear — that was a 3.2 m
+    // invisible drum around a 0.9 m column, on a hill the player walks around to find the scope.
+    // Registered before the lanterns because placement order is clearance order: a lamp yields to
+    // ground it can already see, and drawn after them the pier sat inside a lamp's drum by 30 mm.
+    lot('telescope', nx - 7, nz - 6, 1.0, 1.0);
     for (let i = 0; i < 6; i++) {
       const a = i / 6 * 2.6 + 2.4;
       const lx = nx + Math.cos(a) * 9, lz = nz + Math.sin(a) * 9;
-      put('lamp', lx, lz, 1.3, a, 0);
+      putLamp(`lantern-${i}`, lx, lz, 1.3, a);
     }
     cyl(0.3, 0.45, 1.8, M.struct, nx - 7, ny + 0.9, nz - 6, 10);
     const scope = cyl(0.45, 0.62, 2.8, M.white, nx - 7, ny + 2.8, nz - 6, 12);
@@ -1485,9 +1527,6 @@ export async function buildBase(scene, quality) {
     // of the cylinder's own opaque cap (recessing below it hides nothing, and a metallic lens
     // mirrors the noon sun — AC1/AD1 forensics).
     scope.add(cyl(0.43, 0.43, 0.06, new THREE.MeshStandardMaterial({ color: 0x101216, roughness: 0.85, metalness: 0.05 }), 0, 1.43, 0, 12));
-    // A 1.2 m pier on a tripod does not need the r=1.6 armour it used to wear — that was a 3.2 m
-    // invisible drum around a 0.9 m column, on a hill the player walks around to find the scope.
-    lot('telescope', nx - 7, nz - 6, 1.0, 1.0);
     infoZones.push({
       key: 'night', pos: [nx, nz], r: 18, tag: 'OBSERVATION HILL',
       name: '夜空观赏丘', params: ['夜晚：按 N 快进到午夜', '灯光秀：夜晚靠近星舰按 E'],
@@ -1674,7 +1713,8 @@ export async function buildBase(scene, quality) {
     // you could see did not match the carriageway the terrain shader flattened. Now the same STREETS
     // list that height.js compacts and plan.js audits is what gets tiled and lit.
     const TILE = S * 1.7;                       // one kit road tile laid across the lane
-    for (const s of STREETS) {
+    ZONE = 'road';       // the lamps below are the street's own furniture, not any district's
+    for (const [si, s] of STREETS.entries()) {
       const dx = s.b[0] - s.a[0], dz = s.b[1] - s.a[1], l = Math.hypot(dx, dz);
       const yaw = Math.atan2(dx, dz);
       const n = Math.round(l / TILE);
@@ -1686,7 +1726,8 @@ export async function buildBase(scene, quality) {
           // lamps stand on the shoulder, clear of the trafficable width but inside the setback
           const ox = dz / l * 8.2, oz = -dx / l * 8.2;
           const side = (i % 6 < 3) ? 1 : -1;
-          put('lamp', x + ox * side, z + oz * side, 1.05, yaw + (side > 0 ? Math.PI / 2 : -Math.PI / 2), 0);
+          putLamp(`lamp-${si}-${i}`, x + ox * side, z + oz * side, 1.05,
+                  yaw + (side > 0 ? Math.PI / 2 : -Math.PI / 2));
         }
       }
     }

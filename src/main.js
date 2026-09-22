@@ -192,10 +192,14 @@ const mapObjective = { x: 0, z: 0 };
 function drawTeleMap() {
   const o = objectiveTarget();
   let obj = null;
-  if (o) { obj = mapObjective; obj.x = o.x; obj.z = o.z; }
+  if (o && !nav.blind) { obj = mapObjective; obj.x = o.x; obj.z = o.z; }
+  // The map is drawn from the same optical fix as the arrow, so a blind rover loses its pins too —
+  // but not its plate. The contours, streets, district lettering and the hazard ring are surveyed
+  // ground truth, not something the sky can scramble, and dropping them would punish the player with
+  // information the fiction says they still have.
   chart.draw({
     x: phys.x, z: phys.z, yaw: phys.yaw, time: elapsed,
-    teleports: base.teleports, padHere, objective: obj, samples: base.samples,
+    teleports: base.teleports, padHere, objective: obj, samples: nav.blind ? [] : base.samples,
     danger: leakFixed ? null : { x: base.leakPoint.x, z: base.leakPoint.z, r: 15 },
   });
 }
@@ -569,7 +573,13 @@ function onGridComplete() {
 // charge on its dust-off lance. That is the loop the art direction wanted — weather that writes a
 // bill, and a vehicle that pays it.
 const FILM = {
-  DEPOSIT: 0.050,     // 1/s of array coverage at full airborne load — a peak front coats a tap in ~20 s
+  // Was 0.050: measured 2026-09-22, one natural front carried every array from 6 % to 100 % and left
+  // them there, so the ledger could only ever read 0 or 100 — it could not say which taps had been
+  // under the wall longest, and the whole grid at 15 % output is a bigger chore than a storm is worth.
+  // The first retune to 0.022 still overshot: one pass ended at 78-92 %, the same dead grid wearing a
+  // different number. At this rate the worst tap finishes a storm at two thirds, so one storm is a bill
+  // you may defer and the second one is the visit you cannot.
+  DEPOSIT: 0.016,
   RIDE: 0.075,        // 1/s onto the rover's own paint while it stands in the dust
   SCOUR: 0.0075,      // per m/s·s the airflow over the bodywork takes back off
   LANCE_R: 9,         // m — the lance's reach; deliberately a tap's own link ring, one idiom
@@ -599,7 +609,15 @@ function weatherLabel(st) {
   const film = Math.round(filmGauge() * 100);
   const sky = st.stormF > 0.5 ? t('沙尘暴') : st.nightF > 0.5 ? t('夜晚') : t('晴朗');
   const cost = film > 3 ? ` · ${t('阵列积尘')} ${film}%` : '';
-  if (o.alarm) return `⚠ ${t('沙暴前沿')} ${mmss(o.in)}${cost}`;
+  // The veto comes first: a countdown is a promise about the future, and dust already falling on your
+  // head outranks any promise. It fires for a point near the upwind rim that is under the wall while
+  // the field still calls the event `watch`, and for the seconds after a truthful `front in 0:0X` has
+  // run out — the front has arrived, so say that instead of holding a clock at zero.
+  if (o.on && (o.phase === 'watch' || o.phase === 'front' || o.phase === 'calm')) return `◈ ${t('沙暴过境')}${cost}`;
+  // Two words because the slot promises two different things, and the field knows which one it is on:
+  // the build-up counts to the launch, the launch counts to the wall's own leading face.
+  if (o.phase === 'watch') return `⚠ ${t('沙暴逼近')} ${mmss(o.in)}${cost}`;
+  if (o.phase === 'front') return `⚠ ${t('沙暴前沿')} ${mmss(o.in)}${cost}`;
   if (o.phase === 'peak' || o.phase === 'clearing') return `◈ ${t('沙暴过境')}${cost}`;
   if (o.phase === 'aftermath') return `${t('暴后降尘')}${cost}`;
   // In the calm gap the same slot counts down to the next alarm, so weather is something you plan a
@@ -609,6 +627,21 @@ function weatherLabel(st) {
 }
 
 function updateStormPlay(dt, st, inp) {
+  // The moment the wall commits to walking is when a warning stops being about someday and starts
+  // being about now, and the top bar is a small place to notice it. One line per front, where the
+  // player is already looking; the countdown itself stays in the bar. No arrival number here — for a
+  // rover parked near the upwind rim the front is already on it, and a toast cannot be wrong about
+  // the weather it is announcing.
+  const ph = stormField.phase;
+  if (ph !== stormPlay.phase) {
+    if (ph === 'front') {
+      stormPlay.events++;
+      UI.toast(t('▸ 沙暴前沿已启动 — 驶近的光台是唯一的参照，信标即将失锁'));
+      audio.radio('bad');
+    }
+    stormPlay.phase = ph;
+  }
+
   for (const r of base.gridRigs) {
     const here = stormField.local(r.x, r.z);
     if (here > 0) r.film = Math.min(1, r.film + here * dt * FILM.DEPOSIT);
@@ -660,6 +693,60 @@ function updateStormPlay(dt, st, inp) {
         Math.cos(a) * 2.6, 0.8 + Math.random() * 1.4, Math.sin(a) * 2.6, 0.9, 3.0);
     }
   }
+}
+
+// ═══════════════════════════ 信标失锁：沙尘打回"按地标驾驶" ═══════════════════════════
+// The storm's second tax is on the cockpit, not the paint. Suspended fines are what scrambles the
+// rover's optical fix, so the objective arrow degrades with the dust *at the rover* rather than with
+// a global "storm on" flag — skirt around the leading edge and you keep your navigation, which makes
+// reading the front a driving skill instead of a waiting game.
+// Re-acquiring is not a timer either: the solution needs fixes, and the only fixes the rover can
+// take are the lit tap columns it can actually see. That is what welds this to the dust ledger above —
+// let a district's array silt up, its column dims, its landmark range shrinks, and the base stops
+// being able to tell you where anything is. Cleaning an array is therefore also restoring your map.
+const NAV = {
+  LOSS: 0.30,        // local airborne dust above which the fix starts sliding
+  DECAY: 0.62,       // lock/s shed at a fully loaded front
+  HOLD: 1.8,         // s of breathable air before the solution re-runs at all
+  REACQ: 0.34,       // lock/s regained with two or more landmarks in sight…
+  LAND_MIN: 0.30,    // …and the fraction of that rate you get with none (you can always crawl back)
+  LAND_R: 58,        // m — how far off a tap column still reads as a landmark
+  BLIND: 0.34,       // below this the arrow is worse than no arrow, so stop drawing it
+};
+// One derived flag, three consumers (arrow, map, chip). The threshold is a gameplay decision and
+// lives with the rest of them, so no HUD element gets to invent its own idea of "blind".
+const nav = { lock: 1, wait: 0, landmarks: 0, homing: 0, blind: false, lost: false };
+
+function updateNav(dt, st) {
+  const dust = Math.max(stormField.local(phys.x, phys.z), st.stormF * 0.55);
+  let lm = 0;
+  // A thicker sky reaches less far, and a silted array is a dimmer column — both shorten the set of
+  // things the rover can recognise, with no new geometry and no new number to read.
+  const reach = NAV.LAND_R * (1 - Math.min(0.5, st.stormF * 0.45));
+  for (const r of base.gridRigs) {
+    if (!r.online || r.power < 0.2) continue;
+    if (Math.hypot(phys.x - r.x, phys.z - r.z) < reach * (1 - r.film * 0.45)) lm++;
+  }
+  nav.landmarks = lm;
+
+  const load = THREE.MathUtils.clamp((dust - NAV.LOSS) / (1 - NAV.LOSS), 0, 1);
+  if (load > 0.02) {
+    nav.wait = 0; nav.homing = 0;
+    nav.lock = Math.max(0, nav.lock - dt * NAV.DECAY * load);
+  } else {
+    nav.wait += dt;
+    const rate = NAV.REACQ * (NAV.LAND_MIN + (1 - NAV.LAND_MIN) * Math.min(1, lm / 2));
+    if (nav.wait >= NAV.HOLD) nav.lock = Math.min(1, nav.lock + dt * rate);
+    nav.homing = nav.lock >= 1 ? 0 : Math.max(0, NAV.HOLD - nav.wait) + (1 - nav.lock) / rate;
+  }
+  nav.blind = nav.lock < NAV.BLIND;
+  // Announce the loss, not the recovery: the recovery is the arrow visibly steadying, which needs no
+  // permission slip, while the loss is the one moment the player's whole plan changes.
+  if (nav.blind && !nav.lost) {
+    nav.lost = true;
+    UI.toast(t('⊘ 光学导航失锁 — 按地标驾驶，驶近亮着的光台才能重新定位'));
+    audio.radio('bad');
+  } else if (nav.lock > NAV.BLIND + 0.18) nav.lost = false;
 }
 
 
@@ -1102,6 +1189,7 @@ function update(dt) {
   // Deposition, the lance and their battery bill run before the sag is read, so the frame the
   // player spends charge cleaning is the same frame the motors notice it.
   updateStormPlay(dt, st, inp);
+  updateNav(dt, st);
   // drive physics — a flat battery kills the motors, and the last 20 % sags so that running
   // dry is a slow, obvious slide into trouble rather than a sudden loss of control
   const sag = grid.dead ? 0 : THREE.MathUtils.clamp((grid.battery - 0.06) / 0.16, 0.42, 1);
@@ -1223,7 +1311,7 @@ function update(dt) {
   }
   updateLaunch(dt);
   updateRace(dt);
-  UI.arrowAngle(phys, objectiveTarget());
+  UI.arrowAngle(phys, objectiveTarget(), nav, elapsed);
 
   // leak steam
   if (!leakFixed) {
@@ -1514,6 +1602,7 @@ function update(dt) {
       warn: filmGauge() >= FILM.WARN,
       tag: aim ? `${t('阵列积尘')} · ${t(aim.name)}` : t('阵列积尘'),
     });
+    UI.setNav(nav);
   }
 }
 
@@ -1669,6 +1758,15 @@ window.__RSB = {
     lance: !!stormPlay.lance, aim: stormPlay.aim?.key || null,
     lost: +(filmGauge() * FILM.YIELD * 100).toFixed(1) }),
   setFilm: (array, self) => { base.gridRigs.forEach(r => { r.film = array; r.cleaned = false; }); roverFilm = self; },
+  // The optical fix as the cockpit sees it *and* as the HUD says it: the chip's own text is the only
+  // proof that a state reached the player rather than only the simulation, and the arrow's opacity is
+  // the difference between "locked out" and "the arrow simply has no target yet".
+  nav: () => {
+    const chip = document.getElementById('nav-chip'), arrow = document.getElementById('objective-arrow');
+    return { lock: +nav.lock.toFixed(3), landmarks: nav.landmarks, homing: +nav.homing.toFixed(2),
+      blind: nav.blind, chip: chip.classList.contains('show') ? chip.textContent.trim() : null,
+      unstable: arrow.classList.contains('unstable'), opacity: +getComputedStyle(arrow).opacity };
+  },
   lance: (v) => { input.inp.keys[v ? 'add' : 'delete']('KeyF'); },
   // What the weather is actually paying the rover this frame: the air speed out there, the tiny
   // force it buys on a 260 kg chassis, the dust read through the tyres, the deposited film on the

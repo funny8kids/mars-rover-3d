@@ -113,6 +113,18 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 #objective-arrow{position:absolute;top:50%;left:50%;margin:-14px 0 0 -14px;width:28px;height:28px;opacity:.9;transition:transform .1s}
 #objective-arrow svg{width:100%;height:100%;fill:var(--amber);filter:drop-shadow(0 0 8px rgba(255,140,40,.9))}
 #objective-arrow.back svg{fill:var(--cyan)}
+/* A sliding optical fix should *look* untrustworthy: the bearing already drifts from the sin waves in
+   UI.arrowAngle; the blur is the same signal in the other channel, and only ever runs while lock is low. */
+#objective-arrow.unstable{transition:transform .05s;animation:nav-drift 2.4s ease-in-out infinite}
+@keyframes nav-drift{0%,100%{filter:none}46%{filter:blur(1.1px)}70%{filter:blur(.35px)}}
+#nav-chip{position:absolute;top:50%;left:50%;transform:translate(-50%,26px);display:none;align-items:center;gap:8px;
+  font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:#e8b06a;white-space:nowrap;pointer-events:none!important;
+  background:rgba(10,8,6,.74);border:1px solid rgba(232,176,106,.34);border-radius:999px;padding:4px 11px;
+  text-shadow:0 1px 6px rgba(0,0,0,.85)}
+#nav-chip.show{display:flex}
+#nav-chip-val{color:#ffd9a0}
+#nav-chip.blind{color:#ff9d6d;border-color:rgba(255,110,70,.5);background:rgba(22,8,5,.78)}
+#nav-chip.blind #nav-chip-val{color:#ffb58c}
 #race-hud{position:absolute;top:50px;right:18px;text-align:right;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 14px}
 #race-timer{font-family:var(--mono);font-size:22px;color:var(--amber)}
 #race-check{font-size:11px;color:#9a9184}

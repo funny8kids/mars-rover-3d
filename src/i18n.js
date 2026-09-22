@@ -120,12 +120,21 @@ const EN = {
   '沙尘消散 · 天空恢复': 'The dust has settled — the sky is clear',
   // ── the dust ledger: a front deposits, the arrays pay, the rover's lance clears ──
   阵列积尘: 'Array dust',
-  沙暴前沿: 'front in', 沙暴过境: 'Storm passing', 暴后降尘: 'Dust settling',
+  沙暴逼近: 'storm in', 沙暴前沿: 'front in', 沙暴过境: 'Storm passing', 暴后降尘: 'Dust settling',
   下一场沙暴: 'next storm',
+  '▸ 沙暴前沿已启动 — 驶近的光台是唯一的参照，信标即将失锁':
+    '▸ The front has launched — the lit taps are your only reference; the beacon is about to drop',
   '⚠ {name} 阵列积尘 {pct}% — 出力下降，驶近光台长按 F 吹扫':
     '⚠ {name} array is {pct}% dust-covered — output is down. Drive to the tap and hold F to blow it off',
   '✔ {name} 阵列已吹净 — 出力恢复，光台重新亮起来':
     '✔ {name} array blown clean — output restored, the tap is bright again',
+  // ── the second tax: suspended fines scramble the rover's optical fix ──
+  // '#nav-chip-tag' is absent from STATIC on purpose, like the film tag above: the chip's own label
+  // is a state (不稳 at 94 %, 失锁 below the blind line), so only UI.setNav is allowed to say it.
+  信标不稳: 'Beacon drifting', 信标失锁: 'Beacon lost',
+  地标: 'Landmarks', 重新锁定: 'Re-acquiring',
+  '⊘ 光学导航失锁 — 按地标驾驶，驶近亮着的光台才能重新定位':
+    '⊘ Optical navigation lost — drive by landmark. Close in on a lit tap column and the fix solves again',
   '时间快进至深夜 — 银河可见': 'Time advanced to midnight — the galaxy is out',
   '⚠ 检测到帧率偏低 — 已自动降采样': '⚠ Low frame rate — resolution reduced automatically',
   '⚠ 已自动关闭部分特效以保证流畅': '⚠ Some effects switched off to keep the frame rate',

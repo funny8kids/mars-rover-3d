@@ -1,6 +1,7 @@
 import { t as tx } from './i18n.js';
 
 const $ = id => document.getElementById(id);
+const mmss = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 export const UI = {
   missions: [],
@@ -98,19 +99,46 @@ export const UI = {
     if (v === null) { c.classList.remove('show'); return; }
     c.textContent = v; c.classList.add('show');
   },
-  arrowAngle(vehicle, target) {
+  // The arrow is the rover's optical fix made visible, so `nav.lock` is drawn rather than explained:
+  // a low lock slides the bearing sideways and thins the arrow, and a blind one is gone entirely —
+  // a wrong arrow that looks certain is worse than no arrow. `t` is the sim clock, so the wobble drifts
+  // instead of jittering, and it never costs a random number per frame.
+  arrowAngle(vehicle, target, nav, t = 0) {
     const el = $('objective-arrow');
-    if (!target) { el.style.opacity = 0; return; }
-    el.style.opacity = 0.9;
+    if (!target || (nav && nav.blind)) { el.style.opacity = 0; return; }
     const dx = target.x - vehicle.x, dz = target.z - vehicle.z;
     const fx = Math.sin(vehicle.yaw), fz = Math.cos(vehicle.yaw);
     const cross = fx * dz - fz * dx;
     const dot = fx * dx + fz * dz;
     let a = Math.atan2(cross, dot);
+    const lock = nav ? nav.lock : 1;
+    if (lock < 0.98) {
+      const e = 1 - lock;
+      a += (Math.sin(t * 2.2) * 0.55 + Math.sin(t * 5.7 + 1.7) * 0.3 + Math.sin(t * 13.1 + 0.4) * 0.12) * e;
+    }
     const dist = Math.hypot(dx, dz);
     el.style.transform = `rotate(${a * 180 / Math.PI}deg)`;
-    el.style.opacity = dist < 26 ? 0 : 0.9;
+    el.style.opacity = dist < 26 ? 0 : 0.9 * (0.42 + 0.58 * lock);
     el.classList.toggle('back', dot < 0);
+    el.classList.toggle('unstable', lock < 0.9);
+  },
+  setNav(nav) {
+    const el = $('nav-chip');
+    if (!el) return;
+    const degraded = !!nav && nav.lock < 0.98;
+    el.classList.toggle('show', degraded);
+    el.classList.toggle('blind', degraded && !!nav.blind);
+    if (!degraded) return;
+    // The tag names the state, and 94 % is not 失锁 — calling a slide a blackout teaches the player
+    // to ignore the chip until it is shouting. setNav owns this text while the chip is up; a hidden
+    // chip's tag is unreadable by definition, so nothing waits on it.
+    $('nav-chip-tag').textContent = tx(nav.blind ? '信标失锁' : '信标不稳');
+    $('nav-chip-val').textContent = `${Math.round(nav.lock * 100)}%`;
+    // Two tails, one question each: "what do I have?" while still in the dust, "how long?" once the
+    // air is clear enough to be solving again.
+    $('nav-chip-tail').textContent = nav.homing > 0
+      ? `${tx('重新锁定')} ${mmss(nav.homing)}`
+      : `${tx('地标')} ${nav.landmarks}`;
   },
   setHudVisible(v) {
     $('hud').style.opacity = v ? 1 : 0;

@@ -26,6 +26,15 @@ const TAIL_SPEED = 27;    // the clearing edge runs faster, so the back side is 
 const SPAWN = 320;        // edges start and end this far out along the wind axis
 const BAND = 46;          // metres of ramp between clear air and full dust
 
+// How much clean air is still in front of the wall when the front launches. `watch` stalks the wall
+// toward the settlement at a fraction of the front's speed, and that fraction has to be small enough
+// for the build-up to END with the wall still out there. It was half the front speed for 42 s, which
+// is 441 m — the face crossed the island centre 14 s before the launch, the front phase was left 39 m
+// to walk (1.9 s measured), and the bar was counting down to an approaching storm over a settlement
+// already under dust. Measured 2026-09-22.
+const FACE_AT_LAUNCH = 150;
+const WATCH_CREEP = (SPAWN - BAND - FACE_AT_LAUNCH) / HOLD.watch;   // 2.95 m/s
+
 const damp = (a, b, k, dt) => lerp(a, b, 1 - Math.exp(-k * dt));
 
 export class StormField {
@@ -37,6 +46,8 @@ export class StormField {
     this.tick = 0;               // never frozen — see advance()
     this.heading = Math.random() * Math.PI * 2;
     this.targetHeading = this.heading;
+    this.h0 = this.heading;      // the bearing the current event was drawn with — see advance()
+    this.veer = 0;               // its own clock, so the wander starts at zero on every event
     this.wx = Math.cos(this.heading); this.wz = Math.sin(this.heading);
     this.edge = -SPAWN; this.trail = -SPAWN;
     this.amplitude = 0;          // how much dust the air holds, 0..1
@@ -59,6 +70,8 @@ export class StormField {
       this.heading = this.targetHeading = heading;
       this.wx = Math.cos(heading); this.wz = Math.sin(heading);
     }
+    // A held frame is framed on the bearing it was asked for, then allowed to breathe from there.
+    this.h0 = this.heading; this.veer = 0;
     this.phase = phase; this.t = 0; this.hold = 1e6;
     const targets = { calm: [0, 1.6], watch: [0.2, 9], front: [1, 23], peak: [1, 26], clearing: [0.22, 7], aftermath: [0, 2.4] };
     const [a, s] = targets[phase] || targets.front;
@@ -79,14 +92,22 @@ export class StormField {
   }
 
   // What the HUD is allowed to claim about the weather. Not "storming: yes/no" but what is coming,
-  // in how long, and from which quarter — the three things that make a warning actionable. During
-  // calm there is no front yet, so the count runs down to the *alarm* instead of to an arrival.
+  // in how long, from which quarter, and whether it is already on you — the four things that make a
+  // warning actionable.
+  // The countdown changes what it measures at the same moment the storm does. While the wall builds,
+  // the answer the player can act on is "how long until the front commits", which is exactly knowable;
+  // once it is walking, its own leading face and speed are what the clock counts. `weatherLabel` uses
+  // two different words for the two, one per phase.
+  // `on` is the veto: a point near the upwind rim is under the wall while the field still calls itself
+  // `watch`, and a countdown must never out-rank the fact that dust is already falling there.
   outlook(focus) {
-    const alarm = this.phase === 'watch' || this.phase === 'front';
-    const eta = this.eta(focus.x, focus.z);
+    let inFor = 0;
+    if (this.phase === 'watch') inFor = Math.max(0, HOLD.watch - this.t);
+    else if (this.phase === 'front') inFor = Math.max(0, this.eta(focus.x, focus.z));
+    else if (this.phase === 'calm') inFor = Math.max(0, this.hold - this.t);
     return {
-      phase: this.phase, alarm,
-      in: alarm ? Math.max(0, eta) : this.phase === 'calm' ? Math.max(0, this.hold - this.t) : 0,
+      phase: this.phase, in: inFor,
+      on: this.local(focus.x, focus.z) > 0.03,
       bearing: (Math.atan2(this.wx, this.wz) * 180 / Math.PI + 360) % 360,
       speed: this.speed, load: this.dustLoad,
     };
@@ -100,12 +121,15 @@ export class StormField {
     this.phase = phase; this.t = 0;
     this.hold = phase === 'calm' ? lerp(...HOLD.calm) : 0;
     if (phase === 'watch' || phase === 'front') this._startEvent();
-    if (phase === 'front') this.edge = -SPAWN * 0.35;
+    // A forced front picks the event up where a natural one launches, so `force('front')` and a storm
+    // that was allowed to build up are the same weather at the same distance.
+    if (phase === 'front') this.edge = -FACE_AT_LAUNCH - BAND;
     return this;
   }
 
   _startEvent() {
     this.targetHeading = this.heading = Math.random() * Math.PI * 2;
+    this.h0 = this.heading; this.veer = 0;
     this.wx = Math.cos(this.heading); this.wz = Math.sin(this.heading);
     this.edge = -SPAWN; this.trail = -SPAWN - 260;
   }
@@ -131,7 +155,7 @@ export class StormField {
         this.amplitude = damp(this.amplitude, 0.2, 0.35, dt);
         this.speed = damp(this.speed, 9, 0.35, dt);
         this.gust = damp(this.gust, 0.35, 0.8, dt);
-        this.edge += LEAD_SPEED * dt * 0.5;       // it creeps while it builds
+        this.edge += WATCH_CREEP * dt;      // it stalks while it builds; the launch closes the distance
         if (this.t > HOLD.watch) { this.phase = 'front'; this.t = 0; }
         break;
 
@@ -180,9 +204,13 @@ export class StormField {
     // particles advect, the wall rolls on its own clock, and `tick` keeps the fingers drifting.
     if (this.pinned) { this.edge = edge0; this.trail = trail0; }
 
-    // The wind veers during the event, so the wall never tracks a line the player can
-    // memorise and the crosswind component keeps changing while driving.
-    this.targetHeading += Math.sin(this.t * 0.031) * dt * 0.5;
+    // The wind wanders, it does not orbit. Two incommensurate sines around the bearing the event was
+    // drawn with keep the crosswind shifting and the wall's line unmemorisable, while bounding the
+    // total swing to ±31° — so the front really does come down the bearing the warning named. The
+    // previous form added a positive rate for the whole phase: 410° per watch, measured, which is the
+    // wall circling the settlement and every arrival estimate being fiction.
+    this.veer += dt;
+    this.targetHeading = this.h0 + Math.sin(this.veer * 0.045) * 0.35 + Math.sin(this.veer * 0.013) * 0.2;
     this.heading = damp(this.heading, this.targetHeading, 0.4, dt);
     this.wx = Math.cos(this.heading); this.wz = Math.sin(this.heading);
 
@@ -221,11 +249,22 @@ export class StormField {
     return clamp(c * this.amplitude * fingers * 1.5, 0, 1);
   }
 
-  // Seconds until the leading edge reaches a point; negative once it has passed. The HUD
-  // counts this down, which is what turns weather from noise into a deadline.
+  // Seconds until the leading face of the slab reaches a point. That face is `BAND` ahead of the
+  // edge's own coordinate and the point is still in clear air while the face falls short of it, so
+  // the gap is `along - (edge + BAND)` — the old version subtracted the other way round, which made
+  // an *approaching* front return a negative time. The HUD clamps negatives to zero, so the entire
+  // forty-second warning read 0:00 and the countdown only woke up once the dust was already on you.
   eta(x, z) {
     if (this.phase !== 'watch' && this.phase !== 'front') return -1;
-    return (this.edge - this.along(x, z)) / LEAD_SPEED;
+    const gap = this.along(x, z) - (this.edge + BAND);
+    if (this.phase === 'front') return gap / LEAD_SPEED;
+    // During the build-up the wall stalks at WATCH_CREEP, so a point near the centre is reached after
+    // the launch and the two legs have to be timed apart. A point far upwind of centre is reached
+    // during the creep, which this reports honestly too — `outlook.on` is what tells the bar to stop
+    // counting down and say the dust is already falling there.
+    const rem = Math.max(0, HOLD.watch - this.t);
+    const creep = WATCH_CREEP * rem;
+    return gap <= creep ? gap / WATCH_CREEP : rem + (gap - creep) / LEAD_SPEED;
   }
 
   get state() {

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { QUALITIES, ZONES, START, SAMPLE_COUNT } from './config.js';
+import { QUALITIES, ZONES, START, SAMPLE_COUNT, ISLAND } from './config.js';
 import { createSky } from './world/sky.js';
 import { createTerrain, createRocks, createStones } from './world/terrain.js';
 import { Environment } from './world/environment.js';
@@ -764,6 +764,13 @@ function glideClear(list, x0, z0, x1, z1, ignore) {
 // The nearest point the rover could legally be parked: outside every body ring, on ground it can
 // actually sit on, and reachable along such a line. Rings grow outward, so the first ring with any
 // answer holds the nearest one; onward daylight breaks ties.
+//
+// `PLAYFIELD_R` is the same test seen from the other side. The island is a disc: past it the ground
+// climbs the crater wall and then drops 30 m into a void the terrain mesh does not even cover, so a
+// legal surface out there is a lie the rescue can keep acting on — carrying the rover onto flat
+// nothing, which is precisely how A5's permanent stuck read. The rim rampart's innermost padded disc
+// already sits inside this line, so it costs the plateau nothing it had.
+const PLAYFIELD_R = ISLAND.radius - 6;
 function nearestLegalSurface(list, maxR = 13) {
   const wedged = new Set(list.filter(c => Math.hypot(phys.x - c.x, phys.z - c.z) < c.r + BODY_R + 0.35));
   for (let r = 2.5; r <= maxR; r += 1.25) {
@@ -771,7 +778,7 @@ function nearestLegalSurface(list, maxR = 13) {
     for (let k = 0; k < 24; k++) {
       const a = ((k + (Math.round(r / 1.25) % 2)) / 24) * Math.PI * 2;
       const x = phys.x + Math.sin(a) * r, z = phys.z + Math.cos(a) * r;
-      if (Math.hypot(x, z) > 1170 || surfaceSlope(x, z) > 0.55) continue;
+      if (Math.hypot(x, z) > PLAYFIELD_R || surfaceSlope(x, z) > 0.55) continue;
       if (gapFrom(list, x, z) < 0.3) continue;
       if (!glideClear(list, phys.x, phys.z, x, z, wedged)) continue;
       const onward = Math.min(3, Math.max(0, gapFrom(list, x + Math.sin(a) * 3, z + Math.cos(a) * 3)));
@@ -794,6 +801,16 @@ function startRescue(cause, inp) {
   const rec = { t: +elapsed.toFixed(1), cause, pos: [+phys.x.toFixed(1), +phys.z.toFixed(1)],
     yaw: +phys.yaw.toFixed(2), vf: +vf.toFixed(2), slope: +surfaceSlope(phys.x, phys.z).toFixed(2),
     grounded: phys.grounded, onFloor: phys.onFloor, discs: rescue.near.length, out: '' };
+  // Outside the playfield there is nothing to back out of, and the back-out cannot even fail: it
+  // calls itself done after 1.9 m of movement, which a rover leaning on the rampart gets for free
+  // every time it is nudged off the wall. Measured — seven rescues in 60 s at r=118.4, each recorded
+  // as "drove out" with 10 m of daylight behind it, and the carry never once being asked for. The
+  // only exit from out there is the one a ring search can't answer, so go straight to it.
+  if (Math.hypot(phys.x, phys.z) > PLAYFIELD_R) {
+    rec.open = null;
+    rescue.events.push(rec);
+    return escalate('outside-playfield');
+  }
   if (!rescue.near.length) {
     // no prop within 26 m: this is terrain holding the wheels, so skip the drive-out
     rec.open = null;
@@ -824,10 +841,35 @@ function startRescue(cause, inp) {
   audio.radio('beep');
 }
 
+// A rover outside the playfield has an answer a ring search can never produce, because it is not
+// nearby — it is inward. Same `jack` glide as an ordinary carry, so it still comes down on its own
+// rams onto ground `surfaceAt` covers, at a bearing it can drive away from; only the destination
+// rule differs. The radii step inboard until the landing is clear of every prop's body ring.
+function returnToPlateau() {
+  const a = Math.atan2(phys.x, phys.z);                 // the rover's own bearing out from the hub
+  let to = null;
+  for (let k = 0; k < 4 && !to; k++) {
+    const r = PLAYFIELD_R - 10 - k * 11;
+    const p = { x: Math.sin(a) * r, z: Math.cos(a) * r };
+    if (gapFrom(base.colliders, p.x, p.z) > 0.6) to = { ...p, r, a };
+  }
+  if (!to) return false;
+  to.slip = Math.hypot(to.x - phys.x, to.z - phys.z);
+  rescue.phase = 'jack'; rescue.t0 = elapsed; rescue.maxStep = 0;
+  rescue.from = { x: phys.x, z: phys.z }; rescue.to = to;
+  const rec = rescue.events[rescue.events.length - 1];
+  if (rec && rec.out === '') Object.assign(rec, { out: 'returned', slip: +to.slip.toFixed(1), cause: 'outside-playfield' });
+  UI.toast('⟲ 已越出环形山壁 — 回收程序把漫游车送回台地');
+  audio.radio('beep');
+  return true;
+}
+
 function escalate(cause) {
   // Each failed attempt looks wider: a pocket the first 13 m cannot answer is a deep one.
-  const to = nearestLegalSurface(rescue.near, Math.min(25, 13 + 4 * (rescue.tries - 1)));
+  const outside = Math.hypot(phys.x, phys.z) > PLAYFIELD_R;
+  const to = outside ? null : nearestLegalSurface(rescue.near, Math.min(25, 13 + 4 * (rescue.tries - 1)));
   if (!to) {
+    if (outside && returnToPlateau()) return;
     const rec = rescue.events[rescue.events.length - 1];
     if (rec && rec.out === '') rec.out = 'unresolved';
     rescue.phase = ''; rescue.cool = 4;

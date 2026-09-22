@@ -18,6 +18,25 @@ export const QUALITIES = {
 // into one pile of overlapping collision discs.
 export const ISLAND = { radius: 118, rim: 132 };   // flat playfield, then a raised crater-rim wall
 
+// The playfield's edge. One circle, three consumers: the collider ring props.js lays down, the dust
+// veil rim_veil.js draws on it, and the line the rescue refuses to park a rover past.
+//
+// `discR` is where the barrier's discs are strung and `disc` how far each reaches; `face` is the
+// radius a rover's *skin* meets, since physics.js pads every collider by the body's own half-width
+// (1.6 m) — the padded body centre therefore stops at face − 1.6. The veil is drawn on `face`
+// rather than on `discR` so that what a player sees is exactly where they stop.
+const RIM_DISC_R = 115.6, RIM_DISC = 3.6;
+export const RIM = {
+  discR: RIM_DISC_R, disc: RIM_DISC,
+  face: RIM_DISC_R - RIM_DISC,      // 112.0
+  arc: 5.4,                         // metres of ring between two barrier discs
+  // Metres of dust veil the boundary shows above its own ground line. Measured down from 19: a sheet
+  // that tall covers the dunes and the crater wall behind it, and a boundary that hides the horizon is
+  // a wall no matter what texture it wears. The visible crest is lower again — rim_veil.js fades its
+  // alpha out at about three quarters of this.
+  tall: 8.5,
+};
+
 export const ZONES = {
   // the core is a pedestrian plaza: the street grid rings it at ±30 and no road crosses it
   hub:       { name:'中央广场',   pos:[   0,   0],  radius:22, padHeight:0.6, teleport:true },

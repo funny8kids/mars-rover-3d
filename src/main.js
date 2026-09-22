@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { QUALITIES, ZONES, START, ISLAND } from './config.js';
+import { QUALITIES, ZONES, START, RIM } from './config.js';
 import { createSky } from './world/sky.js';
 import { createTerrain, createRocks, createStones } from './world/terrain.js';
 import { Environment } from './world/environment.js';
@@ -11,6 +11,7 @@ import { ChaseCamera } from './camera/chase.js';
 import { createInput } from './input.js';
 import { createFX, updateStorm } from './fx/particles.js';
 import { StormField, createStormWall, placeStormWall } from './world/storm.js';
+import { createRimVeil } from './world/rim_veil.js';
 import { createPost } from './fx/post.js';
 import { createSkidMarks } from './fx/skids.js';
 import { GameAudio } from './audio/audio.js';
@@ -31,7 +32,7 @@ const input = createInput(canvas);
 const audio = new GameAudio();
 
 let quality, qKey, post, fx, env, sky, terrain, base, rover, phys, chase, skids;
-let stormField = null, stormWall = null, lastWind = null;
+let stormField = null, stormWall = null, lastWind = null, rimVeil = null;
 const _viewDir = new THREE.Vector3();
 // The wall's own two poles: dust in shadow is a maroon screen, dust backlit by the sun blazes.
 // The shadow pole has to be *far* darker than the sky the wall stands against. Measured 2026-09-22:
@@ -334,6 +335,9 @@ function applyQuality() {
   // a storm halfway across the island and start a new one.
   stormField ||= new StormField(surfaceAt);
   stormWall ||= createStormWall(scene);
+  // The boundary's visible half, and like the wall it is weather rather than a quality setting: it is
+  // lofted from the terrain once, so a mode switch must not rebuild it mid-frame.
+  rimVeil ||= createRimVeil(scene, { groundAt: surfaceAt });
   env = new Environment(scene, sky, quality, stormField);
   if (quality.shadow) env.sun.shadow.mapSize.set(quality.shadow, quality.shadow);
   fx = createFX(scene, quality);
@@ -1166,12 +1170,14 @@ function glideClear(list, x0, z0, x1, z1, ignore) {
 // actually sit on, and reachable along such a line. Rings grow outward, so the first ring with any
 // answer holds the nearest one; onward daylight breaks ties.
 //
-// `PLAYFIELD_R` is the same test seen from the other side. The island is a disc: past it the ground
-// climbs the crater wall and then drops 30 m into a void the terrain mesh does not even cover, so a
-// legal surface out there is a lie the rescue can keep acting on — carrying the rover onto flat
-// nothing, which is precisely how A5's permanent stuck read. The rim rampart's innermost padded disc
-// already sits inside this line, so it costs the plateau nothing it had.
-const PLAYFIELD_R = ISLAND.radius - 6;
+// `PLAYFIELD_R` is the same test seen from the other side. The island is a disc: past its radius the
+// ground climbs the crater wall and then drops 30 m into a void the terrain mesh does not even cover,
+// so a legal surface out there is a lie the rescue can keep acting on — carrying the rover onto flat
+// nothing, which is precisely how A5's permanent stuck read. It reads `RIM.face` rather than deriving
+// its own margin, because that is the radius the barrier's discs actually stop a rover's skin at and
+// the radius the dust veil draws on: three consumers, one circle, so the rescue can never park a
+// rover past the wall the player can see.
+const PLAYFIELD_R = RIM.face;
 function nearestLegalSurface(list, maxR = 13) {
   const wedged = new Set(list.filter(c => Math.hypot(phys.x - c.x, phys.z - c.z) < c.r + BODY_R + 0.35));
   for (let r = 2.5; r <= maxR; r += 1.25) {
@@ -1639,6 +1645,15 @@ function update(dt) {
   env.update(dt, rover.group.position, elapsed, renderer, _viewDir);
   const stormF = st.stormF;
   placeStormWall(stormWall, stormField, camera.position, dt, st.sunDir, STORM_TINT, STORM_GLOW, camera.position, env.fog);
+  // The boundary haze rides the same wind the storm does — same vector, same gust envelope — so the
+  // ring cannot be calm while the weather blowing across it is not. Its colour comes from `env.fog`,
+  // which is where the storm's own tint already landed.
+  rimVeil.advance(dt, {
+    windX: stormField.wx, windZ: stormField.wz,
+    shear: Math.min(1, stormField.gustEnv * 0.6 + stormF * 0.5),
+    night: st.nightF, storm: stormF,
+    camPos: camera.position, fog: env.fog, sunDir: st.sunDir,
+  });
   // particles
   updateStorm(fx, dt, camera.position, stormField, surfaceAt);
   // Ambient smoke and steam now lean down the actual wind vector instead of a sine, so a plume

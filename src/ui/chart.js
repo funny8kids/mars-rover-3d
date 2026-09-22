@@ -16,7 +16,7 @@
 // Everything expensive is baked once into an offscreen plate, so the per-frame cost is one
 // drawImage plus a dozen primitives.
 
-import { ZONES, ISLAND, SHIP_POS } from '../config.js';
+import { ZONES, ISLAND, RIM, SHIP_POS } from '../config.js';
 import { STREETS, STREET_HW, PAVEMENT, SETBACK, CELL_EDGE } from '../world/plan.js';
 import { heightAt, listLots, craters } from '../world/height.js';
 import { mulberry32 } from '../utils/noise.js';
@@ -213,12 +213,16 @@ export function createMapChart({ side = 400, scale = 2 } = {}) {
     b.stroke();
     b.restore();
 
-    for (const [r, a, w, dash] of [[ISLAND.rim, 0.34, 2, []], [ISLAND.radius, 0.16, 1.2, [5, 4]]]) {
+    // Two circles, and the map has to tell them apart: the crater rim is geology, the dashed one is
+    // where the barrier's discs stop a rover's *skin*, which is also where the dust veil stands. Draw
+    // the island's own radius here instead and the chart promises six metres of road that does not exist.
+    for (const [r, a, w, dash] of [[ISLAND.rim, 0.34, 2, []], [RIM.face, 0.16, 1.2, [5, 4]]]) {
       b.strokeStyle = `rgba(255,196,140,${a})`; b.lineWidth = w; b.setLineDash(dash);
       b.beginPath(); b.arc(MID, MID, r * S, 0, 7); b.stroke();
     }
     b.setLineDash([]);
     label(b, t('陨石坑边缘'), MID, MID - ISLAND.rim * S + 13, { size: 8.5, color: 'rgba(255,196,140,.5)', mono: true, track: .3 });
+    label(b, t('沙垣禁行线'), MID, MID - RIM.face * S + 12, { size: 8.5, color: 'rgba(255,196,140,.34)', mono: true, track: .3 });
 
     // survey graticule on the block lattice
     b.strokeStyle = 'rgba(255,255,255,.042)'; b.lineWidth = 1;

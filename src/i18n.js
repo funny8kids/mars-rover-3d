@@ -188,7 +188,8 @@ const EN = {
     'Number keys 1-7 jump directly · press G while on a pad · M for the full map',
   // The chart's lettering is drawn into a canvas, so these are map labels, not DOM text.
   '基地总图 · 等高距 1.2 m': 'Site plan · contour interval 1.2 m',
-  '陋石坑边缘': 'Crater rim', 图例: 'Key', 光台就绪: 'Pad ready',
+  陨石坑边缘: 'Crater rim', 图例: 'Key', 光台就绪: 'Pad ready',
+  '沙垣禁行线': 'Dust veil · drive limit',
   '光台无电': 'Pad dark', '当前目标': 'Objective', '样本点': 'Sample',
   '危险区': 'Hazard', 漫游车: 'Rover',
   '暂无记录 · 完成一次环基地计时赛': 'No times yet · finish one lap of the base',

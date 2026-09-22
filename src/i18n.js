@@ -97,10 +97,21 @@ const EN = {
   '⏸ 已暂停（Esc 继续）': '⏸ Paused (Esc to resume)', '▶ 继续': '▶ Resumed',
   '▸ 新任务：储罐区检测到推进剂泄漏，靠近白雾长按 E':
     '▸ New objective: propellant leaking at the tank farm — hold E in the vent cloud',
+  '▸ 新任务：采集 {total} 块火星样本（发光晶体处）':
+    '▸ New objective: collect {total} Martian samples (the glowing crystals)',
   '▸ 任务链完成 — 发射窗口开启，返回观礼台':
     '▸ Chain complete — the launch window is open, return to the deck',
   '✦ 全区复电 — 基地电网满载，灯光亮度全开':
     '✦ All districts online — the grid is at full load and the lights are wide open',
+  // The Chinese literal is the lookup key, so it is written for Chinese ears: no spaces hugging a
+  // placeholder that fills with a district name. English needs those spaces and carries them itself.
+  '◈ 开始并网 — 停在{name}反应桩旁保持不动 4 秒':
+    '◈ Grid tie-in started — park beside the {name} reactor tap and hold still for 4 s',
+  '✔ {name}已复电 — 光台跃迁解锁（{n}/{total}）':
+    '✔ {name} is back online — its jump pad is unlocked ({n}/{total})',
+  '✦ 样本 {n}/{total} 已入库': '✦ Sample {n}/{total} banked',
+  '✦ 跃迁完成 — {name}': '✦ Jump complete — {name}',
+  '✦ 计时赛完成 {time} — 已记入排行榜': '✦ Lap done in {time} — added to the leaderboard',
   '✔ 泄漏已封堵 — 推进剂压力恢复': '✔ Leak sealed — propellant pressure restored',
   '⚠ 电量低于 22% — 返回任一亮起的光台补电':
     '⚠ Charge below 22% — get back to any lit pad and recharge',
@@ -112,6 +123,11 @@ const EN = {
   '⚠ 自动脱困找不到落点 — 请按 S 倒车离开这里': '⚠ No safe landing found — hold S to reverse out of here',
   '⛔ 该区电网未恢复 — 光台无法成像': '⛔ This district is still dark — the pad cannot image a jump',
   '⚠ 发射程序启动 · 请留在观礼台安全区': '⚠ Launch sequence started · stay inside the deck safety line',
+  // The weather gate reads like the other action-slot prompts: a warning mark, the thing being
+  // waited for, and a clock — never a bare "no".
+  '发射窗口 · 等待沙暴过境': 'Launch window — waiting out the dust',
+  '✦ 天空转晴 — 发射程序启动 · 请留在观礼台安全区':
+    '✦ The sky has cleared — launch sequence started, stay inside the deck safety line',
   '★ 已抵达观礼台 — 发射程序即将启动': '★ On the deck — the launch sequence is starting',
   '✦ 星舰灯光秀开始': '✦ Starship light show starting',
   '✦ 星舰已离开大气层 — 「愿它在群星间找到家」':
@@ -124,10 +140,12 @@ const EN = {
   下一场沙暴: 'next storm',
   '▸ 沙暴前沿已启动 — 驶近的光台是唯一的参照，信标即将失锁':
     '▸ The front has launched — the lit taps are your only reference; the beacon is about to drop',
-  '⚠ {name} 阵列积尘 {pct}% — 出力下降，驶近光台长按 F 吹扫':
-    '⚠ {name} array is {pct}% dust-covered — output is down. Drive to the tap and hold F to blow it off',
-  '✔ {name} 阵列已吹净 — 出力恢复，光台重新亮起来':
-    '✔ {name} array blown clean — output restored, the tap is bright again',
+  // The district name owns the slot, so the array is introduced by a colon: 通讯阵列 and Comms Array
+  // both end in "array", and any wording that continues straight into the noun stutters.
+  '⚠ {name}：阵列积尘 {pct}% — 出力下降，驶近光台长按 F 吹扫':
+    '⚠ {name}: the array is {pct}% dust-covered — output is down, drive to the tap and hold F to blow it off',
+  '✔ {name}：阵列已吹净 — 出力恢复，光台重新亮起来':
+    '✔ {name}: array blown clean — output restored, the tap is bright again',
   // ── the third tax: the front rewrites the sample map, burying some sites and uncovering others ──
   外缘: 'outer edge', 覆沙: 'Sand cover',
   '沙暴会埋掉一些，也会刮出另一些': 'A storm buries some and uncovers others',
@@ -138,6 +156,11 @@ const EN = {
     '✦ The storm has blown the cover off the {site} — a new sample site has surfaced',
   '⚠ 沙暴把{site}的样本埋住了 — 驶近绕几圈，用车轮把覆沙刮开':
     '⚠ The storm has buried the {site} sample — drive close and circle it; the wheels scour the cover off',
+  // ── the chain's two forecast beats: the storm stops being weather and becomes a deadline ──
+  '▸ 气象预警：一场沙暴将在 {time} 后穿过基地 — 它会改写样本点':
+    '▸ Weather advisory: a dust front crosses the base in {time} — it will rewrite the sample map',
+  '▸ 最后一场沙暴 {time} 后压过基地 — 等天空转晴，星舰才会点火':
+    '▸ The last front sweeps the base in {time} — Starship only lights after the sky has cleared',
   // ── the second tax: suspended fines scramble the rover's optical fix ──
   // '#nav-chip-tag' is absent from STATIC on purpose, like the film tag above: the chip's own label
   // is a state (不稳 at 94 %, 失锁 below the blind line), so only UI.setNav is allowed to say it.
@@ -151,7 +174,10 @@ const EN = {
   ' · 已降档': ' · degraded',
   '驶上传送光台后再按 G — 或按 M 打开全区地图直接跃迁':
     'Drive onto a pad, then press G — or press M to jump straight from the map',
-  '你在这里': 'You are here', 无电: 'no power', 升空: 'liftoff',
+  '你在这里': 'You are here', 无电: 'no power',
+  // 升空 is the 150 px headline the countdown ring ends on, not a chip label — it takes its capital
+  // where 'no power' does not.
+  升空: 'Liftoff',
   '环基地计时赛开始 — 依次穿越绿色星环（再按 R 取消）':
     'Base lap time trial — pass the green rings in order (press R again to cancel)',
   '✦ 已保存截图': '✦ Screenshot saved',

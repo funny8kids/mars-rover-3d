@@ -80,7 +80,7 @@ const LINK_RADIUS = 9, LINK_TIME = 4, LINK_DRAIN = 0.02, LINK_MIN = 0.12;
 // The dust a front actually leaves behind, per surface — see 沙尘作为账本 below.
 let roverFilm = 0;
 const stormPlay = { lance: false, events: 0, phase: 'calm' };
-const launch = { phase: 'idle', t: 0, cd: 11, y: 0, vy: 0, tilt: 0, intensity: 0, flash: 0, doneAt: 0 };
+const launch = { phase: 'idle', t: 0, cd: 11, y: 0, vy: 0, tilt: 0, intensity: 0, flash: 0, doneAt: 0, held: false };
 let showOn = 0;          // night light-show timer
 let demoPin = null;      // demo cinematic: hold the rover parked
 const race = { active: false, idx: 0, t: 0, gates: [], rings: [] };
@@ -183,7 +183,7 @@ function teleportTo(tp, opt = {}) {
   const fl = document.createElement('div'); fl.className = 'tp-flash';
   document.body.appendChild(fl);
   setTimeout(() => fl.remove(), 620);
-  if (!opt.silent) UI.toast(`✦ 跃迁完成 — ${tp.name}`);
+  if (!opt.silent) UI.toast(t('✦ 跃迁完成 — {name}').replace('{name}', t(tp.name)));
   if (opt.silent) audio.radio('bad'); else if (audio.play) audio.play('warp', 0.4); else audio.radio('good');
 }
 // objectiveTarget() hands back a Vector3 and this runs every frame the panel is open, so the
@@ -404,13 +404,46 @@ function renderMissions() {
   const arr = missions.map((m, i) => ({ ...m, active: i === activeMission && !m.done }));
   UI.renderMissions(arr);
 }
+// ───────────────────────── 沙暴作为任务链的变量 ─────────────────────────
+// A front is no longer weather that happens *to* the chain, it is a step *of* it, and there are two
+// places it earns its keep. The first is the sample mission: a crossing is the only thing that rewrites
+// the sample map, and a mechanic the player might finish the game without ever seeing is a mechanic
+// that does not exist. The second is the road home — the launch stack does not light into a dust front,
+// so the last beat sends one across the pad and the countdown waits for it.
+// `lead` is the seconds of warning the top bar counts down before the wall commits, and it is generous
+// on purpose: the player has to be able to *choose* to be somewhere when it arrives.
+const STORM_BEAT = {
+  samples: { lead: 165, text: '▸ 气象预警：一场沙暴将在 {time} 后穿过基地 — 它会改写样本点' },
+  launch: { lead: 120, text: '▸ 最后一场沙暴 {time} 后压过基地 — 等天空转晴，星舰才会点火' },
+};
+const stormBeat = { fired: [], at: 0 };
+function fireStormBeat(name) {
+  const beat = STORM_BEAT[name];
+  if (!beat) return;
+  stormBeat.fired.push(name);
+  stormBeat.at = elapsed;
+  stormField.arm(beat.lead);
+  // Two toasts cannot share one slot, so the forecast waits out the objective line it follows.
+  setTimeout(() => UI.toast(
+    t(beat.text).replace('{time}', mmss(beat.lead)), 5200), 3600);
+}
+
 function advanceMission() {
   while (activeMission < missions.length && missions[activeMission].done) activeMission++;
   renderMissions();
   const id = mAct();
   if (id === 'leak') { UI.toast('▸ 新任务：储罐区检测到推进剂泄漏，靠近白雾长按 E'); audio.radio('beep'); }
-  if (id === 'samples') { UI.toast(`▸ 新任务：采集 ${missions[2].total} 块火星样本（发光晶体处）`); audio.radio('beep'); }
-  if (id === 'watch') { launchArmed = true; UI.toast('▸ 任务链完成 — 发射窗口开启，返回观礼台'); audio.radio('good'); }
+  if (id === 'samples') {
+    UI.toast(t('▸ 新任务：采集 {total} 块火星样本（发光晶体处）').replace('{total}', missions[2].total));
+    audio.radio('beep');
+    fireStormBeat('samples');
+  }
+  if (id === 'watch') {
+    launchArmed = true;
+    UI.toast('▸ 任务链完成 — 发射窗口开启，返回观礼台');
+    audio.radio('good');
+    fireStormBeat('launch');
+  }
   if (activeMission >= missions.length) UI.arrowAngle(phys, null);
 }
 function objectiveTarget() {
@@ -509,7 +542,7 @@ function updateGrid(dt, st) {
   if (canHold) {
     grid.linkT = Math.min(LINK_TIME, grid.linkT + dt);
     tgt.power = Math.max(tgt.power, grid.linkT / LINK_TIME);
-    if (tgt !== grid.link && !tgt.announced) { grid.link = tgt; tgt.announced = true; UI.toast(`◈ 开始并网 — 停在 ${tgt.name} 反应桩旁保持不动 4 秒`); }
+    if (tgt !== grid.link && !tgt.announced) { grid.link = tgt; tgt.announced = true; UI.toast(t('◈ 开始并网 — 停在{name}反应桩旁保持不动 4 秒').replace('{name}', t(tgt.name))); }
     if (grid.linkT >= LINK_TIME) {
       tgt.online = true; tgt.power = 1; tgt.announced = false; grid.linkT = 0; grid.link = null;
       tgt.tp.online = true;   // the rig lights the district's jump gate — the pad reads its state off tp.online
@@ -520,7 +553,7 @@ function updateGrid(dt, st) {
         fx.spark.emit(tgt.x, 0.8, tgt.z, Math.sin(a) * s, 2 + Math.random() * 4, Math.cos(a) * s, 0.9, 2);
       }
       shockWave(tgt.x, surfaceAt(tgt.x, tgt.z) + 0.5, tgt.z);
-      UI.toast(`✔ ${tgt.name} 已复电 — 光台跃迁解锁（${done}/${GRID_COUNT}）`);
+      UI.toast(t('✔ {name}已复电 — 光台跃迁解锁（{n}/{total}）').replace('{name}', t(tgt.name)).replace('{n}', done).replace('{total}', GRID_COUNT));
       if (mAct() === 'grid') { missions[0].n = done; renderMissions(); }
       if (done >= GRID_COUNT) onGridComplete();
     }
@@ -636,8 +669,11 @@ function weatherLabel(st) {
   if (o.phase === 'peak' || o.phase === 'clearing') return `◈ ${t('沙暴过境')}${cost}`;
   if (o.phase === 'aftermath') return `${t('暴后降尘')}${cost}`;
   // In the calm gap the same slot counts down to the next alarm, so weather is something you plan a
-  // drive around instead of something that happens to you mid-mission.
-  if (o.phase === 'calm' && o.in < 70) return `${sky} · ${t('下一场沙暴')} ${mmss(o.in)}`;
+  // drive around instead of something that happens to you mid-mission. The chain's own storms are
+  // counted down from the moment they are announced — a player told 「165 秒后过境」 by the objective
+  // line must be able to watch that promise, not only the last 70 s of it. `holdSky` holds `Infinity`,
+  // which is the honest answer of "nothing scheduled" and must not be formatted as a clock.
+  if (o.phase === 'calm' && Number.isFinite(o.in) && (o.scheduled || o.in < 70)) return `${sky} · ${t('下一场沙暴')} ${mmss(o.in)}`;
   return sky + cost;
 }
 
@@ -776,7 +812,7 @@ function updateStormPlay(dt, st, inp) {
     if (here > 0) r.film = Math.min(1, r.film + here * dt * FILM.DEPOSIT);
     if (r.film > FILM.WARN && !r.filmWarned) {
       r.filmWarned = true;
-      UI.toast(t('⚠ {name} 阵列积尘 {pct}% — 出力下降，驶近光台长按 F 吹扫')
+      UI.toast(t('⚠ {name}：阵列积尘 {pct}% — 出力下降，驶近光台长按 F 吹扫')
         .replace('{name}', t(r.name)).replace('{pct}', Math.round(r.film * 100)));
       audio.radio('bad');
     } else if (r.film < FILM.WARN * 0.3) r.filmWarned = false;
@@ -801,7 +837,7 @@ function updateStormPlay(dt, st, inp) {
     best.film = Math.max(0, best.film - FILM.LANCE_TAP * dt);
     if (best.film < 0.02 && !best.cleaned) {
       best.cleaned = true;
-      UI.toast(t('✔ {name} 阵列已吹净 — 出力恢复，光台重新亮起来').replace('{name}', t(best.name)));
+      UI.toast(t('✔ {name}：阵列已吹净 — 出力恢复，光台重新亮起来').replace('{name}', t(best.name)));
       audio.radio('good');
     } else if (best.film > 0.05) best.cleaned = false;
   }
@@ -881,10 +917,26 @@ function updateNav(dt, st) {
 
 
 // ───────────────────────── launch sequence ─────────────────────────
+// A stack does not light into a dust front, and the chain's last beat now sends one across the pad on
+// purpose — so the deck needs to say why nothing is counting down yet, with the same clock the top bar
+// carries. Two conditions, because they are two different facts: the sky over the range has to be out
+// of the front's way (including a wall the chain armed but has not launched, which is what makes the
+// beat a deadline rather than a surprise), and the pad itself has to be free of hanging dust.
+// Seconds come from the field analytically, so the number the deck counts cannot disagree with the
+// wall on the horizon.
+const LAUNCH_DUST_LIMIT = 0.12;
+function launchWeatherHold() {
+  const pad = base.launchPadPos;
+  const clear = stormField.timeToClear();
+  if (clear <= 0 && stormField.local(pad.x, pad.z) < LAUNCH_DUST_LIMIT) return null;
+  return `⚠ ${t('发射窗口 · 等待沙暴过境')}${clear > 0 ? ' ' + mmss(clear) : ''}`;
+}
 function startCountdown() {
   if (race.active) { race.active = false; UI.raceShow(false); race.rings.forEach(r => r.visible = false); }
+  // One slot, one line: the weather note rides along inside the launch notice instead of overwriting it.
+  UI.toast(launch.held ? '✦ 天空转晴 — 发射程序启动 · 请留在观礼台安全区' : '⚠ 发射程序启动 · 请留在观礼台安全区');
+  launch.held = false;
   launch.phase = 'countdown'; launch.cd = 10.0;
-  UI.toast('⚠ 发射程序启动 · 请留在观礼台安全区');
 }
 function updateLaunch(dt) {
   const ship = base.shipGroup;
@@ -892,7 +944,7 @@ function updateLaunch(dt) {
     launch.cd -= dt;
     const n = Math.ceil(launch.cd);
     if (n !== launch.lastCd && n > 0) { launch.lastCd = n; UI.countdown(n); audio.cue(); }
-    if (n <= 0) { UI.countdown('升空'); audio.radio('good'); launch.phase = 'ignition'; launch.t = 0; }
+    if (n <= 0) { UI.countdown(t('升空')); audio.radio('good'); launch.phase = 'ignition'; launch.t = 0; }
   } else if (launch.phase === 'ignition' || launch.phase === 'ascent' || launch.phase === 'fly') {
     launch.t += dt;
     const prox = THREE.MathUtils.clamp(1 - Math.hypot(phys.x - base.launchPadPos.x, phys.z - base.launchPadPos.z) / 140, 0.12, 1);
@@ -917,7 +969,7 @@ function updateLaunch(dt) {
     } else if (launch.phase === 'fly') {
       launch.vy += 22 * dt; launch.y += launch.vy * dt;
       launch.intensity = Math.max(0.35, launch.intensity - dt * 0.08);
-      if (launch.y > 2600) { ship.visible = false; launch.phase = 'done'; launch.doneAt = elapsed; UI.toast('✦ 星舰已离开大气层 — 「愿它在群星间找到家」', 6000); missions[3].done = true; renderMissions(); audio.radio('good'); }
+      if (launch.y > 2600) { ship.visible = false; launch.phase = 'done'; launch.doneAt = elapsed; UI.toast('✦ 星舰已离开大气层 — 「愿它在群星间找到家」', 6000); missions[3].done = true; renderMissions(); audio.radio('good'); stormField.freeSky(); }
     }
     if (launch.phase !== 'done') {
       ship.position.y = 2.2 + launch.y;
@@ -1047,8 +1099,8 @@ function updateRace(dt) {
     if (race.idx >= race.gates.length) {
       race.active = false;
       const ms = race.t * 1000;
-      saveBoard({ name: `漫游车 ${new Date().toLocaleDateString('zh-CN')}`, time: fmtTime(race.t), ms, ts: Date.now() });
-      UI.toast(`✦ 计时赛完成 ${fmtTime(race.t)} — 已记入排行榜`);
+      saveBoard({ name: `${t('漫游车')} ${new Date().toLocaleDateString('zh-CN')}`, time: fmtTime(race.t), ms, ts: Date.now() });
+      UI.toast(t('✦ 计时赛完成 {time} — 已记入排行榜').replace('{time}', fmtTime(race.t)));
       UI.raceShow(false);
       race.rings.forEach(r => r.visible = false);
       return;
@@ -1416,19 +1468,30 @@ function update(dt) {
     if (nearSite.s.buried >= SAND.DEAD) zone = samplesZone;
     else if (!zone) zone = samplesZone;
   }
-  if (zone !== lastInfoZone) { lastInfoZone = zone; UI.showInfo(zone); }
-  // The action slot is where a player looks for "why did nothing happen", and a buried site is the
-  // one case where nothing is supposed to happen. It reports the cover depth rather than the reward,
-  // and names the verb that fixes it, so the mechanic reads as weather and not as a broken trigger.
-  if (zone?.key === 'samples' && nearSite && nearSite.s.buried >= SAND.DEAD) {
-    UI.showInfo({ ...zone, key: 'samples', hudAction: `${t('覆沙')} ${Math.round(nearSite.s.buried * 100)}% · ${siteName(nearSite.s)} — ${t('绕圈开快些，用车轮把沙刮开')}` });
-  }
+  // The action slot is written *before* the card is painted. `showInfo` caches the card body by zone
+  // key and only repaints when the zone changes, so a hudAction assigned after that call lands a frame
+  // late — which is to say never, for a player who stands still. Measured 2026-09-22: the 修复 prompt at
+  // the tanks and the 灯光秀 prompt at the pad were both invisible while parked inside their own zones.
   if (zone?.key === 'tanks' && !leakFixed) zone.hudAction = `${t('靠近白色雾流，按住')} ${input.isTouch ? t('「交互」') : 'E'} ${t('修复')}`;
-  if (zone?.key === 'watch' && launchArmed && launch.phase === 'idle') zone.hudAction = t('★ 已抵达观礼台 — 发射程序即将启动');
   // The light show was a discoverable-by-accident feature; it is the one thing to do at the pad
   // after dark, so the panel says so in the same slot the repair instruction uses.
   if (zone?.key === 'launch' && st.nightF > 0.5 && showOn <= 0 && launch.phase === 'idle')
     zone.hudAction = `${t('按住')} ${input.isTouch ? t('「交互」') : 'E'} ${t('点亮星舰灯光秀')}`;
+  if (zone !== lastInfoZone) { lastInfoZone = zone; UI.showInfo(zone); }
+  // Two slots hold a number that changes while the player does not move, so they cannot ride the
+  // cached paint and hand `showInfo` a fresh object instead.
+  //
+  // The buried site is the one case where nothing is supposed to happen on contact: it reports the
+  // cover depth rather than the reward, and names the verb that fixes it, so the mechanic reads as
+  // weather and not as a broken trigger.
+  if (zone?.key === 'samples' && nearSite && nearSite.s.buried >= SAND.DEAD) {
+    UI.showInfo({ ...zone, key: 'samples', hudAction: `${t('覆沙')} ${Math.round(nearSite.s.buried * 100)}% · ${siteName(nearSite.s)} — ${t('绕圈开快些，用车轮把沙刮开')}` });
+  }
+  // The deck is where the chain's weather has to be legible: parked inside the countdown ring with
+  // nothing happening, the player must be able to read the reason and its clock.
+  if (zone?.key === 'watch' && launchArmed && launch.phase === 'idle') {
+    UI.showInfo({ ...zone, key: 'watch', hudAction: launchWeatherHold() || t('★ 已抵达观礼台 — 发射程序即将启动') });
+  }
 
   // missions
   const nearLeak = Math.hypot(phys.x - base.leakPoint.x, phys.z - base.leakPoint.z) < 12;
@@ -1451,13 +1514,20 @@ function update(dt) {
       s.taken = true; s.group.visible = false; samplesTaken++;
       missions[2].n = samplesTaken;
       renderMissions(); audio.radio('beep');
-      UI.toast(`✦ 样本 ${samplesTaken}/${missions[2].total} 已入库`);
+      UI.toast(t('✦ 样本 {n}/{total} 已入库').replace('{n}', samplesTaken).replace('{total}', missions[2].total));
       for (let i = 0; i < 40; i++) fx.spark.emit(s.x, 1, s.z, (Math.random() - .5) * 8, 3 + Math.random() * 5, (Math.random() - .5) * 8, 0.8, 2);
       if (samplesTaken >= missions[2].total) { missions[2].done = true; advanceMission(); }
     }
   }
   if (launchArmed && launch.phase === 'idle' && mAct() === 'watch') {
-    if (Math.hypot(phys.x - base.watchPos.x, phys.z - base.watchPos.z) < 26) startCountdown();
+    // Ignition waits for the sky, and the gate sits on the trigger rather than only on the card: the
+    // countdown ring is 26 m wide while the info zone is smaller, so a player who drives through the
+    // deck during a front would otherwise start the sequence with dust still on the pad. `held` is
+    // recorded here because this is where the game actually knows it said no.
+    if (Math.hypot(phys.x - base.watchPos.x, phys.z - base.watchPos.z) < 26) {
+      if (launchWeatherHold()) launch.held = true;
+      else startCountdown();
+    }
   }
   updateLaunch(dt);
   updateRace(dt);
@@ -1846,6 +1916,11 @@ $('start-btn').onclick = async () => {
   $('hud').classList.remove('hidden');
   started = true;
   startedAt = performance.now();
+  // The island keeps a clear sky until the mission chain asks for weather. A random front during the
+  // grid restart would take the sun away from the one thing the tutorial is teaching, and the first
+  // storm lands better as a deadline the objective line names than as something that happened to be
+  // due. `freeSky()` hands the dice back once the ship has gone.
+  stormField.holdSky();
   renderMissions();
   UI.toast('欢迎来到 RED STARBASE — 基地断电中，驾驶漫游车重启电网');
   audio.radio('beep');
@@ -1901,6 +1976,15 @@ window.__RSB = {
   // landing in the middle of the one run that must not be interrupted.
   armStorm: (lead = 100) => stormField.arm(lead).state,
   outlook: () => stormField.outlook(phys),
+  // E3's variable under test: which beats of the chain have fired, and what the launch gate says
+  // right now. The whole point of the workstream is that a front belongs to a mission, so the
+  // instrument reports the pairing rather than leaving it to be inferred from the horizon.
+  stormBeats: () => ({ fired: stormBeat.fired.slice(), at: +stormBeat.at.toFixed(1),
+    hold: launchWeatherHold(), armed: launchArmed }),
+  // Take the sky back off the schedule. The launch gate is honest about weather, which means a
+  // screenshot rig that wants the ignition has to say so here rather than wait out a front it did not
+  // ask for — and `?demo=launch` is exactly that rig.
+  clearSky: () => stormField.holdSky().state,
   // The dust ledger as the simulation sees it: each array's own coverage, the rover's film, whether
   // the lance is running, and what the worst-covered array is currently paying in yield.
   film: () => ({ arrays: base.gridRigs.map(r => [r.key, +r.film.toFixed(3)]),
@@ -2756,7 +2840,7 @@ onChange(() => {
         // park the rover on the viewing deck, on the side away from the pad, so the shot reads
         // rover → deck → tower → stack instead of a vehicle hidden behind a concrete lip
         const [dwx, dwz] = ZONES.watch.pos;
-        if (demo === 'launch') { window.__RSB.skipMissions(); warpTo(dwx + 6, dwz - 4, true); }
+        if (demo === 'launch') { window.__RSB.skipMissions(); window.__RSB.clearSky(); warpTo(dwx + 6, dwz - 4, true); }
         // the weather demos have to be standing in their zone or the local storm/night
         // terms never show up in a frame — and the storm one has to face the wreck,
         // otherwise the shot is empty haze with a hull filling the lens from behind

@@ -24,6 +24,7 @@ const HOLD = { calm: [140, 230], watch: 42, peak: 26, aftermath: 55 };
 const LEAD_SPEED = 21;    // m/s — the wall crosses the 300 m island in ~14 s
 const TAIL_SPEED = 27;    // the clearing edge runs faster, so the back side is quick
 const SPAWN = 320;        // edges start and end this far out along the wind axis
+const SLAB_TAIL = 260;    // how far behind the leading edge a fresh event drags its back edge
 const BAND = 46;          // metres of ramp between clear air and full dust
 
 // How much clean air is still in front of the wall when the front launches. `watch` stalks the wall
@@ -57,6 +58,11 @@ export class StormField {
     this.dustLoad = 0;           // 0..1 island-wide deposit: softens the ground, is not the ledger
     this.enabled = true;
     this.pinned = false;         // QA holds one phase; see pin()
+    // Whose turn it is. While the mission chain is arming beats, `scheduled` stops the calm gap from
+    // rolling its own dice, so a front always belongs to something the player is doing. `pendingLead`
+    // is a beat that arrived while a slab was still crossing.
+    this.scheduled = false;
+    this.pendingLead = 0;
   }
 
   // Hold one phase at a fixed standoff from a point, so a clear-vs-storm screenshot pair is
@@ -78,17 +84,93 @@ export class StormField {
     this.amplitude = a; this.speed = s; this.gust = a;
     const here = this.along(focus.x, focus.z);
     this.edge = here - standoff;
-    this.trail = this.edge - 260;      // the slab depth the front is dragging behind it
+    this.trail = this.edge - SLAB_TAIL;  // the slab depth the front is dragging behind it
     return this;
   }
   // Queue the next front instead of rolling dice on it. `lead` is the seconds of warning the
   // player gets before the leading edge starts walking across the island, so the mission chain can
   // make a storm a deadline with a name — "复电四区，然后你有 100 秒" — rather than background noise.
+  // Arming also takes the weather off the dice for good: from the first beat on, a front arrives
+  // because a mission called for one. `freeSky()` hands the island back to its own weather.
   arm(lead = 100) {
-    this.enabled = true; this.pinned = false;
+    this.enabled = true; this.pinned = false; this.scheduled = true;
+    // A beat that lands while a slab is still crossing queues behind that slab. Two fronts cannot
+    // occupy one sky, and silently dropping the second would drop the mission beat with it.
+    if (this.phase !== 'calm') { this.pendingLead = lead; return this; }
+    this.pendingLead = 0;
     this.phase = 'calm'; this.t = 0;
     this.hold = Math.max(4, lead - HOLD.watch);
     return this;
+  }
+
+  // Clear skies until something is armed: the chain's first steps teach driving and power, and a
+  // front during them is noise the player has no reason to read yet.
+  holdSky() {
+    this.enabled = true; this.pinned = false; this.scheduled = true; this.pendingLead = 0;
+    this.phase = 'calm'; this.t = 0; this.hold = Infinity;
+    return this;
+  }
+  // ...and the sandbox keeps its own storms once the chain is over.
+  freeSky() {
+    this.scheduled = false; this.pendingLead = 0;
+    if (this.phase === 'calm') { this.t = 0; this.hold = lerp(...HOLD.calm); }
+    return this;
+  }
+
+  // The legs an armed event still has to walk once its lead runs out, priced the way `_startEvent`
+  // lays them out. Shared by the two ways a front can be pending: already held in calm, or queued
+  // behind a slab still crossing.
+  _eventLegs() {
+    return HOLD.watch + (SPAWN * 0.5 + SPAWN) / LEAD_SPEED + HOLD.peak
+      + (SPAWN + SPAWN + SLAB_TAIL) / TAIL_SPEED;
+  }
+
+  // Seconds until the slab that is crossing *now* has left and the sky hands the schedule back — the
+  // moment a beat armed mid-storm can actually launch.
+  _untilCalm() {
+    const cross = Math.max(0, (SPAWN * 0.5 - this.edge) / LEAD_SPEED);
+    const walkOff = Math.max(0, (SPAWN - this.trail) / TAIL_SPEED);
+    switch (this.phase) {
+      case 'watch': return Math.max(0, HOLD.watch - this.t) + cross + HOLD.peak + walkOff + HOLD.aftermath;
+      case 'front': return cross + HOLD.peak + walkOff + HOLD.aftermath;
+      case 'peak': return Math.max(0, HOLD.peak - this.t) + walkOff + HOLD.aftermath;
+      case 'clearing': return walkOff + HOLD.aftermath;
+      case 'aftermath': return Math.max(0, HOLD.aftermath - this.t);
+      default: return 0;
+    }
+  }
+
+  // Seconds until the sky is empty of a storm — including the front the mission chain has armed but
+  // not yet launched. That second half is the whole point: a pad gate that only looked at how much
+  // dust is down *right now* would happily ignite into a wall that is scheduled for the next minute,
+  // breaking the promise the chain's last beat makes out loud.
+  //
+  // It is analytic, summed from the same legs `advance()` marches, because a countdown measured down
+  // frame by frame drifts every time the wind veers. Each leg is recomputed from the live edge, so the
+  // clock converges instead of accumulating error: it runs slightly fast while the wall creeps (the
+  // build-up walks at WATCH_CREEP but is priced at LEAD_SPEED) and is exact from `front` onward.
+  timeToClear() {
+    // A beat queued behind a crossing slab is the case a pad gate must not miss. The current wall is
+    // on its way out, so the sky reads clear for the whole aftermath — long enough to light the stack
+    // into the *next* wall, which is the one promise the chain's last beat just made out loud.
+    if (this.pendingLead) return this._untilCalm() + Math.max(4, this.pendingLead - HOLD.watch) + this._eventLegs();
+    const cross = Math.max(0, (SPAWN * 0.5 - this.edge) / LEAD_SPEED);
+    const walkOff = Math.max(0, (SPAWN - this.trail) / TAIL_SPEED);
+    switch (this.phase) {
+      case 'calm': {
+        // Nothing scheduled, or a `holdSky` gap with no front queued: the air is as clear as it gets.
+        const toLaunch = this.hold - this.t;
+        if (!this.scheduled || !Number.isFinite(toLaunch) || toLaunch <= 0) return 0;
+        return toLaunch + this._eventLegs();
+      }
+      case 'watch': return Math.max(0, HOLD.watch - this.t) + cross + HOLD.peak + walkOff;
+      case 'front': return cross + HOLD.peak + walkOff;
+      case 'peak': return Math.max(0, HOLD.peak - this.t) + walkOff;
+      case 'clearing': return walkOff;
+      // `aftermath` counts its seconds from `clearing`, so by the time the phase flips the slab has
+      // already left and only the settled film is behind — which is a ground problem, not a sky one.
+      default: return 0;
+    }
   }
 
   // What the HUD is allowed to claim about the weather. Not "storming: yes/no" but what is coming,
@@ -110,16 +192,23 @@ export class StormField {
       on: this.local(focus.x, focus.z) > 0.03,
       bearing: (Math.atan2(this.wx, this.wz) * 180 / Math.PI + 360) % 360,
       speed: this.speed, load: this.dustLoad,
+      // Whether the next front is a promise the mission chain made or a roll of the island's dice.
+      // The HUD counts down to both, but only the armed one is announced while the gap is still long.
+      scheduled: this.scheduled,
     };
   }
 
-  unpin() { this.pinned = false; this.enabled = true; this.hold = lerp(...HOLD.calm); return this; }
+  unpin() {
+    this.pinned = false; this.enabled = true;
+    this.hold = this.scheduled ? Infinity : lerp(...HOLD.calm);
+    return this;
+  }
 
   // Put the field into a phase. The mission chain schedules storms through here instead of
   // rolling dice on top of the player, and the QA rig uses it to hold one for a screenshot.
   force(phase) {
     this.phase = phase; this.t = 0;
-    this.hold = phase === 'calm' ? lerp(...HOLD.calm) : 0;
+    this.hold = phase === 'calm' ? (this.scheduled ? Infinity : lerp(...HOLD.calm)) : 0;
     if (phase === 'watch' || phase === 'front') this._startEvent();
     // A forced front picks the event up where a natural one launches, so `force('front')` and a storm
     // that was allowed to build up are the same weather at the same distance.
@@ -131,7 +220,7 @@ export class StormField {
     this.targetHeading = this.heading = Math.random() * Math.PI * 2;
     this.h0 = this.heading; this.veer = 0;
     this.wx = Math.cos(this.heading); this.wz = Math.sin(this.heading);
-    this.edge = -SPAWN; this.trail = -SPAWN - 260;
+    this.edge = -SPAWN; this.trail = -SPAWN - SLAB_TAIL;
   }
 
   advance(dt, roverPos) {
@@ -193,8 +282,12 @@ export class StormField {
         this.speed = damp(this.speed, 2.4, 0.4, dt);
         this.gust = damp(this.gust, 0.05, 0.9, dt);
         if (this.t > HOLD.aftermath) {
-          this.phase = 'calm'; this.t = 0; this.hold = lerp(...HOLD.calm);
           this.edge = -SPAWN; this.trail = -SPAWN;
+          this.phase = 'calm'; this.t = 0;
+          // The sky goes back to whoever owns it: a queued mission beat, an armed schedule holding
+          // for its next beat, or — after the chain is done — the island's own dice.
+          if (this.pendingLead) { const lead = this.pendingLead; this.pendingLead = 0; this.arm(lead); }
+          else this.hold = this.scheduled ? Infinity : lerp(...HOLD.calm);
         }
         break;
     }
@@ -271,6 +364,7 @@ export class StormField {
     return {
       phase: this.phase, intensity: this.amplitude, speed: this.speed, gust: this.gustEnv,
       dustLoad: this.dustLoad, windX: this.wx, windZ: this.wz, edge: this.edge, trail: this.trail,
+      scheduled: this.scheduled, pendingLead: this.pendingLead, clearIn: this.timeToClear(),
     };
   }
 }

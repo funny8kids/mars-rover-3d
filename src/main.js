@@ -1158,17 +1158,39 @@ function seedPlumes(F) {
     // velocity by `drag^(dt·60)` = 0.975, which is ×0.22 a second, so a sprite's entire lifetime
     // travel is v/1.51 — five to ten metres. A cloud whose front covers ten metres in seven seconds
     // is a puddle, and that is why the hold-down read as a mist behind the tower legs. A blast front
-    // is a decelerating current, so the edge follows `R·(1 − e^(−age/τ))`: 22 m at the moment the
-    // stack clears the hold-down, 41 m by the one the deck stops mattering.
-    const blast = 48 * (1 - Math.exp(-F.met / 5.2));
-    const mPad = Math.round(4.0 * quality.particles * padF * (0.25 + 0.75 * p.power));
+    // is a decelerating current, so the edge follows `R·(1 − e^(−age/τ))`.
+    // R is set by the camera, and this time the camera was measured rather than assumed. `framing()`
+    // on a real `demo=launch` run: the rig sits 165 m out at MET 0.3, closes to 98 m through the
+    // hold-down (MET 3.4-4.5), and pulls back to 137 m by MET 10 — at y 6-7 m through the whole
+    // hold-down, so the deck is framed from near ground level. With the rig's own 78.3° vertical fov
+    // that is 3.9 px per metre on a 696 px frame, and the 42.6 m stack spans 143 px of it. So a 48 m
+    // front was never "a 35 px smudge" — it is 376 px, 59 % of the frame. The wisp was density, not
+    // radius, and the previous note here got the radius wrong by sizing off a 147 m range that the
+    // camera never holds while the jet is on the deck.
+    // The upper bound is the camera itself. Sized at R = 120 with the sand outrunning it, the curtain
+    // reached 129 m — past the rig's own 98 m — and the launch camera ended up *inside* the cloud it
+    // was framing: 5 sand sprites over 8 m within 60 m of the lens, nearest at 35 m, and the frame
+    // came back a flat tan field. 54 m keeps the front at half the closest range, so the camera
+    // always watches the bank from outside it. A decelerating current, so the edge follows
+    // `R·(1 − e^(−age/τ))`.
+    const blast = 54 * (1 - Math.exp(-F.met / 6.4));
+    // The bank is the other half of the same defect and it was the worse one: the apron was at most
+    // ~8 m tall at the mount, and the launch camera frames the deck from y 6-7 m, so it was looking
+    // *along* an 8 m slab — a line on the sand, not a mass. Height is seeded directly for the same
+    // reason radius is (the pool's buoyancy tops out at gravity/drag = 1.06 m/s, ~8 m over a life),
+    // and it grows with the front because the column is fed continuously while its edge spreads.
+    // 34 m of bank over 54 m of front is the ~0.6 aspect an ignition cloud actually holds.
+    const bank = 8 + 26 * (1 - Math.exp(-F.met / 7));
+    const mPad = Math.round(7.0 * quality.particles * padF * (0.25 + 0.75 * p.power));
     for (let k = 0; k < mPad; k++) {
       const a = Math.random() * 6.283;
       // Biased toward the mount, not spread evenly over the area. A uniform-in-area fill spends
       // most of a fixed particle budget on the widening outer ring, and what the frame got was a
       // handful of isolated lobes out by the gantries with bare sand between them. The opaque mass
-      // of a real launch sits on the mount; only its fingers reach out.
-      const rr = 6 + Math.pow(Math.random(), 1.8) * Math.max(0, blast - 6);
+      // of a real launch sits on the mount; only its fingers reach out. The exponent loosens from
+      // 1.8 to 1.4 with the new radius: at R = 48 an `r^1.8` fill still landed half its sprites
+      // inside 15 m, which starved everything past the tower legs.
+      const rr = 6 + Math.pow(Math.random(), 1.4) * Math.max(0, blast - 6);
       const ux = Math.cos(a), uz = Math.sin(a);
       // Measured from the mount, not from the pad centre: `rr` never goes below the mount radius,
       // so `rr/blast` would call the sprite 27% of the way to the front while it is still sitting on
@@ -1176,15 +1198,107 @@ function seedPlumes(F) {
       const edge = blast > 6 ? Math.min(1, (rr - 6) / (blast - 6)) : 0;
       // It boils up out of the trench by the mount and flattens to a skirt as it rolls: the cloud
       // is a wedge, not a slab. The wedge steepens with age, because the jet keeps feeding the mount
-      // while the front is out on the sand — and the pool's own buoyancy only lifts a sprite ~8 m
-      // before it dies (terminal rise is gravity/drag-coefficient = 1.6/1.51 m/s). A cloud that is
-      // the same height at T+3 as at T+10 reads as a painted puddle however dense it is.
-      const boil = 1 + 2.2 * (1 - Math.exp(-F.met / 6));
-      const y = deckY + 0.7 + Math.random() * (1.4 + 6.2 * (1 - edge)) * boil;
+      // while the front is out on the sand. `r^1.7` keeps most of the mass in the lower third of the
+      // bank — a uniform fill would put the deck's own smoke at 30 m and the column would read as
+      // fog, not as a launch.
+      // The height is measured off the ground the sprite is actually sitting on, not off the pad.
+      // `deckY` is the graded fill under the mount, and the apron now reaches 60-90 m out, past the
+      // fill and down to the dune sand; seeding every sprite from the pad's datum drew the far half
+      // of the bank as a slab hanging several metres above the terrain it had rolled out over — the
+      // flat-bottomed-mushroom silhouette in the MET 4 wide frame.
+      const px = p.pos.x + ux * rr, pz = p.pos.z + uz * rr;
+      const y = surfaceAt(px, pz) + 0.7 + Math.pow(Math.random(), 1.7) * bank * (1.15 - 0.55 * edge);
+      // Birth sizes; the pool's `sizeGrow` 2.6 multiplies them by the end of life, so the mount band
+      // runs 4.5-8 m at birth → 12-21 m as it dies, and the front 8-17 m → 21-44 m. Puffs at the
+      // leading edge are the big ones: a current that has entrained 100× its own volume of air does
+      // not stay the size it was at the throat, and a 5 m sprite out at 50 m is the isolated-lobes
+      // defect again. The ceiling is the camera: the near side of the ring is 56 m from the lens at
+      // this radius, and a puff that projects over ~25° there is one disc covering a third of the
+      // frame — which is how the previous, larger fill blanked it. The largest puffs are also the
+      // dimmest, since they are late in life's clock and `fade` is already taking them.
+      const s = 4.5 + Math.random() * 3.5 + edge * (3.5 + Math.random() * 5.5);
       fx.smoke.emit(
-        p.pos.x + ux * rr, y, p.pos.z + uz * rr,
-        ux * (2 + 7 * edge), 1.1 + Math.random() * 2.4, uz * (2 + 7 * edge),
-        5.5 + Math.random() * 4.5, 4.5 + Math.random() * 5.5
+        px, y, pz,
+        ux * (2 + 9 * edge), 1.5 + Math.random() * 3.5, uz * (2 + 9 * edge),
+        5.5 + Math.random() * 4.5, s
+      );
+    }
+    // The apron is one of three masses the deck makes, and it was the only one seeded. What the frame
+    // was missing at the moment of maximum drama — hold-down, jet on the pad, tower legs full of
+    // exhaust — was the white boil-off at the mount and the brown curtain running out ahead of the
+    // grey. Both ride the same `blast` clock as the apron, because all three are one event at three
+    // grain sizes: the trench boiling, the condensate rolling, the sand it sweeps.
+    // Water the deluge floods the trench with, turned to steam by a jet that is still hitting the
+    // deck. It is born *at* the mount and rises, so its radius stays a few mouths wide while the
+    // smoke is already out at the gantries — the two masses separate in the frame the way they do on
+    // a pad, instead of one grey blob doing both jobs.
+    const mDel = Math.round(2.4 * quality.particles * padF * (0.2 + 0.8 * p.power));
+    for (let k = 0; k < mDel; k++) {
+      const a = Math.random() * 6.283;
+      // Measured on the previous fill: `rMax 30.2 m` for a mass that is supposed to sit on a mount
+      // whose own radius is `mouth` = 1.3·√n ≈ 3 m, and 11.3 m after the band below. The old band
+      // reached 2.4·mouth plus a term that grew with `blast`, so the steam was sprayed to the same
+      // radius as the smoke apron — and the two masses, which were supposed to separate in the frame,
+      // just averaged into one veil. A boiled-off column leaves the trench within a couple of mount
+      // widths and only *rises* from there, which is what the buoyancy in the pool already does for
+      // it.
+      const rr = mouth * (0.35 + Math.pow(Math.random(), 2.2) * 1.25);
+      const ux = Math.cos(a), uz = Math.sin(a);
+      // Sizes span ~5× (2.5 → 12 m at birth, and the pool's `sizeGrow` 2.0 takes them to 5–24 m as
+      // they die) rather than the old 2:1 band, and the distribution is skewed by `rand^1.6` so the
+      // small end carries most of the count. The reason is structural, not stylistic: a volume reads
+      // as a volume only where *adjacent* puffs differ in optical depth, and two same-size puffs
+      // overlapping at any offset average to a flat wash, while a 3 m puff sitting inside a 12 m one
+      // leaves a visible core. What the buffer actually holds now is the reproducible number —
+      // `__RSB.plume().deck.deluge.size` reads the alive sprites' aSize quantiles as 3.76 / 7.38 /
+      // 12.14 / 15.37 m over 180 live sprites at MET 4 and 4.08 / 8.74 / 14.88 / 21.83 m over 262 at
+      // MET 8 (quality 'std', the launch camera at its 98 m closest and 130 m pulled back). Against
+      // the old fill's ~2:1 band that is a 4.1× spread at the mount and 5.4× by MET 8; re-sampling
+      // the same sequence moved each digit by under a metre and the counts by seven sprites, so the
+      // claim being made is the ratio, not the digits.
+      const s = 2.5 + Math.pow(Math.random(), 1.6) * 9.5;
+      fx.deluge.emit(
+        p.pos.x + ux * rr, deckY + 0.4 + Math.random() * 1.8, p.pos.z + uz * rr,
+        ux * (2.0 + 5.0 * Math.random()), 1.4 + 2.6 * Math.random(), uz * (2.0 + 5.0 * Math.random()),
+        2.6 + Math.random() * 2.2, s
+      );
+    }
+    // Sand outruns smoke: the blast front is a shallow, fast current and the condensate cloud behind
+    // it is deep and slow, which is why a real launch reads as a brown ring with a white wall inside
+    // it. So the front reaches further than `blast` (1.25x) and the fill is biased *outward*
+    // (`rand^0.55`, against the apron's inward `rand^1.4`) — the curtain is the leading edge, and the
+    // ground inside it has already been scoured. Height follows the same logic: shallow off the deck
+    // at the front, taller where the current is still turning the corner out of the mount.
+    // 1.25 rather than the 1.55 first written here, because that multiplier is what put the curtain
+    // outside the launch camera: 1.55 over a 54 m front is 80 m of radius, and the outrunning term on
+    // top of a 120 m `blast` reached 129 m — past the rig's own closest 98 m, so the camera was
+    // standing in the sand it was supposed to be filming.
+    const sFront = 6 + Math.max(0, blast - 6) * 1.25;
+    // The curtain's own depth, on the same decelerating clock: a wall of suspended grains is thin at
+    // the front and taller where the current is still turning out of the mount. The ceiling is the
+    // camera again — it frames the deck from y 6-7 m, so a 11 m wall standing between it and the pad
+    // occupies the whole lower third of the frame, which is the dramatic reading, and anything much
+    // taller starts hiding the stack itself.
+    const sandH = 2.2 + 9 * (1 - Math.exp(-F.met / 9));
+    const mSand = Math.round(3.5 * quality.particles * padF * (0.3 + 0.7 * p.power));
+    for (let k = 0; k < mSand; k++) {
+      const a = Math.random() * 6.283;
+      const rr = 6 + Math.pow(Math.random(), 0.55) * Math.max(0, sFront - 6);
+      const edge = sFront > 6 ? Math.min(1, (rr - 6) / (sFront - 6)) : 0;
+      const ux = Math.cos(a), uz = Math.sin(a);
+      // Same multi-scale spread as the steam, and the same reason, plus one that only shows up at
+      // range: a 3 m grain cloud out at 80 m projects to ~12 px at the launch camera and the curtain
+      // reads as a dotted line of specks. Sand grows as it is carried — the current picks up the
+      // whole surface it runs over — so size rides `edge` from 1.2-4.7 m at the mount to 3.2-10.2 m at
+      // the front. The front's ceiling is the near side of the ring, which at this radius is ~30 m
+      // from the lens: a 19 m puff there (the previous band's top) is one disc across a quarter of
+      // the frame, and five of them blanked it.
+      const s = 1.2 + Math.pow(Math.random(), 1.5) * 3.5 + edge * (2 + Math.random() * 5);
+      const px = p.pos.x + ux * rr, pz = p.pos.z + uz * rr;
+      fx.sandblast.emit(
+        px, surfaceAt(px, pz) + 0.25 + Math.pow(Math.random(), 2.2) * sandH * (1.2 - 0.5 * edge), pz,
+        ux * (3 + 12 * edge), 0.3 + 1.3 * Math.random(), uz * (3 + 12 * edge),
+        1.8 + Math.random() * 1.5, s
       );
     }
     // The wake is born past the flame's tip, not at the mouth. It used to be seeded between `prev`
@@ -1969,6 +2083,11 @@ function update(dt) {
   for (const k in fx) if (fx[k].phys) fx[k].mat.uniforms.uFocal.value = camera.projectionMatrix.elements[5] * (innerHeight / 2);
   fx.smoke.update(dt, breezeX * 6, breezeZ * 6, 0);
   fx.steam.update(dt, breezeX * 8, breezeZ * 8, 0);
+  // Both deck pools ride the weather too, but a third of the smoke's coupling: the deluge steam is
+  // rising under its own buoyancy and the sand is a ground current, so neither gets carried as far as
+  // a puff that is already aloft.
+  fx.deluge.update(dt, breezeX * 2, breezeZ * 2, 0);
+  fx.sandblast.update(dt, breezeX * 2, breezeZ * 2, 0);
 
   // shockwave rings fade
   for (let i = shockRings.length - 1; i >= 0; i--) {
@@ -2641,11 +2760,49 @@ window.__RSB = {
       }
       return out;
     };
-    for (const k of ['flame', 'smoke']) if (fx?.[k]) fx[k].points.visible = hide !== k;
+    const DECK_POOLS = ['flame', 'smoke', 'deluge', 'sandblast'];
+    for (const k of DECK_POOLS) if (fx?.[k]) fx[k].points.visible = hide !== k;
+    // The deck census: what the four pools actually hold *right now*, in metres and device pixels,
+    // and how close each sprite comes to the lens. Two things make this a reading rather than a
+    // re-derivation of the seeding code. `sizeArr` is the grown size (the CPU update rewrites it every
+    // frame), so the quantiles are the multi-scale contract's test: a single-scale fill cannot produce
+    // a spread. And the pixel size comes from the vertex shader's own uniforms (`uFocal`, `uMaxSize`,
+    // `uPixelRatio`) against each sprite's real distance, so the ceiling — no puff large enough to
+    // veil the frame — is checkable without a screenshot.
+    const deck = {};
+    for (const k of DECK_POOLS) {
+      const pool = fx?.[k];
+      if (!pool) { deck[k] = { n: 0 }; continue; }
+      const u = pool.mat.uniforms, focal = u.uFocal.value, cap = u.uMaxSize.value, pr = u.uPixelRatio.value;
+      const sz = [];
+      let nearest = Infinity, lt60 = 0, pxMax = 0, yMax = -Infinity;
+      for (let i = 0; i < pool.count; i++) {
+        if (pool.life[i] >= 1) continue;
+        const x = pool.pos[i * 3], y = pool.pos[i * 3 + 1], z = pool.pos[i * 3 + 2];
+        sz.push(pool.sizeArr[i]);
+        const d = Math.hypot(x - camera.position.x, y - camera.position.y, z - camera.position.z);
+        if (d < nearest) nearest = d;
+        if (d < 60) lt60++;
+        pxMax = Math.max(pxMax, Math.min(pool.sizeArr[i] * focal / d, cap) * pr);
+        if (y > yMax) yMax = y;
+      }
+      if (!sz.length) { deck[k] = { n: 0 }; continue; }
+      sz.sort((a, b) => a - b);
+      const q = (p) => +sz[Math.min(sz.length - 1, Math.floor(p * sz.length))].toFixed(2);
+      deck[k] = {
+        n: sz.length,
+        size: [q(0.1), q(0.5), q(0.9), +sz[sz.length - 1].toFixed(2)],
+        nearest: +nearest.toFixed(1), lt60, pxMax: +pxMax.toFixed(0), yMax: +yMax.toFixed(1),
+      };
+    }
     return {
       hidden: hide, jets: launchJets ? launchJets.probe(camera) : null,
-      alive: { flame: count(fx?.flame), smoke: count(fx?.smoke) },
-      cap: { flame: fx?.flame.count, smoke: fx?.smoke.count },
+      // The anchor for every row below: the deck census is meaningless without the MET it was read at,
+      // because `blast`, `bank` and `sandH` all grow on that clock.
+      met: launch.flight ? +launch.flight.met.toFixed(2) : null,
+      alive: Object.fromEntries(DECK_POOLS.map(k => [k, count(fx?.[k])])),
+      cap: Object.fromEntries(DECK_POOLS.map(k => [k, fx?.[k]?.count ?? 0])),
+      deck,
       sheath: sheath(),
     };
   },

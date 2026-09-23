@@ -193,7 +193,8 @@ export function createFX(scene, quality) {
   // mouth-fraction trail puff drawn through the mote fudge came out at 11 px against a flame column
   // that projects at 138, i.e. a 150 m pad carrying ~1,800 specks rather than one rolling mass. The
   // cap goes with it — the historical 52 px is a *mote* cap, and at the focal this pool now uses a
-  // 26 m puff at the launch camera's own 186 m range wants 117 px. Left at 52 it would clamp the
+  // 26 m puff at the launch camera's widest measured range (165 m, read off `framing()` at MET 0.3)
+  // wants 111 px. Left at 52 it would clamp the
   // whole cloud back to identical discs, which is the string-of-pearls defect the size law was
   // written to kill. 340 device px is half the frame's height: past that a puff is a fade, not a
   // shape, and `nearFade` dissolves what gets closer to the lens than that anyway.
@@ -202,6 +203,54 @@ export function createFX(scene, quality) {
   // polygon outline. Vapour off a cryo leak is loaded with suspended dust, so it is dim, warm-grey
   // and much larger by the time it leaves the plume.
   fx.steam = new ParticlePool(scene, Math.round(500 * P), { color0: 0xd9cabb, color1: 0x8d7f74, opacity: 0.20, gravity: 0.4, drag: 0.96, sizeGrow: 2.9 });
+  // Two pools the launch deck needs and nothing else asks for. They are *not* the two pools that
+  // already have the right colours, because both of those are mote pools: `fx.steam` draws through the
+  // 160 px-per-metre fudge with a 52 px cap and `fx.dust` with a 15 px cap, so a puff seeded at its
+  // real metres would clamp to a disc the moment the launch camera pulled back to its 98-165 m range
+  // — the identical specks-not-a-cloud defect that put `fx.smoke` on `phys` in the first place.
+  // Re-tuning the leak's or the wheels' pools to serve that scene would un-tune them; the launch
+  // gets its own, seeded in metres like every other number on this deck.
+  // Water deluge: the trench is flooded before ignition and the jet turns it to steam, so this is the
+  // white mass at the mount while the smoke is the grey mass rolling out past it. It rises (gravity
+  // +0.9, the only pool besides `smoke` that is buoyant) and it is the one place a near-white puff is
+  // correct, because it really is water vapour rather than soot.
+  // Why these pools are multi-scale, stated as the reading that can actually be re-taken:
+  // `__RSB.plume().deck.<pool>.size`, which walks the live buffer and returns the alive sprites'
+  // `aSize` quantiles — the CPU update rewrites `aSize` every frame, so those are the *current*
+  // metres, not the seeded ones. A single-scale fill cannot produce a spread, so p10/p50/p90/max over
+  // the live buffer *is* the test. An earlier note here claimed a column-mean of "mean R 167-191
+  // across all sixteen columns" and that reading is not reproducible — averaging a horizontal band
+  // across the frame pulls the terrain into the same number as the cloud, so it scores a flat sheet
+  // and a good one identically. What the buffers hold now (quality 'std', the launch camera at its
+  // 98 m closest / 130 m pulled back): deluge 3.76 / 7.38 / 12.14 / 15.37 m over 180 live sprites at
+  // MET 4 and 4.08 / 8.74 / 14.88 / 21.83 m over 262 at MET 8; sandblast 3.72 / 6.83 / 10.36 /
+  // 13.14 m over 180 and 4.57 / 7.81 / 12.66 / 17.76 m over 221. That is 4.1× → 5.4× of spread on
+  // the deluge and 3.5× → 3.9× on the sand, against the ~2:1 band they were first seeded with.
+  // Re-sampling the same sequence moves each digit by under a metre and the counts by seven sprites —
+  // the claim being made is the ratio, not the digits. The structure a volume needs is *adjacent*
+  // puffs differing in optical depth: two same-size puffs overlapping at any offset average to a flat
+  // wash, while a 3 m puff inside a 12 m one leaves a visible core.
+  // The other half of the contract, and the one that was being violated before these pools were
+  // re-sized: the launch camera closes to 98 m at y 6-7 m, so a deck puff that reaches the lens draws
+  // as a flat veil over the whole frame. The same probe carries `.nearest`, `.lt60` and `.pxMax` for
+  // that — MET 2.5-8, no live sprite of any deck pool is inside 60 m of the lens (`lt60` is 0 in all
+  // four, nearest reading 64.7 m) and the largest single sprite is 103 px of a 696 px frame. Treat "a
+  // sprite over ~150 px within 60 m of the camera" as the failure this ceiling guards.
+  // The reading that is NOT yet satisfied: `.pxMax` on `flame` is 5-7 px, because it is the one deck
+  // pool left on the 160 px-per-metre fudge while the launch camera is 98-130 m out. Its stated job
+  // is flicker on the exhaust column, and at seven pixels it is not delivering it.
+  fx.deluge = new ParticlePool(scene, Math.round(1200 * P), { color0: 0xf3f1ee, color1: 0x9fa9b0, opacity: 0.33, gravity: 0.9, drag: 0.968, sizeGrow: 2.0, fadeIn: 0.10, inner: 0, phys: true, maxSize: 300, nearFade: 3.0 });
+  // Sand swept out by the blast front, not smoke: it is a thin curtain riding *ahead* of the cloud,
+  // low over the deck, warm-brown, and short-lived because the sand it is made of runs out. `inner`
+  // stays off zero here — a dust curtain is a wall of fine grains, so a flatter profile reads closer
+  // than a soft volume does, and at 3-6 m it is smaller than any neighbouring smoke puff anyway.
+  // The curtain's colour is a measured choice, not a taste one. In the wide frame the bare sand
+  // behind the cloud reads (120, 56, 60) and the sand-lifted deck reads (151, 108, 99): lifted, but
+  // only by desaturation, so the curtain printed as "the ground is paler here" instead of as a wall
+  // moving across it. Suspended martian dust is *brighter* than the regolith it lifts off (the fine
+  // fraction is less iron-stained than the surface), so color0 is now well above the ground's own
+  // red and the pair straddles it, which gives the front an edge against both the sand and the smoke.
+  fx.sandblast = new ParticlePool(scene, Math.round(700 * P), { color0: 0xe0b489, color1: 0x8a5f3e, opacity: 0.40, gravity: -1.6, drag: 0.962, sizeGrow: 1.9, fadeIn: 0.08, inner: 0.05, phys: true, maxSize: 200, nearFade: 2.2 });
   // Three layers, not one sheet of static. A real dust storm is sorted by grain size: sand hopping
   // centimetres off the deck, silt in suspension, and fines high up moving slowly. Each layer gets
   // its own sprite scale, opacity and life so they separate in the frame instead of averaging into

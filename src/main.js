@@ -13,6 +13,7 @@ import { createFX, updateStorm } from './fx/particles.js';
 import { createLaunch } from './fx/launch.js';
 import { createJetPlumes } from './fx/plume.js';
 import { createPadBeams } from './fx/beams.js';
+import { createStageCollars } from './fx/staging.js';
 import { StormField, createStormWall, placeStormWall } from './world/storm.js';
 import { createRimVeil } from './world/rim_veil.js';
 import { createPost } from './fx/post.js';
@@ -1038,6 +1039,7 @@ function updateLaunch(dt) {
 
 const _bp = new THREE.Vector3();
 let launchJets = null;
+let stageCollars = null;
 // One sound per beat, declared in a single place. The flight used to announce MECO, SECO, the ship's
 // own ignition and the three dramatic events with the same 880 Hz countdown pip — five different
 // moments of a launch, one UI blip, which is the tell that the audio was never written for this.
@@ -1070,9 +1072,12 @@ function launchBeat(b) {
     const ring = shockWave(base.launchPadPos.x, surfaceAt(...ZONES.launch.pos) + 2, base.launchPadPos.z, 0xffd8a0, 10);
     if (ring) ring.userData.grow = 9;
   } else if (b.id === 'staging') {
-    const s = F.point(_bp, rig.seam - 0.5);
-    const ring = shockWave(s.x, s.y, s.z, 0xffc46a, 6);
-    if (ring) ring.userData.grow = 5;
+    // The split's own light show, and deliberately not a `shockWave`: a deck ring stands where it was
+    // put, and the vehicle that made it is 270 m gone by the time the ring fades. `fx/staging.js` poses
+    // the collar off the booster's own rim every frame, normal to its own axis, and expands the band
+    // without fattening it.
+    stageCollars = stageCollars || createStageCollars(scene);
+    stageCollars.spawn(F, rig);
     launch.flash = Math.max(launch.flash, 0.45);
   } else if (b.id === 'boosterlanding') {
     // Two vehicles, two returns: the booster coming home to the deck it left is the beat the whole
@@ -2060,6 +2065,10 @@ function update(dt) {
   if (launch.phase === 'flight' && launch.flight) {
     launchJets = launchJets || createJetPlumes(scene, base.launchRig);
     launchJets.update(launch.flight.plumes, elapsed, camera, scene.fog);
+    // Same frame, same reason: the collar is extinguished by the air it is sitting in, and after the
+    // split the vehicle is high enough that the height-attenuated density written above is several
+    // times smaller than the ground value.
+    if (stageCollars) stageCollars.update(dt, elapsed, camera, scene.fog, launch.flight, base.launchRig);
   }
   // Same reason as the shells directly above: a beam is extinguished by the air it is crossing, so it
   // has to read the density the frame actually renders with, not the ground value. `beams.js` poses
@@ -2661,7 +2670,14 @@ window.__RSB = {
     return { met: +F.met.toFixed(1), alt: +F.alt.toFixed(0), camY: +camera.position.y.toFixed(0),
       fov: +camera.fov.toFixed(1), fog: +scene.fog.density.toFixed(5), w: +launchCamW.toFixed(2),
       airW: +launchAir.w.toFixed(2), sep: F.separated,
-      booster: body(0.4, seam - 0.1), ship: body(seam + 0.1, top) };
+      booster: body(0.4, seam - 0.1), ship: body(seam + 0.1, top),
+      // How far the separation collar has drifted from the seam it was thrown out of, in metres. Read
+      // against the *booster's* own seam rather than `F.point(seam)`: that call hands a height to
+      // whichever half owns it, and above the seam line that is the ship — so what it measures is the
+      // stage gap opening between two vehicles (0 → 71 m across one collar's life, measured), which
+      // says nothing about whether the band rides its own body or lies in the world where it was born.
+      // The old world-parked ring failed the second reading: 87 m at birth, 270 m by the frame it faded.
+      collar: stageCollars ? stageCollars.probe(camera, F.plumes[0].body.at(new THREE.Vector3(), seam)) : null };
   },
   // Park the real flight at a chosen mission-clock second, then hold it there. It steps the actual
   // integrator in fixed 1/60 s increments instead of writing a pose, so what a frame captures at

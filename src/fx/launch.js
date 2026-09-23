@@ -42,6 +42,11 @@ const PROFILE_DECEL = DESCENT_LAMBDA * DESCENT_LAMBDA * NET_BRAKE;   // m/s², �
 const TERMINAL_SINK = 1.8;                                // m/s at touchdown — it is flown down, not dropped
 const FLOOR_H = 0.4;                                      // m, how low the profile is allowed to read the deck
 const GUIDANCE_TAU = 0.85;                                // s, how fast the vehicle chases the profile
+// Height over which the airframe is walked back to vertical on final. The body pivots on its own
+// centre of mass, so a booster touching down off-vertical swings its base tens of metres downrange
+// of the point the guidance just put on the deck — the attitude is a landing-gear question, not only
+// a camera one.
+const ALIGN_H = 110;                                      // m
 
 // Net tangential acceleration along the flight path, in mission seconds: the shape of a heavy
 // launcher — barely lifting off, easing back through max Q, then running away from itself as the
@@ -260,7 +265,12 @@ export function createLaunch(rig, launch) {
       // Engines point where the thrust does. This is the whole flip: guidance asks for a retro-burn
       // while the booster is still climbing away, so it turns itself around on its own.
       const want = _b.lengthSq() > 1 ? _a.copy(_b).normalize() : _a.copy(L.bVel).normalize();
-      L.bPhi = Math.atan2(want.dot(dir), want.y);
+      // Terminal alignment. `want` is where the thrust has to point, and on final that is still canted
+      // by whatever lateral the pad-closing term has left to spend — 59° of it at the deck in the first
+      // measured arrival. The translation keeps taking the full demand; only the attitude stops going
+      // with it, so the vehicle is upright over its own feet by the time the legs are called.
+      const align = Math.min(1, h / ALIGN_H);
+      L.bPhi = Math.atan2(want.dot(dir) * align, want.y);
       if (L.bPos.y <= 0) {
         L.bPos.y = 0;
         // What the arrival actually cost, taken before the state is zeroed: the whole point of flying
@@ -271,6 +281,13 @@ export function createLaunch(rig, launch) {
         L.landed = true;
         fire('boosterlanding', t, '助推级回到发射台', 'Booster landed');
       }
+    } else {
+      // The lean is a thrust decision — `want` above is the direction the guidance is pushing — and
+      // after touchdown there is no thrust left to decide anything. Leaving it in place parks the
+      // vehicle on the pad at whatever angle the last frame of the flare happened to ask for, which
+      // is what the first frame-checked arrival did: it stood on the deck visibly off vertical for
+      // the whole rest of the sequence. Engines off, the booster comes back up on its legs.
+      L.bPhi *= Math.exp(-dt / 0.5);
     }
 
     // ── the beats ───────────────────────────────────────────────────────────────────

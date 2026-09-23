@@ -953,6 +953,10 @@ function startCountdown() {
 // flight module reports it. The event log the HUD will read is unaffected either way.
 const launchQueue = [];
 let launchGap = 0;
+// Set by the QA hook `fly(t)`: the mission clock stops at that MET and stays there while the world
+// keeps running, so a frame of staging is the same state on every capture instead of whatever the wall
+// clock happened to be passing through.
+let qaFly = null;
 function updateLaunch(dt) {
   if (launchGap > 0) {
     launchGap -= dt;
@@ -976,7 +980,7 @@ function updateLaunch(dt) {
   }
   const F = launch.flight;
   if (!F || launch.phase !== 'flight') return;
-  F.update(dt);
+  if (qaFly === null) F.update(dt);
   for (const b of F.drain()) launchBeat(b);
   if (F.done) finishLaunch();
   else {
@@ -2166,6 +2170,57 @@ window.__RSB = {
       mouths: F.plumes.map(p => +p.mouth.toFixed(1)),
       touch: F.touch, log: F.log.map(e => [e.met.toFixed(1), e.id, e.alt, e.vel]) };
   },
+  // Is the vehicle actually in the frame the player is looking at, and how much of it is there.
+  // Range alone cannot answer that: a camera that tracks the wrong point can sit 200 m from a rocket
+  // and still be aimed at the ground, which is precisely what a range-only probe reported at MET 36.
+  // So this reads the projection, not the distance — each body's own two ends in NDC, the angle off
+  // the view axis, and the FogExp2 extinction the camera's live fog value gives at that range.
+  // Per body, because after staging the "vehicle" is two things 9 km apart: a probe that spans both
+  // reports the falling booster as a framing failure when it is only the weather working correctly.
+  framing: () => {
+    const F = launch.flight;
+    if (!F) return null;
+    const seam = base.launchRig.seam, top = base.launchRig.h;
+    const px = renderer.domElement.height / 2;
+    const body = (a, b) => {
+      const pa = F.point(new THREE.Vector3(), a), pb = F.point(new THREE.Vector3(), b);
+      const na = pa.clone().project(camera), nb = pb.clone().project(camera);
+      const to = pa.clone().sub(camera.position), range = to.length();
+      return { range: +range.toFixed(0), spanPx: +(Math.abs(nb.y - na.y) * px).toFixed(0),
+        off: +(camera.getWorldDirection(new THREE.Vector3()).angleTo(to.normalize()) * 57.2958).toFixed(1),
+        in: Math.abs(na.x) < 1 && Math.abs(na.y) < 1 && Math.abs(nb.x) < 1 && Math.abs(nb.y) < 1,
+        erase: +(1 - Math.exp(-Math.pow(range * scene.fog.density, 2))).toFixed(3) };
+    };
+    return { met: +F.met.toFixed(1), alt: +F.alt.toFixed(0), camY: +camera.position.y.toFixed(0),
+      fov: +camera.fov.toFixed(1), fog: +scene.fog.density.toFixed(5), w: +launchCamW.toFixed(2),
+      airW: +launchAir.w.toFixed(2), sep: F.separated,
+      booster: body(0.4, seam - 0.1), ship: body(seam + 0.1, top) };
+  },
+  // Park the real flight at a chosen mission-clock second, then hold it there. It steps the actual
+  // integrator in fixed 1/60 s increments instead of writing a pose, so what a frame captures at
+  // MET 22 is the state the flight flies into at MET 22 — including the guidance the booster is under
+  // and the event log it has built to get there. `fly(null)` hands the clock back to wall time.
+  fly: (t) => {
+    if (t === null) { qaFly = null; return { held: null }; }
+    if (launch.phase !== 'flight' || !launch.flight) {
+      launch.phase = 'flight';
+      launch.flight = createLaunch(base.launchRig, launch);
+      base.launchRig.upper.visible = true;
+      launch.flight.start();
+    }
+    const F = launch.flight;
+    for (let i = 0; F.met < t && !F.done && i < 7000; i++) { F.update(1 / 60); F.drain(); }
+    qaFly = t;
+    const pad = base.launchPadPos;
+    return { met: +F.met.toFixed(2), alt: +F.alt.toFixed(1), vel: +F.v.toFixed(1), down: +F.down.toFixed(1),
+      separated: F.separated, landed: F.landed, lit: [F.litBooster, F.litUpper],
+      camDist: +camera.position.distanceTo(F.shipAim).toFixed(1),
+      // Where a spectator standing 40 m off the deck would actually have the vehicle, so a capture can
+      // aim at the real line of sight instead of at a guess about which body is uppermost.
+      aim: F.shipAim.toArray().map(n => +n.toFixed(1)),
+      deck: [+pad.x.toFixed(1), +(surfaceAt(pad.x, pad.z) + 2).toFixed(1), +pad.z.toFixed(1)],
+      fog: +scene.fog.density.toFixed(5) };
+  },
   warp: (x, z, face, search) => warpTo(x, z, face, search ?? 8),
   pois: () => interactivePoints(),
   sampleList: () => (base?.samples || []).map(s => [Math.round(s.x), Math.round(s.z), !!s.taken]),
@@ -2852,11 +2907,14 @@ window.__RSB = {
   // before it means anything. The histogram comes back with the frame so a blown highlight is
   // visible in numbers instead of only in taste.
   shot: async (name, at, look, sunAt = [-150, 120, 95]) => {
+    // A null `at`/`look` leaves the camera to the game: some framings are the camera rig's own work,
+    // and the only way to check whether the launch sequence keeps the ship in frame is to shoot it
+    // the way the player sees it. Same for the sun — pass null to keep whatever the sky is doing.
     let sun = null;
-    scene.traverse(o => { if (!sun && o.isDirectionalLight) sun = o; });
+    if (sunAt) scene.traverse(o => { if (!sun && o.isDirectionalLight) sun = o; });
     if (sun) { sun.position.set(...sunAt); sun.target.position.set(0, 0, 0); sun.target.updateMatrixWorld(); }
-    camera.position.set(...at);
-    camera.lookAt(...look);
+    if (at) camera.position.set(...at);
+    if (look) camera.lookAt(...look);
     post.composer.render();
     const cv = renderer.domElement;
     const c2 = document.createElement('canvas');

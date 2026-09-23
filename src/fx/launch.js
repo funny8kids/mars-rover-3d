@@ -105,7 +105,19 @@ export function createLaunch(rig, launch) {
   // The engine bells are the lowest thing on each body, so the plane the plume leaves from is that
   // body's own bounding-box floor — measured off the asset once, in the frame the parts hang in
   // (stack-local metres), which is what `at()` downstream expects.
-  const mouthOf = (node) => rig.stack.worldToLocal(_a.set(0, new THREE.Box3().setFromObject(node).min.y, 0)).y;
+  // Read off the *rest* pose, not the live one: `createLaunch` runs again for the next launch, and by
+  // then the previous flight has left the bodies several kilometres off the mount. Measuring the box
+  // where it happens to be made the second flight's plume start 9.7 km above its own vehicle.
+  const mouthOf = (node) => {
+    const at = node.position.clone(), q = node.quaternion.clone();
+    node.position.copy(node === rig.booster ? rig.rest.booster : rig.rest.upper);
+    node.quaternion.identity();
+    rig.stack.updateMatrixWorld(true);
+    const y = rig.stack.worldToLocal(_a.set(0, new THREE.Box3().setFromObject(node).min.y, 0)).y;
+    node.position.copy(at); node.quaternion.copy(q);
+    rig.stack.updateMatrixWorld(true);
+    return y;
+  };
 
   // One body's pose: `d` displaces its datum from the mount, `phi` leans it about PIVOT_AXIS.
   const makeBody = (node, rest, pivot) => ({
@@ -115,8 +127,16 @@ export function createLaunch(rig, launch) {
       // Pivoting a node about a point it does not own is the whole trick: the parts hang off the node
       // in absolute stack metres, so writing `rotation` alone would swing a 38 m booster about its
       // own tail like a gate. No re-parenting, no re-baking the merged buffers.
+      //
+      // Rotating a point P about C is `C + R·(P − C)`, so the node has to carry `rest − pivot` through
+      // the rotation. Reading it the other way round (`pivot − rest`) leaves the body at
+      // `2·pivot − rest + d` while upright, and because the export parents both bodies at the stack
+      // origin — rest is (0,0,0), the offsets live on their children — nothing cancels it: the booster
+      // stood 35 m off the deck and the ship 106 m up, so the mated stack flew apart as two vehicles
+      // with a 69 m gap between them from the first frame of the hold-down.
       _q.setFromAxisAngle(PIVOT_AXIS, this.phi);
-      _a.set(0, this.pivot, 0).sub(rest).applyQuaternion(_q).add(_b.set(0, this.pivot, 0)).add(this.d);
+      _b.set(0, this.pivot, 0);
+      _a.copy(rest).sub(_b).applyQuaternion(_q).add(_b).add(this.d);
       this.pos.copy(_a);
       this.q.copy(_q);
       this.node.position.copy(this.pos);

@@ -162,6 +162,42 @@ def build_mast():
     node([plate, gland, lower, collar, upper, band, top] + bolts, "mast", "tap_iron")
 
 
+# ───────────────────────────── tall mast ─────────────────────────────
+def build_mast_tall():
+    """6 m mast at the wreck site. Same family as the stub, three times the height, so it earns
+    the things a long tube actually needs: two joined sections with a bolted collar, a rung set
+    for the person who has to climb it, a cable run clipped up the side, and a finial to take the
+    strike instead of the beacon."""
+    begin('mast_tall')
+    plate = cyl("mt_plate", 0.28, 0.026, (0, 0, 0.013), verts=32, br=0.006)
+    stiff = [rbox("mt_stiff", 0.05, 0.30, 0.16, (0.20 * math.cos(TAU * i / 4),
+                                                 0.20 * math.sin(TAU * i / 4), 0.10),
+                  bevel_r=0.006, segs=1, rot=(0, 0, TAU * i / 4)) for i in range(4)]
+    lower = cyl("mt_lower", 0.085, 2.90, (0, 0, 1.47), verts=26, br=0.008)
+    joint = cyl("mt_joint", 0.105, 0.22, (0, 0, 2.98), verts=26, br=0.008)
+    jb = [cyl("mt_jbolt", 0.016, 0.03, (0.112 * math.cos(TAU * i / 6), 0.112 * math.sin(TAU * i / 6), 2.98),
+              verts=10, rot=(0, math.radians(90), 0)) for i in range(6)]
+    upper = cyl("mt_upper", 0.068, 2.72, (0, 0, 4.44), verts=24, br=0.006)
+    # The top is a receiving flange, not a lightning finial: the obstruction light bolts here, so
+    # a spike would have grown straight through the lens. Measured off the clone — the beacon's own
+    # mounting plate lands at 5.80 once the mast carries it.
+    top = cyl("mt_cap", 0.105, 0.045, (0, 0, 5.80), verts=26, br=0.008)
+    tb = [cyl("mt_tbolt", 0.015, 0.026, (0.078 * math.cos(TAU * i / 4 + TAU / 8),
+                                          0.078 * math.sin(TAU * i / 4 + TAU / 8), 5.845), verts=10)
+          for i in range(4)]
+    node([plate] + stiff + [lower, joint, upper, top] + jb + tb, "mast_tall", "tap_iron")
+    rungs = [cyl("mt_rung", 0.014, 0.30, (0, 0, 0.85 + i * 0.42), verts=10,
+                 rot=(0, math.radians(90), 0)) for i in range(8)]
+    rails = [cyl("mt_rail", 0.011, 3.30, (s * 0.155, 0, 2.50), verts=10) for s in (-1, 1)]
+    hoops = [torus("mt_hoop", (0, 0, 1.05 + i * 1.05), (0, 0, 1), (1, 0, 0), 0.175, 0.011,
+                   maj=20, mino=6) for i in range(3)]
+    node(rungs + rails + hoops, "mast_ladder", "tap_iron")
+    conduit = cyl("mt_conduit", 0.028, 5.30, (-0.135, 0.06, 2.90), verts=14, br=0.004)
+    clips = [torus("mt_clip", (-0.135, 0.06, 1.1 + i * 1.25), (0, 1, 0), (0, 0, 1), 0.040, 0.011,
+                   maj=14, mino=6) for i in range(4)]
+    node([conduit] + clips, "mast_conduit", "dark_poly")
+
+
 # ───────────────────────────── pad floodlight ─────────────────────────────
 def build_flood():
     begin('flood')
@@ -199,6 +235,7 @@ if __name__ == "__main__":
     build_cover()
     build_cradle()
     build_mast()
+    build_mast_tall()
     build_flood()
     for g in GROUPS:
         g.parent = root

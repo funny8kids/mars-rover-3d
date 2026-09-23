@@ -1679,10 +1679,11 @@ export async function buildBase(scene, quality) {
       const a = i * 1.7;
       k('terrain_roadStraight', yx - 14 + Math.cos(a) * (i * 3.5), yz - 6 + Math.sin(a) * (i * 2.8), a, 0.7); // scorch debris strip
     }
-    cyl(0.25, 0.3, 6, M.struct, yx - 8, wy2 + 3, yz - 7, 8);
-    // The tallest pole on the island, so the biggest instance of the same fitting — and the one
-    // that has to be readable from the plaza 90 m away, which a 1.1 m red pill never was.
-    beaconAt(yx - 8, wy2 + 6.4, yz - 7, 2.2);
+    kitAt('mast_tall', yx - 8, wy2, yz - 7);
+    // The light sits on the mast's receiving flange at 5.80 m, not 0.6 m above it — the stub-mast
+    // rule, applied: the beacon's own mounting plate is the top of the mast.
+    beaconAt(yx - 8, wy2 + 5.80 + 0.31 * 2.2, yz - 7, 2.2);
+
     infoZones.push({
       key: 'storm', pos: [yx, yz], r: 24, tag: 'HAZARD ZONE · AEOLIS FIELD',
       name: '残骸场 · 货运飞船“黎明号”', params: ['上次事件：全球性沙尘暴 Sol 388', '太阳能板蒙尘之后，机遇号也这样安静下来'],

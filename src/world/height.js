@@ -42,6 +42,52 @@ function bearingNoise(th, ref, arc, seed) {
 // base where the old flat version had it and only wanders around that.
 const bn = (th, ref, arc, seed) => (bearingNoise(th, ref, arc, seed) - 0.5) * 2;
 
+// ─── ring fields, calibrated against their own revolution ───
+// `bn` is only true at the *lattice*: a ring feature whose wavelength is a real fraction of the
+// rim's 817 m circumference walks a circle of radius ref/arc, and if that is under a cell the walk
+// never leaves the bilinear patch it started in. It then neither centres on 0.5 nor swings 0..1, so
+// `amp *` is not `amp` metres and a gate written against the middle of the band never fires.
+// Measured over 1 440 bearings per field, before this existed:
+//
+//   breach (arc 420)  0.071 .. 0.196  → smoothstep(0.30, 0.58) sat below its own gate on 720/720
+//                                      bearings, so `0.18 + 0.82 * breach` was a constant 0.18
+//   tall   (arc 300)  0.117 .. 0.288  → 3.2 m of design amplitude delivered 0.55 m
+//   foot   (arc 240)  0.007 .. 0.452  → 6 m of meander delivered 2.7 m, off-centre by −0.34
+//
+// The rampart is specified at 9.4 m and resolved to 0.98..1.31 m: on 75 % of the compass there was
+// no wall at all, and the horizon from driver eye height wandered by sd 0.38° (6 px) around a mean
+// of −0.91° — a shallow bowl, not a crater rim. Every azimuthal term in `rimWall` was multiplied by
+// a constant, which is why four successive attempts to vary the rim all left it reading as a drum.
+//
+// `ringWave` therefore surveys its own revolution at load (720 bearings) and re-expresses the field
+// onto the span it actually has, so amplitudes are metres and a gate is the fraction of the coastline
+// it lets through. Same cure `sand` documents above, but measured by the field itself: move `arc` or
+// `seed` and the calibration follows instead of rotting.
+function ringWave(ref, arc, seed) {
+  const k = ref / arc;
+  const at = th => vnoise(Math.cos(th) * k + seed, Math.sin(th) * k - seed * 0.7);
+  const N = 720, rev = [];
+  for (let i = 0; i < N; i++) rev.push(at((i / N) * Math.PI * 2));
+  rev.sort((a, b) => a - b);
+  const mid = rev[N >> 1];
+  const up = Math.max(1e-4, rev[N - 1] - mid), dn = Math.max(1e-4, mid - rev[0]);
+  return th => { const d = at(th) - mid; return d >= 0 ? d / up : d / dn; };
+}
+// One field per thing the rim has to answer. `arc` is metres of ring the noise walks per wave, but
+// the count of lobes that ends up around the island is not 817 / arc: value noise has no single
+// wavelength, so a wave is ~3 lattice cells wide, and the measured waves/revolution run near 300/arc
+// (66 m -> 4, 33 m -> 8, 8 m -> 27). The numbers on the right below are each one counted by sign
+// change off the shipped fields, not derived — which is the whole reason for counting them.
+const RIM_MASSIF = ringWave(130, 66, 3.1);     // 4 massifs and 4 saddles: the rim's own chaptering
+const RIM_SCARP  = ringWave(130, 33, 8.4);     // 8 secondary peaks inside them
+const RIM_SLUMP  = ringWave(130, 8, 5.7);      // 27 slumped blocks around the ring
+const RIM_GATE_A = ringWave(130, 57, 11.9);    // wide mouths cut clean through the rampart
+const RIM_GATE_B = ringWave(130, 38, 6.3);     // ...with ragged, non-radial edges
+const RIM_TOE    = ringWave(130, 76, 2.2);     // where the wall starts, per bearing
+const RIM_RUN    = ringWave(130, 49, 6.6);     // crest line meander in plan
+const RIM_OUTER  = ringWave(130, 76, 7.1);     // where the far side begins
+const RIM_DEEP   = ringWave(130, 76, 1.4);     // how far it falls
+
 // ─── sand: a transverse dune ridge train ───
 // Three families rather than one because one sine is a corrugation, and real crest lines fork,
 // bow, pinch out and start again downwind. That needs at least a second wavelength to interfere
@@ -151,25 +197,64 @@ function craterProfile(dx, dz, c) {
 // is level design, not a planet. Real impact ramps are variable in elevation, breached where wash
 // cut through them, and scarred on the inside by slump blocks. All four are azimuthal, so all four
 // live here, and none of them cost a vertex.
+//
+// The four are now actually alive (`ringWave`), which changes what this reads as. Measured over 1 440
+// bearings, counting a bearing as walled where the rampart stands over 3 m: 80 % of the ring is wall,
+// 3.0..8.3 m of it (median 6.5), chaptered by 4 massifs carrying 8 secondary peaks and 27 slump
+// blocks each, broken by 5 mouths, and a crest line that runs at 126.6..134 m instead of one radius.
+// Nothing the rover can reach moves — the toe starts at 110 m and the barrier stops a body centre at
+// 110.4 m, so the whole scarp lives beyond the drive line, and the steepest slope inside r<99 is the
+// same 27.7 degrees it was before any of this.
 function rimWall(th, r) {
-  const tall = 9.4 + 3.2 * bn(th, 130, 300, 3.1) + 1.5 * bn(th, 130, 95, 8.4) + 0.8 * bn(th, 130, 34, 5.7);
+  // Section the rim itself: a long chaptering into massifs, a shorter peak line inside each, and the
+  // slump detail on top of those. Sum of the amplitudes is the maximum excursion off the base. The
+  // whole section is 15 % lower than it was written, because at the old amplitudes the face below
+  // was reading 48 degrees at the median — see the run for what the mesh ceiling allows.
+  const tall = 6.4 + 2.45 * RIM_MASSIF(th) + 1.3 * RIM_SCARP(th) + 0.5 * RIM_SLUMP(th);
   // Gaps where the sand has cut clean through the rampart. Without them the wall is unbroken
-  // whatever else it does, and an unbroken wall is the thing being fixed.
-  const breach = smoothstep(0.30, 0.58, bearingNoise(th, 130, 420, 11.9));
-  // Where the wall starts and where its crest line runs — also by bearing, so the top edge is a
-  // ridge meandering in plan rather than one compass-drawn circle.
-  const foot = ISLAND.radius - 5 + 6 * bn(th, 130, 240, 2.2);
-  const crestR = foot + 13 + 8 * bn(th, 130, 160, 6.6);
+  // whatever else it does, and an unbroken wall is the thing being fixed. A mouth opens only where
+  // *both* surveys are low: thresholding one field alone makes every gap as wide as half that
+  // field's own wavelength, and the first version of this — one weighted gate, bounds read off the
+  // sum's own percentiles — left 45..120 degrees, a quarter of the compass, with no rampart at all.
+  // OR'ing two "stands" puts the wall back wherever either survey has it, so what stays open is an
+  // intersection: 20 % of the ring left open as five mouths, 4..25.8 degrees across, longest 25.8, and
+  // no 15-degree sector of the compass is bare.
+  const breach = Math.max(smoothstep(-0.35, -0.05, RIM_GATE_A(th)), smoothstep(-0.20, 0.10, RIM_GATE_B(th)));
+  // Where the wall starts, per bearing. The toe is held at 110 m because that is where the drive
+  // line is: a barrier disc stops a body centre at 110.4, so the first metres of the smoothstep —
+  // the part with no slope in it — is all the rover ever stands on, and the scarp lives outside the
+  // map edge it can never reach.
+  const foot = ISLAND.radius - 5.5 + 2.5 * RIM_TOE(th);        // 110 .. 115
+  const rise = Math.max(1.2, tall) * (0.13 + 0.87 * breach);
+  // ...and where its crest runs. The run is written *against the height* because that is the one
+  // thing that keeps the flank honest: the slope of the rising face is the wall divided by this, so a
+  // constant run would leave the low spurs gentle and the massifs near-vertical. 14 m plus 0.8 m per
+  // metre of wall measures a median 38.9 degrees on that face, and nothing on the ring climbs steeper
+  // than 42.6; before the section came down it was a median 48 and a worst 51.8, which is a cliff.
+  //
+  // It cannot go much further, though, and the reason is arithmetic rather than taste. A smoothstep's
+  // steepest point is 1.5× its own average, and the ceiling below caps the run near 18 m, so an 8 m
+  // wall lands just short of 40 degrees and there is no width available to halve it. What makes that
+  // survivable is that the face is not holding a pile: `rawHeight` cuts the rampart out of the
+  // weathered highland, so these are scarps left in bedrock, and the ~32 degrees that bounds a drift
+  // is a limit on talus, not on a cliff the sand was winnowed off of.
+  //
+  // The ceiling is not cosmetic. The mesh is a 300 m square, so along the axes there is ground to
+  // draw out to r = 150 and nothing past it: crest + 3..5.5 m of bench + 10 m of far-side scarp has
+  // to finish inside that, which is what bounds the run here rather than a slope limit alone.
+  // Measured, the crest runs out to 134 m at the widest and the profile stops changing by 146.8 m —
+  // 3.2 m of mesh spare, and the clamp binds on 1.4 % of bearings.
+  const run = Math.min(14 + 0.8 * rise * (0.85 + 0.3 * RIM_RUN(th)), ISLAND.rim + 2 - foot);
+  const crestR = foot + run;
   let s = smoothstep(foot, crestR, r);
   // Slump scars on the inner flank: five shallow terraces between the desert floor and the crest,
   // which is where a wall this tall has actually failed. Only mid-climb — a smooth foot and a sharp
   // crest are both things real rims keep.
   s += s * 0.075 * Math.sin(s * Math.PI * 5.0) * smoothstep(0.04, 0.30, s) * (1 - smoothstep(0.62, 0.98, s));
-  const rise = Math.max(1.5, tall) * (0.18 + 0.82 * breach) * s;
   // ...and the far side is not a floor, it is the next formation down.
-  const voidR = crestR + 7 + 6 * bn(th, 130, 150, 7.1);
-  const drop = smoothstep(voidR, voidR + 14, r) * (29 + 8 * bn(th, 130, 210, 1.4));
-  return rise - drop;
+  const voidR = crestR + 3 + 2.5 * RIM_OUTER(th);
+  const drop = smoothstep(voidR, voidR + 10, r) * (27 + 7 * RIM_DEEP(th));
+  return rise * s - drop;
 }
 
 // Stylised island: a toy-plateau of dunes ringed by a raised crater rim that drops into the haze —

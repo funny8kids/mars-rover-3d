@@ -1034,7 +1034,7 @@ function updateLaunch(dt) {
   telemetry?.update(F, dt);
   if (F.done) finishLaunch();
   else {
-    seedPlumes(F);
+    seedPlumes(F, dt);
     const prox = THREE.MathUtils.clamp(1 - Math.hypot(phys.x - base.launchPadPos.x, phys.z - base.launchPadPos.z) / 140, 0.12, 1);
     chase.trauma = Math.max(chase.trauma, 0.25 + prox * 0.75 * launch.intensity);
     launch.audioLevel = launch.intensity * prox;
@@ -1130,6 +1130,7 @@ function finishLaunch() {
 }
 
 const _pq = new THREE.Vector3(), _pr = new THREE.Vector3(), _pt = new THREE.Vector3(), _pv = new THREE.Vector3();
+const _pu = new THREE.Vector3();
 // Two roles, two pools, and each one sized to what the pool can actually hold.
 //
 // The flame pool used to *be* the plume: forty-odd sprites a frame, three to six metres across, laid
@@ -1137,16 +1138,21 @@ const _pq = new THREE.Vector3(), _pr = new THREE.Vector3(), _pt = new THREE.Vect
 // wraps under live particles does not simply get dimmer — it strobes, because the slots it recycles
 // are the oldest still-drawn puffs, so the trail came out as a string of pearls spaced on the wrap
 // cadence. The continuous column is fx/plume.js's job now. What sprites do better than any analytic
-// shell is flicker, so that is all they are asked for: short life, small disc, no swept path.
+// shell is flicker, so that is all they are asked for: short life, small disc, and no swept path —
+// which the last of those used to be a claim rather than a law, because the sprites were given the
+// exhaust's speed and not the vehicle's, so the vehicle swept the path anyway. See `_pu` below.
 //
 // The smoke is the thing genuinely left behind. Its rate is set from the pool (cap ÷ mean lifetime
 // ÷ 60) rather than from the bell count, which is the difference between a column and a banded wall
 // of overlapping discs.
-function seedPlumes(F) {
+function seedPlumes(F, dt) {
   // Below the pad's own dust cloud the exhaust is digging through gas thick enough to entrain
   // something; by a few hundred metres there is nothing left to lift, and a trail that keeps its
   // density all the way up is why the vehicle looked like it was towing a plume of fog.
   const padF = THREE.MathUtils.clamp(1 - (F.alt - 12) / 120, 0, 1);
+  // Guard on the ratio, not the frame: two rAF callbacks can land on the same timestamp, and an
+  // infinite velocity would fling every flame sprite out of the scene in one frame.
+  const invDt = dt > 1e-4 ? 1 / dt : 0;
   for (const p of F.plumes) {
     if (p.power <= 0) continue;
     // The ring of particles is laid out in the plane normal to that vehicle's own exhaust axis, so
@@ -1155,6 +1161,12 @@ function seedPlumes(F) {
     if (Math.abs(p.axis.y) > 0.98) _pr.set(1, 0, 0);
     _pt.crossVectors(p.axis, _pr).normalize();
     _pr.crossVectors(_pt, p.axis).normalize();
+    // What the bell is doing to the air around it, in m/s, from the flight's own per-frame mouth
+    // positions. `emit` takes world velocities, so without this the sprite is born standing still
+    // over the pad and the vehicle climbs away from it: the chain it draws is then spaced on the
+    // *vehicle's* speed, which is a number nothing about a flame should depend on. Exhaust velocity
+    // is relative to the engine, so the carrier has to be added before the jet is.
+    _pu.copy(p.pos).sub(p.prev).multiplyScalar(invDt);
     // The shell's own two numbers, from the law fx/plume.js poses with: the mouth radius scales on
     // the cluster, the column length on the throttle. Everything seeded below is a fraction of these
     // rather than a fixed number of metres — see the note above the trail.
@@ -1166,9 +1178,9 @@ function seedPlumes(F) {
       _pv.copy(_pt).multiplyScalar(Math.cos(a) * r).addScaledVector(_pr, Math.sin(a) * r);
       fx.flame.emit(
         p.pos.x + _pv.x + p.axis.x * 0.6, p.pos.y + _pv.y + p.axis.y * 0.6, p.pos.z + _pv.z + p.axis.z * 0.6,
-        p.axis.x * (9 + Math.random() * 5) + _pv.x * 1.4,
-        p.axis.y * (9 + Math.random() * 5) + _pv.y * 1.4,
-        p.axis.z * (9 + Math.random() * 5) + _pv.z * 1.4,
+        _pu.x + p.axis.x * (9 + Math.random() * 5) + _pv.x * 1.4,
+        _pu.y + p.axis.y * (9 + Math.random() * 5) + _pv.y * 1.4,
+        _pu.z + p.axis.z * (9 + Math.random() * 5) + _pv.z * 1.4,
         0.16 + Math.random() * 0.12, mouth * (0.45 + Math.random() * 0.55)
       );
     }
@@ -2721,6 +2733,45 @@ window.__RSB = {
         const row = { col, at: jets[i].at, colPx: +colPx.toFixed(1), lit: jets[i].visible };
         const mr = 1.30 * Math.sqrt(Math.max(1, p.engines));
         const puffs = [];
+        // Which other bell sits further down this row's own axis, past its mouth. No far bound is
+        // applied: the chain is sampled without one, and the contamination this exists to catch sits
+        // exactly beyond the column window. While the stack is joined the two axes coincide, so the
+        // along-axis order of the mouths is the only thing that tells one vehicle's exhaust from the
+        // other's.
+        const other = F.plumes.map((q, k) => {
+          if (k === i) return null;
+          const vx = q.pos.x - mouth.x, vy = q.pos.y - mouth.y, vz = q.pos.z - mouth.z;
+          return { q, at: vx * ax.x + vy * ax.y + vz * ax.z,
+            mr: 1.30 * Math.sqrt(Math.max(1, q.engines)) * 1.3 };
+        }).filter(o => o && o.at > 0);
+        // Is this sprite the neighbour's after all: another bell lies between this mouth and the sprite,
+        // the sprite has left that bell's own throat, and it sits inside that bell's sheath — the same
+        // radius this row's own chain is cut at, so neither vehicle gets a wider excuse than the
+        // other's. The bound must be the neighbour's radius, not "as close to that axis as to this
+        // one": while the stack is joined both axes are one line, that test degenerates to `d <= d`
+        // and float noise decides which half of a 42 m column gets charged back — measured on the
+        // fixed build at MET 20.000 as 13 claimed against 14 left in this row's chain, on a row that
+        // reads lineOver 0.36 a quarter second later.
+        // The along side takes the same treatment: the throat is the neighbour's mouth plane widened
+        // by the sprite's own radius, not the plane itself. While the stack is joined `axisDot` reads
+        // 1.0000 and the bells are collinear, so the two columns are one cylinder and the mouth order
+        // is the only separator there is; measured at MET 20.02, all 62 sprites past 15 m on this row's
+        // axis sat within 6 m of the *booster's* bell at that same radius from it, and some sat 0.5 m
+        // above that bell because it moved after they were born. A boundary tighter than the disc it
+        // judges is not something the frame can show either way.
+        // Only the pearl chain is charged this way — the window's size and coverage readings below
+        // still see the whole cylinder, which is what their own comments say they are measuring.
+        const borrowed = (px, py, pz, along, size) => {
+          for (const o of other) {
+            if (along + size / 2 <= o.at) continue;
+            const q = o.q;
+            const dx = px - q.pos.x, dy = py - q.pos.y, dz = pz - q.pos.z;
+            const al2 = dx * q.axis.x + dy * q.axis.y + dz * q.axis.z;
+            if (al2 < -size / 2) continue;
+            if (Math.hypot(dx - q.axis.x * al2, dy - q.axis.y * al2, dz - q.axis.z * al2) <= o.mr) return true;
+          }
+          return false;
+        };
         for (const key of ['flame', 'smoke']) {
           const pool = fx[key], u = pool.mat.uniforms, cap = u.uMaxSize.value, pr = u.uPixelRatio.value;
           // Same rule as the alpha envelope: the focal comes from the uniform, because a pool can be
@@ -2729,18 +2780,37 @@ window.__RSB = {
           // The alpha envelope has to come from the pool's own uniforms. A hardcoded copy of the shader
           // is how this probe ended up disagreeing with the frame it was measuring.
           const fi = u.uFadeIn.value, op = u.uOpacity.value;
-          let n = 0, pxSum = 0, pxMax = 0, rrSum = 0, rrMax = 0;
+          let n = 0, pxSum = 0, pxMax = 0, rrSum = 0, rrMax = 0, alSum = 0, aReach = -Infinity, stolen = 0;
+          const line = [], sizes = [], lineIn = [];
           for (let s = 0; s < pool.count; s++) {
             if (pool.life[s] >= 1) continue;
             const i3 = s * 3;
             const vx = pool.pos[i3] - mouth.x, vy = pool.pos[i3 + 1] - mouth.y, vz = pool.pos[i3 + 2] - mouth.z;
             const along = vx * ax.x + vy * ax.y + vz * ax.z;
-            if (along < -2 || along > col * 1.8) continue;
             const rr = Math.hypot(vx - ax.x * along, vy - ax.y * along, vz - ax.z * along);
-            if (rr > col) continue;
+            // `aReach` is the one reading taken from *outside* the window below. The window's far bound
+            // is 1.8 columns, and the sprite fall-behind this ruler exists to measure starts at about
+            // that much, so a max clipped by the window would pin at the clip and read as a pass — an
+            // instrument reporting its own blind spot. Only the along-axis reach is sampled this
+            // broadly; the pixel sizes and coverage stay inside the column they are ratios against.
+            if (rr <= col && along > -2) {
+              if (along > aReach) aReach = along;
+              // The pearl line is collected from the same outside-the-window sample: the chain this
+              // measures is the part that hangs *past* the column's tip, so a windowed sample would
+              // report a clean line for the only stretch that is visibly dotted.
+              if (key === 'flame' && rr <= mr * 1.3) {
+                if (borrowed(pool.pos[i3], pool.pos[i3 + 1], pool.pos[i3 + 2], along,
+                  pool.sizeArr[s])) stolen++;
+                else {
+                  line.push(along); sizes.push(pool.sizeArr[s]);
+                  if (along <= col * 1.8) lineIn.push(along);
+                }
+              }
+              if (along > col * 1.8) continue;
+            } else continue;
             const d = Math.hypot(pool.pos[i3] - cp.x, pool.pos[i3 + 1] - cp.y, pool.pos[i3 + 2] - cp.z);
             const px = Math.min(pool.sizeArr[s] * focal / d, cap) * pr;
-            n++; pxSum += px; rrSum += rr;
+            n++; pxSum += px; rrSum += rr; alSum += along;
             if (px > pxMax) pxMax = px;
             if (rr > rrMax) rrMax = rr;
             if (key === 'smoke') {
@@ -2748,10 +2818,89 @@ window.__RSB = {
               puffs.push({ along, rr, size: pool.sizeArr[s], a: op * (1 - t) * ss(0, fi, t) });
             }
           }
+          // Is this pool a line or a row of dots. The spacing between neighbouring sprites is fixed by
+          // whatever carries each birth point away from the bell, so the defect is measurable without
+          // a camera and without a unit argument: neighbour gaps over the mean drawn diameter, all in
+          // live sprite metres. The median is reported because it is *not* that reading: several
+          // sprites are born at the same bell in the same frame, so at 12 births/frame the median sits
+          // inside a cluster (booster MET 10: median 0.05 m, widest gap 2 m) and only the max sees the
+          // chain. `beyond` counts the near-axis sprites sitting past the far window at all.
+          // Which of these numbers decides is argued once, at the verdict below.
+          let pearl = null;
+          if (line.length > 3) {
+            line.sort((a, b) => a - b);
+            const gaps = [];
+            for (let s = 1; s < line.length; s++) gaps.push(line[s] - line[s - 1]);
+            gaps.sort((a, b) => a - b);
+            const szMean = sizes.reduce((a, b) => a + b, 0) / sizes.length;
+            pearl = { ln: line.length, puff: +szMean.toFixed(2),
+              beyond: line.length - lineIn.length,
+              // What `borrowed` took out of the chain, and the chain itself. A reach the reader cannot
+              // open is a number, not evidence: every RED this file reports has to be inspectable
+              // without re-instrumenting the probe.
+              stolen, line: line.map(v => +v.toFixed(1)),
+              gap: +gaps[gaps.length >> 1].toFixed(2),
+              gmean: +((line[line.length - 1] - line[0]) / (line.length - 1)).toFixed(2),
+              gmax: +gaps[gaps.length - 1].toFixed(2) };
+            pearl.dots = +(pearl.gmax / szMean).toFixed(2);
+            // metres ÷ metres × pixels: the widest break, and the part of the *near-axis* chain
+            // hanging past the column's tip, both on the screen.
+            pearl.gmaxPx = +(pearl.gmax * colPx / col).toFixed(1);
+            pearl.lineOver = +(line[line.length - 1] / col).toFixed(2);
+            pearl.overPx = +(Math.max(0, line[line.length - 1] - col) * colPx / col).toFixed(1);
+          }
+          // The verdict, and the one condition under which this instrument is allowed to give it.
+          // `lineOver` is the reach of the near-axis chain against its own column and `overPx` puts
+          // that overhang on the screen, so the two together say "the flame ends past the flame".
+          // `amb` is the coarse half of the condition: while a *second firing bell* sits inside this
+          // row's own cylinder the window is full of the other vehicle's column. `borrowed` above is the
+          // fine half, and it is the one that has to exist — it charges each sprite of the chain to
+          // whichever bell it actually left, and while the stack is joined the two axes coincide, so
+          // the along-axis order of the two mouths is the only thing that tells them apart. Measured on
+          // the fixed build at MET 20.00: the booster's bell sat at perp 0 / along 38.6 on the ship's
+          // axis with `power` already 0, this row's own chain was 25 sprites reaching 7.8 m, and the 34
+          // sprites out past 38 m were the booster's 42.6 m column still fading — a firing-bell test
+          // cannot see a trail that outlives its engine by a quarter second, so `amb` alone left that
+          // row on trial for its neighbour's flame. `amb` is reported rather than applied silently for
+          // the same reason the rest of this probe reports what it cannot see.
+          // What the gate is *not*: `dots` (widest of ~25 gaps ÷ a puff) cannot decide anything,
+          // because for sprites born at a steady rate that statistic sits near 1 even for a continuum
+          // — the fixed build's MET 20-24 rows read `gmean` 0.20-0.25 of a puff against `dots`
+          // 0.86-1.20, and the broken build's against `dots` 1.35-5.97: the ranges meet at 1, where
+          // the reach test is at 0.4 against 1.5.
+          // The gate's polarity is measured rather than assumed, on the whole flight and in fast mode
+          // (`tools/cdp-plume-pearl.mjs`). Fixed build: 68 rows sampled, 14 read `amb`, 0 fail, and
+          // the upper-stage seconds this exists for (MET 20-24, plume #1, `amb` false) reach
+          // lineOver 0.38-0.45 at overPx 0 — a cone ending inside itself. With `_pu` zeroed (the
+          // pre-fix seeding) the same 68 rows give 22 named failures, all on plume #1, lineOver
+          // 1.50-5.28 at overPx 3.9-50.3. Nothing about the two states overlaps, which is why a reach,
+          // and not a spacing statistic, is what decides. The second reading is also what bounds the
+          // slack `borrowed` is given: the broken build's far reach still walks past the neighbour's
+          // bell and out of its own column *after* the attribution runs, so the sprite-radius give is
+          // not a threshold wide enough to hand the verdict away.
+          const amb = F.plumes.some((q, k) => {
+            if (k === i || q.power <= 0) return false;
+            const vx = q.pos.x - mouth.x, vy = q.pos.y - mouth.y, vz = q.pos.z - mouth.z;
+            const al = vx * ax.x + vy * ax.y + vz * ax.z;
+            return al > -2 && Math.hypot(vx - ax.x * al, vy - ax.y * al, vz - ax.z * al) < col;
+          });
+          const fail = !!pearl && !amb && pearl.lineOver > 1 && pearl.overPx >= 3;
           row[key] = n ? { n, pctMean: +(100 * pxSum / n / colPx).toFixed(0),
             pctMax: +(100 * pxMax / colPx).toFixed(0),
+            ...(pearl || {}),
+            amb, fail,
             pxMean: +(pxSum / n).toFixed(1), pxMax: +pxMax.toFixed(1),
-            rrMean: +(rrSum / n).toFixed(1), rrMax: +rrMax.toFixed(1) } : { n: 0 };
+            rrMean: +(rrSum / n).toFixed(1), rrMax: +rrMax.toFixed(1),
+            // How far down the axis anything in the column-width window reaches, in metres, against
+            // the column it is supposed to be inside. A sprite born at the bell and left in still air
+            // falls behind the vehicle by `speed x lifetime`, so this is the number that separates
+            // "flicker on the flame" from "a string of pearls laid along the flight path" — and
+            // unlike the frame it says which of the two it is at *any* speed, not only at the one
+            // being screenshotted. Sampled over the wide band, so after staging it reads the other
+            // vehicle's trail; `lineOver` above is the narrow-band one the verdict uses.
+            aMean: +(alSum / n).toFixed(1),
+            aMax: +(aReach === -Infinity ? 0 : aReach).toFixed(1),
+            aOver: +(aReach === -Infinity ? 0 : aReach / col).toFixed(2) } : { n: 0, amb, fail };
         }
         // Is the sheath one envelope or a chain of dots. Peak alpha on the 0.4-mouth ring is the
         // detector that earned its keep: it caught every gap the frames showed, and the band it walks

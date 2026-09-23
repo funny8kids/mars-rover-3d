@@ -133,6 +133,18 @@ const EN = {
   '✦ 星舰已离开大气层 — 「愿它在群星间找到家」':
     '✦ Starship has left the atmosphere — may it find a home among the stars',
   '助推级回到发射台': 'the booster is back on the pad',
+  // ── the flight instrument panel ──
+  // The phase words are fx/launch.js's, not the panel's: the panel prints whichever one the mission
+  // clock has reached, so a phase cannot be renamed here without being renamed in the sequence too.
+  // English sets them in caps and keeps each to eleven letters: they sit in a fixed-width annunciator
+  // slot at the foot of a 25 px clock, where a sentence-case phrase reads like a caption and a long
+  // one reads like it is spilling out of the panel. The state words are the same slot's shorter cousins.
+  压紧点火: 'HOLD-DOWN', 上升: 'ASCENT', 最大动压: 'MAX-Q', 推力回升: 'THROTTLE UP',
+  助推关机: 'BOOST MECO', 二级分离: 'STAGE SEP', 助推返场: 'BOOSTBACK', 入轨: 'ORBIT INSERT',
+  倒计时: 'COUNTDOWN', 任务时间: 'MET', 弹道: 'TRK', 倾角: 'TILT', 高度: 'ALT', 速度: 'VEL',
+  马赫: 'MACH', 加速度: 'ACCEL', 垂速: 'V/S', 距台: 'TO PAD', 状态: 'STATE',
+  上面级: 'UPPER STG', 助推级: 'BOOSTER', '高度 — 时间剖面': 'ALTITUDE — TIME PROFILE',
+  回收: 'CAUGHT', 爬升: 'CLIMB', 制动: 'BRAKE', 返场: 'RETURN',
   '⚠ 沙尘暴来袭…': '⚠ Dust storm incoming…',
   '沙尘消散 · 天空恢复': 'The dust has settled — the sky is clear',
   // ── the dust ledger: a front deposits, the arrays pay, the rover's lance clears ──

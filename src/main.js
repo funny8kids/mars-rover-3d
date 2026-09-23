@@ -19,6 +19,7 @@ import { createSkidMarks } from './fx/skids.js';
 import { GameAudio } from './audio/audio.js';
 import { UI, fmtTime } from './ui.js';
 import { createMapChart } from './ui/chart.js';
+import { mountTelemetry } from './ui/telemetry.js';
 import { t, getLang, mountLangButton, onChange } from './i18n.js';
 import { STREETS } from './world/plan.js';
 
@@ -941,12 +942,24 @@ function launchWeatherHold() {
   if (clear <= 0 && stormField.local(pad.x, pad.z) < LAUNCH_DUST_LIMIT) return null;
   return `⚠ ${t('发射窗口 · 等待沙暴过境')}${clear > 0 ? ' ' + mmss(clear) : ''}`;
 }
+// The instrument panel the finale is read from. It mounts its own DOM into the HUD and stays dark
+// until the count starts; `launchDeck` is the one thing the game has to do beyond feeding it numbers —
+// while a vehicle is flying, the rover's speed and its battery have nothing to contribute to the frame.
+const telemetry = mountTelemetry();
+let launchDeckOn = false;
+function launchDeck(on) {
+  if (launchDeckOn === on) return;
+  launchDeckOn = on;
+  document.body.classList.toggle('launching', on);
+}
 function startCountdown() {
   if (race.active) { race.active = false; UI.raceShow(false); race.rings.forEach(r => r.visible = false); }
   // One slot, one line: the weather note rides along inside the launch notice instead of overwriting it.
   UI.toast(launch.held ? '✦ 天空转晴 — 发射程序启动 · 请留在观礼台安全区' : '⚠ 发射程序启动 · 请留在观礼台安全区');
   launch.held = false;
   launch.phase = 'countdown'; launch.cd = 10.0;
+  launchDeck(true);
+  telemetry?.countdown(launch.cd, 1);
 }
 // The finale fires two beats inside half a second of each other (boost MECO, then ship ignition), and
 // there is one toast slot. Showing them as they land would silently drop one, so the text goes through
@@ -967,6 +980,7 @@ function updateLaunch(dt) {
   }
   if (launch.phase === 'countdown') {
     launch.cd -= dt;
+    telemetry?.countdown(launch.cd, dt);
     const n = Math.ceil(launch.cd);
     if (n !== launch.lastCd && n > 0) { launch.lastCd = n; UI.countdown(n); audio.cue(); }
     if (n <= 0) {
@@ -979,10 +993,17 @@ function updateLaunch(dt) {
     }
     return;
   }
+  if (launch.phase === 'done') {
+    // Hold the last of the numbers on the panel for five seconds — apoapsis, the touch-down offset —
+    // and then give the frame back to the rover, because from here on the player is driving again.
+    if (launchDeckOn && elapsed - launch.doneAt > 5) { launchDeck(false); telemetry?.hide(); }
+    return;
+  }
   const F = launch.flight;
   if (!F || launch.phase !== 'flight') return;
   if (qaFly === null) F.update(dt);
   for (const b of F.drain()) launchBeat(b);
+  telemetry?.update(F, dt);
   if (F.done) finishLaunch();
   else {
     seedPlumes(F);
@@ -2330,6 +2351,12 @@ window.__RSB = {
       // standing up, and the one thing that makes a parked first stage read wrong is the lean.
       lean: { booster: +(F.plumes[0].body.phi * 57.2958).toFixed(1), ship: +(F.plumes[1].body.phi * 57.2958).toFixed(1) },
       mouths: F.plumes.map(p => +p.mouth.toFixed(1)),
+      // The panel's plot is drawn off `F.track`, so the claim "the curve has a booster arc in it" is a
+      // claim about this. Counts and extremes rather than the samples: the arrays run to hundreds of
+      // pairs, and the thing worth checking across the wire is whether the line exists and spans.
+      track: { ship: F.track.ship.length / 2, booster: F.track.booster.length / 2,
+        maxAlt: +F.track.maxAlt.toFixed(0), maxT: +F.track.maxT.toFixed(1),
+        sep: F.track.sep && F.track.sep.map(n => +n.toFixed(1)) },
       touch: F.touch, log: F.log.map(e => [e.met.toFixed(1), e.id, e.alt, e.vel]) };
   },
   // Which layer of the exhaust is on screen. The geometric jet and the particle pools are drawn in the

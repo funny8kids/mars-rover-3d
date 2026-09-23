@@ -81,6 +81,20 @@ const BEATS = [
   { t: SECO_AT, id: 'seco', zh: '主发动机关机 · 飞出稠密大气', en: 'SECO' },
 ];
 
+// The word the instrument panel shows beside MET. It is indexed off the same clock the beats fire on,
+// so a phase can never appear on the panel without having happened in the sim — and it is a table
+// rather than a chain of conditions because the panel is not the only thing that will ever want to
+// know where in the flight we are.
+const PHASES = [
+  [0, '压紧点火'], [HOLD_DOWN, '上升'], [7, '最大动压'], [13, '推力回升'],
+  [20, '助推关机'], [STAGE_AT, '二级分离'], [28, '助推返场'], [SECO_AT, '入轨'],
+];
+const phaseAt = (t) => {
+  let p = PHASES[0][1];
+  for (const [k, v] of PHASES) if (t >= k) p = v;
+  return p;
+};
+
 function accelAt(t) {
   for (const [a, b, v] of THRUST_TABLE) if (t >= a && t < b) return v;
   return 0;
@@ -183,8 +197,16 @@ export function createLaunch(rig, launch) {
     touch: null,                            // how the booster actually came home
     written: false,                         // first frame: seed the plumes' swept paths
     shipAim: new THREE.Vector3(),           // world metres of whatever the camera should look at
-    tel: { met: 0, alt: 0, vel: 0, accel: 0, down: 0, mach: 0, gamma: 0,
-      litBooster: 0, litUpper: 0, separated: false },
+    tel: { met: 0, alt: 0, vel: 0, accel: 0, down: 0, mach: 0, gamma: 0, ramp: 0, phase: PHASES[0][1],
+      litBooster: 0, litUpper: 0, separated: false, engines: rig.engines,
+      bAlt: 0, bVs: 0, bDown: 0, bTGo: 0, landed: false },
+    // The flight as actually flown, as flat [mission seconds, altitude metres] pairs. Sampled by the
+    // integrator rather than reconstructed by the panel, so the curve on the plot is the curve the mesh
+    // drew. Time is the horizontal axis and not ground distance because the guidance keeps the climb
+    // nearly vertical: measured against downrange the ascent is one straight diagonal and the booster's
+    // whole return fits in the corner of the frame, while against the clock the split into two vehicles,
+    // the booster's arc back to the deck, and the flattening at SECO are the shape of the picture.
+    track: { ship: [], booster: [], acc: 0, maxAlt: 1, maxT: 1, sep: null },
     // Everything the effects and the plume seeding need, per vehicle, already in world metres. The
     // engine tally rides along so the particle budget is spent per lit bell rather than per vehicle —
     // a ship on three engines should not throw as much fire as a booster on sixteen.
@@ -308,6 +330,9 @@ export function createLaunch(rig, launch) {
       L.v += SEPARATION_PUSH;
       booster.pivot = COM.booster;
       ship.pivot = COM.upper;
+      // Where the split happened, on the same [seconds, metres] axes as the rest of the track. The plot
+      // marks it because it is the one point on the curve where two vehicles become three lines.
+      L.track.sep = [t, L.alt];
     }
 
     // ── who is lit ────────────────────────────────────────────────────────────────────
@@ -333,6 +358,24 @@ export function createLaunch(rig, launch) {
     L.tel.met = t; L.tel.alt = L.alt; L.tel.vel = L.v; L.tel.accel = a;
     L.tel.down = L.down; L.tel.mach = L.v / SOUND_MARS; L.tel.gamma = L.gamma;
     L.tel.litBooster = L.litBooster; L.tel.litUpper = L.litUpper; L.tel.separated = L.separated;
+    // The ramp is what the thrust is being multiplied by, so a lit-bell count read off it is the sim's
+    // own statement of how much engine is online — which is why engine start ticks up across the
+    // hold-down instead of arriving as sixteen at once.
+    L.tel.ramp = L.ramp; L.tel.phase = phaseAt(t);
+    L.tel.bAlt = L.bPos.y; L.tel.bVs = L.bVel.y; L.tel.bDown = Math.hypot(L.bPos.x, L.bPos.z);
+    L.tel.bTGo = L.tGo; L.tel.landed = L.landed;
+
+    // One sample per 0.15 s of mission time, not per frame: the plot redraws a dozen times a second,
+    // so a 144 fps machine would carry three times the vertices to draw the same line.
+    const tr = L.track;
+    tr.acc += dt;
+    if (tr.acc >= 0.15) {
+      tr.acc = 0;
+      tr.ship.push(t, L.alt);
+      if (L.separated) tr.booster.push(t, L.bPos.y);
+      if (L.alt > tr.maxAlt) tr.maxAlt = L.alt;
+      tr.maxT = t;
+    }
 
     // The state main.js already reads everywhere. `y` stays the datum height so the camera rig, the
     // line-of-sight probe and the weather gate all keep working off the same number the mesh moved by.

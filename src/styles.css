@@ -135,6 +135,66 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 #board-list{font-family:var(--mono);font-size:13px;color:#d8ccb6;margin-bottom:12px}
 #board-close{width:100%;background:none;border:1px solid var(--line);color:#c9beac;border-radius:6px;padding:6px}
 
+/* ─── the launch instrument panel ───
+   Built by src/ui/telemetry.js, so its DOM is not in index.html. The bar owns the bottom edge while a
+   vehicle is flying, which is why `body.launching` dims the rover's own instruments below it: a speed
+   and a battery reading have nothing to say about a ship leaving the pad beside them, and two HUDs in
+   the same corner is how a finale starts to look like clutter. */
+body.launching #speedo,body.launching #power-hud,body.launching #info-card{opacity:0;transition:opacity .6s}
+/* the arrow's opacity is written inline every frame, so only !important can outvote it */
+body.launching #objective-arrow{opacity:0!important}
+#tel-wrap{position:absolute;left:0;right:0;bottom:18px;display:flex;flex-direction:column;align-items:center;
+  gap:7px;opacity:0;transform:translateY(10px);transition:opacity .5s ease,transform .5s ease;pointer-events:none!important}
+#tel-wrap.show{opacity:1;transform:none}
+#tel-log{display:flex;flex-direction:column;align-items:center;gap:1px}
+.tel-ev{display:flex;gap:9px;align-items:baseline;font-family:var(--mono);font-size:10px;letter-spacing:.09em;
+  color:#c3a67d;opacity:.62;text-shadow:0 1px 7px rgba(0,0,0,.92)}
+.tel-ev b{color:var(--amber);font-weight:600;font-variant-numeric:tabular-nums}
+.tel-ev:last-child{opacity:1;color:#ffe4bd}
+.tel-bar{display:flex;align-items:stretch;background:rgba(9,11,17,.72);backdrop-filter:blur(10px);
+  border:1px solid var(--line);border-radius:11px;padding:9px 0;box-shadow:0 10px 38px rgba(0,0,0,.55)}
+.tel-cell{display:flex;flex-direction:column;justify-content:center;padding:0 15px;
+  border-right:1px solid rgba(255,150,60,.15)}
+.tel-cell:last-child{border-right:0}
+.tel-cap{display:flex;justify-content:space-between;align-items:baseline;gap:10px;white-space:nowrap;
+  font-family:var(--mono);font-size:8.5px;letter-spacing:.2em;color:#8a7a63;margin-bottom:6px}
+#tel-met{font-family:var(--mono);font-size:25px;font-weight:700;line-height:1;color:#fff;
+  font-variant-numeric:tabular-nums;text-shadow:0 0 22px rgba(255,150,50,.55)}
+#tel-phase{font-size:11px;letter-spacing:.26em;color:var(--amber);margin-top:5px;white-space:nowrap}
+.tel-ramp{height:2px;width:100%;margin-top:8px;border-radius:2px;overflow:hidden;background:rgba(255,255,255,.09)}
+.tel-ramp i{display:block;height:100%;width:0;background:linear-gradient(90deg,#ff7a1a,#ffd08a);
+  box-shadow:0 0 9px rgba(255,140,40,.85);transition:width .12s linear}
+.tel-sub{display:flex;gap:6px;align-items:baseline;margin-top:7px;white-space:nowrap;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:#8a7a63}
+.tel-sub b{color:#e6d6b6;font-weight:600;font-variant-numeric:tabular-nums}
+.tel-sub .p-sep{color:#565049}
+#tel-trace{display:block}
+.eng-row{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:8px}
+.eng-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.07);
+  border:1px solid rgba(255,255,255,.1);transition:.18s}
+.eng-dot.on{background:var(--amber);border-color:var(--amber);box-shadow:0 0 8px rgba(255,170,60,.95)}
+.eng-tally{color:#7f7159;letter-spacing:.1em}
+.tel-gauge{width:146px}
+/* 42/1fr/26: the label column has to hold "TO PAD" and "ACCEL" without leaning on the number it
+   labels — measured, "TO PAD" is 39 px at 9.5 px/.1em, so 38 clipped its D. The number column is built
+   for four digits plus room to breathe. */
+.tel-rows{display:grid;grid-template-columns:42px 1fr 26px;gap:3px 6px;align-items:baseline}
+.tel-rows b.r-wide{grid-column:2/-1;font-size:11.5px;letter-spacing:.05em;text-align:right}
+.r-lab{font-size:9.5px;letter-spacing:.1em;color:#8a7a63;white-space:nowrap}
+.tel-rows b{font-family:var(--mono);font-size:12.5px;font-weight:700;text-align:right;color:#ffe4bd;
+  font-variant-numeric:tabular-nums}
+.tel-rows i{font-style:normal;font-family:var(--mono);font-size:9px;color:#8d7a63;letter-spacing:.02em}
+/* The bar is 692 px wide with the profile in it, so the profile only earns its place above ~880 px:
+   at the breakpoint's own width the bar would reach edge to edge, and a panel that cannot be read
+   without clipping is a worse instrument than one that drops a cell. Below it the plot goes, the cell
+   padding tightens, and what is left is still a full bar of live numbers. */
+@media(max-width:880px){
+  .tel-plot{display:none}
+  .tel-cell{padding:0 10px}
+  .tel-gauge{width:140px}
+}
+body.touch #tel-wrap{bottom:124px}
+
 /* photo */
 #photo-ui{position:fixed;inset:0;z-index:40;pointer-events:none}
 .photo-tip{position:absolute;top:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);padding:8px 22px;

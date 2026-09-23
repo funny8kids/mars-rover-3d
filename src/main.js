@@ -1087,6 +1087,65 @@ function shockWave(x, y, z, color = 0x8fe8ff, r = 5) {
 let launchCamW = 0;                       // 0..1 blend into the launch framing
 const launchAim = new THREE.Vector3();
 const launchAir = { x: 0, y: 0, z: 0, w: 0 };   // held camera station for the ascent tracking shot
+const _lshot = new THREE.Vector3();
+const _laim = new THREE.Vector3();
+
+// ─── the launch shot list ────────────────────────────────────────────────────
+// The rig used to hold exactly one station — 122 m off the vehicle, 27 m below it — from the
+// hold-down to SECO. Measured against the real flight, the ship subtended 92–100 px of a 696 px
+// frame for fifty straight seconds and the booster left the frame at MET 24 and never came back,
+// so the flight happened *to* the camera rather than past it. Scale and subject are the only two
+// things a launch can move, and this table now moves both: each beat owns its own stand-off and
+// its own vehicle, and the numbers are the frame heights the flight actually reaches.
+//   t     mission second
+//   r     horizontal stand-off from the subject's own ground track, m
+//   drop  how far below `ref` the station hangs; large reads as a spectator on the deck
+//   ref   stack-local height whose world Y anchors the station (0 = the deck the subject stands on)
+//   aim   stack-local height the lens centres on
+//   pad   0..1 pull toward the pad, so the deck stays in frame while the subject comes to it
+const SHOTS = [
+  { t: 0, r: 165, drop: 4, ref: 0, aim: 40, pad: 1 },     // 全景：坪面、塔架、整枚组合体立在那里
+  { t: 4, r: 98, drop: 6, ref: 0, aim: 30, pad: 1 },      // 推近：离塔，发动机与导流槽压满下半幅
+  { t: 9, r: 132, drop: 30, ref: 0, aim: 36, pad: 0 },    // 拉开：箭体开始穿过画面而不是停在里面
+  { t: 15, r: 205, drop: 68, ref: 0, aim: 38, pad: 0 },   // 穿云：满屏收成三分之一，高度终于看得见
+  { t: 20, r: 120, drop: 22, ref: 0, aim: 38, pad: 0 },   // MECO：压回级间段，等分离那一下
+  { t: 24, r: 152, drop: 36, ref: 20, aim: 54, pad: 0 },  // 分离：两级同框，中间那段空的就是事件本身
+  { t: 30, r: 115, drop: 32, ref: 0, aim: 19, pad: 0 },   // 归航：跟住助推器的翻转和反推点火
+  { t: 41, r: 92, drop: 7, ref: 0, aim: 15, pad: 1 },     // 落台：回到坪面高度，看它自己站住
+  // 入轨。The lens stays on the booster and lifts off it, rather than tilting up to chase the ship.
+  // Measured: at SECO the ship is 8.1 km out and the dust column between it and the deck erases it
+  // completely (`erase` = 1.000 at ground density), so the first version of this beat — `aim: 66`,
+  // the ship's own nose — photographed five flat seconds of empty haze with the landed booster 81°
+  // out of frame. What the deck can actually show at that second is the half that came back, sitting
+  // under the whole sky the other half left.
+  { t: 46, r: 108, drop: 3, ref: 0, aim: 27, pad: 1 },    // 入轨：助推器压在画面下方，上面整片是它空出来的天
+];
+const SHOT_FADE = 2.6;       // s of cross-fade between beats — shorter and the camera snaps between
+                             // stations faster than the smoothing in `chase` can follow it
+// The highest the launch rig may lift. The sky dome is a 7 km sphere standing still at the world
+// origin and the camera's far plane is 9 km, so past ~2 km of AGL the dome's own far side crosses
+// that plane and the horizon becomes an arc sliced clean across the frame — which is precisely what
+// the first instrumented flight photographed at MET 44, with the chase cam at 7.1 km.
+const SHOT_CEIL = 1800;
+// How fast the dust column thins with height. `FogExp2` has one density for the whole scene, so a
+// camera that has climbed out of the column would still be told the far end of a 7 km line of sight
+// is opaque — the ship's last beat came back as a flat field of sky colour. The scale length is the
+// column, not the atmosphere: above ~1.5 km of AGL there is essentially no dust left underneath.
+const DUST_SCALE_HEIGHT = 900;
+function launchShot(t, top) {
+  const cl = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  let i = 0;
+  while (i < SHOTS.length - 1 && t >= SHOTS[i + 1].t) i++;
+  const a = SHOTS[i], b = SHOTS[Math.min(i + 1, SHOTS.length - 1)];
+  const span = b.t - a.t;
+  // Cross-fade centred on the boundary, so a beat is fully itself for the middle of its own span
+  // and only the hand-off between two is a move.
+  const w = span > 0 ? cl((t - a.t - (span - SHOT_FADE) / 2) / SHOT_FADE, 0, 1) : 1;
+  const e = w * w * (3 - 2 * w);
+  const mix = (k) => a[k] + (b[k] - a[k]) * e;
+  return { r: mix('r'), drop: mix('drop'), ref: mix('ref'), pad: mix('pad'),
+    aim: cl(mix('aim'), 0.2, top) };
+}
 
 // park the rover somewhere flat — used by the demo URLs and by the headless checks
 function warpTo(wx, wz, facePad = false, search = 8) {
@@ -1760,29 +1819,35 @@ function update(dt) {
       // A real point on the real vehicle. The mount the camera used to chase has not moved since the
       // pad was built — the flight module moves the two bodies inside it — so following it would park
       // the view above an empty tower. Before the count clears there is no flight object yet, and the
-      // stack is still the asset props.js authored, so the +15 m lift is what frames it.
+      // stack is still the asset props.js authored, so the mount is what the shot list reads from.
       const F = launch.flight;
-      const sp = F ? F.shipAim : base.shipGroup.position;
+      const top = base.launchRig.h;
       const padX = base.launchPadPos.x, padZ = base.launchPadPos.z;
-      // Two-stage launch rig. A: a crane station pulled back off the deck, so the rover, the
-      // tower and the whole stack share one frame. B: an aerial chase that climbs WITH
-      // the ship. `climb` cross-fades A into B.
-      const climb = THREE.MathUtils.clamp((launch.y - 30) / 90, 0, 1);
+      const sh = launchShot(F ? F.met : 0, top);
+      // One bearing for the whole sequence: the far side of the rover, so whoever is watching from the
+      // deck has the pad between them and the lens rather than the lens buried in their own rover.
       const az = Math.atan2(pose.x - padX, pose.z - padZ);
       const s = Math.sin(az), cz = Math.cos(az);
-      const gy = surfaceAt(pose.x, pose.z);
-      const d = 52 + climb * 70;
-      const ax = pose.x + s * 26, ay = gy + 8.5, az2 = pose.z + cz * 26;
-      const bx = sp.x + s * d, bz = sp.z + cz * d;
-      const by = Math.max(surfaceAt(bx, bz) + 6, sp.y - 0.22 * d);
-      launchAir.x = ax + (bx - ax) * climb;
-      launchAir.y = ay + (by - ay) * climb;
-      launchAir.z = az2 + (bz - az2) * climb;
+      const anchor = F ? F.point(_lshot.set(0, 0, 0), sh.ref) : base.shipGroup.position;
+      const aim = F ? F.point(_laim.set(0, 0, 0), sh.aim) : base.shipGroup.position;
+      // The station stands `r` off the subject's own ground track, except that `pad` drags that track
+      // back onto the launch mount. That pull is what keeps the deck in the bottom of the frame while
+      // the booster comes down onto it, and what turns the last beat into a spectator on the pad
+      // craning their neck instead of a chase cam 8 km up.
+      const gx = anchor.x + (padX - anchor.x) * sh.pad;
+      const gz = anchor.z + (padZ - anchor.z) * sh.pad;
+      const cx = gx + s * sh.r, cz2 = gz + cz * sh.r;
+      const gy = surfaceAt(cx, cz2);
+      launchAir.x = cx;
+      launchAir.z = cz2;
+      launchAir.y = Math.min(gy + SHOT_CEIL, Math.max(gy + 6, anchor.y - sh.drop));
       launchAir.w = launchCamW;
-      launchAim.set(sp.x, sp.y + (F ? 0 : 15) - 6 * climb, sp.z);
+      launchAim.copy(aim);
       chase.aim = launchAim;
       chase.aimW = launchCamW;
-      chase.fovAdd = 12 * launchCamW + 8 * climb;
+      // Wide where the vehicle is close. A 60° lens at 98 m makes the stack overhang the frame on
+      // purpose; the same lens at 205 m is what lets the eye read that it has gone a long way.
+      chase.fovAdd = 12 * launchCamW + 14 * THREE.MathUtils.clamp(1 - sh.r / 205, 0, 1);
     } else if (showFraming) {
       // aim at the lit booster section: high enough that the stack reads as the subject,
       // low enough that the rover still sits at the bottom of the frame
@@ -1807,6 +1872,17 @@ function update(dt) {
       phys.trauma = Math.min(0.34, Math.max(phys.trauma, buff));
     }
     chase.update(dt, { x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw, roll: pose.roll, lateral: phys.lateral, wheelAngle: phys.wheelAngle, groundY: phys.groundY }, phys.speed, phys.trauma);
+    // The dust is a column a few hundred metres thick sitting on the surface, but `FogExp2` charges
+    // for it at one rate no matter where the camera is. So the last beat of the launch — a spectator
+    // on the pad looking up at a vehicle 8 km gone — came back as a flat field of sky colour, because
+    // the model said 8 km of ground-density air was between them. Attenuate by how much column is
+    // actually *under* the lens. Measured on the surface it changes nothing: AGL is ~0 and the factor
+    // is 1. It has to run after `chase.update`, since the height that matters is the one the camera
+    // ended the frame at, and `Environment` rewrites the density from scratch every frame anyway.
+    if (launchCamW > 0.001 && scene.fog) {
+      const agl = camera.position.y - surfaceAt(camera.position.x, camera.position.z);
+      if (agl > 0) scene.fog.density *= Math.exp(-(agl * agl) / (DUST_SCALE_HEIGHT * DUST_SCALE_HEIGHT));
+    }
   } else updatePhotoCam(dt);
 
   // Slender masts and lamp posts are not colliders, so the rig still parks behind them and the
@@ -2167,6 +2243,9 @@ window.__RSB = {
         down: +t.down.toFixed(0), mach: +t.mach.toFixed(2), gamma: +t.gamma.toFixed(3),
         litBooster: t.litBooster, litUpper: t.litUpper },
       bodies: { booster: r3(F.plumes[0].body.node.position), ship: r3(F.plumes[1].body.node.position) },
+      // Degrees off vertical, per body. A landed booster's position says nothing about whether it is
+      // standing up, and the one thing that makes a parked first stage read wrong is the lean.
+      lean: { booster: +(F.plumes[0].body.phi * 57.2958).toFixed(1), ship: +(F.plumes[1].body.phi * 57.2958).toFixed(1) },
       mouths: F.plumes.map(p => +p.mouth.toFixed(1)),
       touch: F.touch, log: F.log.map(e => [e.met.toFixed(1), e.id, e.alt, e.vel]) };
   },

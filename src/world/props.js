@@ -2095,7 +2095,13 @@ export async function buildBase(scene, quality) {
     plan: auditPlan, lots,
     leakPoint: new THREE.Vector3(LEAK_POS[0], heightAt(LEAK_POS[0], LEAK_POS[1]) + 1.8, LEAK_POS[1]),
     flamePoint,
-    launchPadPos: new THREE.Vector3(...ZONES.launch.pos),
+    // `ZONES.*.pos` is a 2-tuple [x, z], so spreading it into a Vector3 — which the two lines above
+    // and below this one do field by field, for exactly that reason — landed the zone's *z* in `.y`
+    // and left `.z` at 0. Measured live before the fix: the pad rumble's panner sat at (−60, −54, 0)
+    // while the stack stood at (−60, 0.6, −60), i.e. 60 m downwind in the wreck field and 55 m under
+    // the sand, and `launch.audioAlt` read 63 m for a vehicle at 3 m. `launchRig.pad` already carries
+    // the honest three numbers, so it is the source rather than a second hand-typed copy.
+    launchPadPos: new THREE.Vector3(...launchRig.pad),
     wreckPos,
     watchPos: new THREE.Vector3(ZONES.watch.pos[0], heightAt(...ZONES.watch.pos), ZONES.watch.pos[1]),
   };

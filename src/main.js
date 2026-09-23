@@ -1024,11 +1024,14 @@ function updateLaunch(dt) {
     // The height is averaged over those same weights, because after the split the two vehicles are
     // kilometres apart: the ship's altitude alone would voice the booster's 16-bell landing burn as
     // though it were still on the stack, and the booster's alone would mute the ship clearing the weather.
+    // `node.position.y` needs no datum removed: the stack group rests on the pad, so a body's local y
+    // *is* its height above the deck — the carry-over subtraction from the `launchPadPos` bug made the
+    // channel read exactly the pad's own 0.6 m low (MET 0.5: −0.6 against a true 0; MET 4: 2.95 against 3.6).
     let thr = 0, thrAlt = 0;
     for (const p of F.plumes) {
       const c = p.engines * p.power;
       thr += c;
-      thrAlt += c * (p.body.node.position.y - base.launchPadPos.y);
+      thrAlt += c * p.body.node.position.y;
     }
     launch.audioThrust = Math.min(1, thr / F.engines.booster);
     launch.audioAlt = thr > 0.02 ? thrAlt / thr : F.alt;

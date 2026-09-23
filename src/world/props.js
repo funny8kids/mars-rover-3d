@@ -208,9 +208,32 @@ export async function buildBase(scene, quality) {
   // body flagged the wrapper, left both vehicles' parts exposed, and the pad's own merge pass then
   // pulled 193 parts from the two bodies into shared buffers welded across the seam — a stack that
   // could never come apart while every count still looked healthy.
-  for (const key of ['booster', 'ship']) {
+  // The engine clusters are counted off the asset, not typed in here: a Raptor is authored as four
+  // parts, exactly one of which is its bell, so a `raptor_*_bell` node is one engine. Two details the
+  // tally has to respect, both measured off the export rather than assumed — the interstage gas vents
+  // and the RCS thrusters are also bell-shaped and would be counted as engines by a `*_bell` match,
+  // and the thirteen instances of one engine type come through the exporter as
+  // `raptor_o_bell`, `raptor_o_bell.001`, …, so a bare `endsWith` finds one engine per type.
+  // The third trap is the loader, and it is the reason stripping `.001` still read 2 engines:
+  // GLTFLoader names every object through `PropertyBinding.sanitizeNodeName`, whose reserved-character
+  // set is `[].:\/` and it *deletes* those rather than escaping them. So the scene never holds
+  // `raptor_o_bell.001` — it holds `raptor_o_bell001`, and the dot-stripping regex matched only the
+  // unnumbered original of each type. The suffix is therefore consumed inside the test, and a name
+  // is only trusted as one engine while the parts are still separate: this tally runs *before*
+  // `mergeInto` below, because after a signature merge one bucket per material would look like one
+  // engine per type again, which is the number this bug shipped with.
+  // The flight HUD lights this many engines, which means adding or removing one in Blender changes
+  // the panel by itself instead of leaving it confidently reporting a number the model never had.
+  const STACK_ENGINES = { booster: 0, upper: 0 };
+  const BELLOF = /^raptor_.+_bell\d*$/;
+  for (const [key, slot] of [['booster', 'booster'], ['ship', 'upper']]) {
     const body = models.starship_stack?.getObjectByName(key);
-    if (body) { noMerge(body); mergeInto(body); }
+    if (body) {
+      let bells = 0;
+      body.traverse(o => { if (o.isMesh && BELLOF.test(o.name)) bells++; });
+      STACK_ENGINES[slot] = bells;
+      noMerge(body); mergeInto(body);
+    }
   }
   for (const [name, root] of Object.entries(models)) {
     if (root && !keepsParts.has(name)) mergeInto(root);
@@ -1076,7 +1099,7 @@ export async function buildBase(scene, quality) {
       lightStrips.push(tr.material); lightRings.push(tr);
     }
     launchRig = { stack, mount: ship, booster, upper,
-      pad: [px, py, pz], y: py, h: SHIP_H, r: SHIP_R, seam: STAGE_H,
+      pad: [px, py, pz], y: py, h: SHIP_H, r: SHIP_R, seam: STAGE_H, engines: STACK_ENGINES,
       // The separation animation moves each body off its rest offset. Reading those offsets now,
       // before anything has touched them, is the only way to know what "mated" was; hardcoding zero
       // would silently re-derive the whole 71 m stack's stance from an assumption.

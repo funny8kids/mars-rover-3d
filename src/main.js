@@ -10,6 +10,7 @@ import { RoverPhysics, platformAt } from './vehicle/physics.js';
 import { ChaseCamera } from './camera/chase.js';
 import { createInput } from './input.js';
 import { createFX, updateStorm } from './fx/particles.js';
+import { createLaunch } from './fx/launch.js';
 import { StormField, createStormWall, placeStormWall } from './world/storm.js';
 import { createRimVeil } from './world/rim_veil.js';
 import { createPost } from './fx/post.js';
@@ -81,7 +82,11 @@ const LINK_RADIUS = 9, LINK_TIME = 4, LINK_DRAIN = 0.02, LINK_MIN = 0.12;
 // The dust a front actually leaves behind, per surface — see 沙尘作为账本 below.
 let roverFilm = 0;
 const stormPlay = { lance: false, events: 0, phase: 'calm' };
-const launch = { phase: 'idle', t: 0, cd: 11, y: 0, vy: 0, tilt: 0, intensity: 0, flash: 0, doneAt: 0, held: false };
+// `y`/`t`/`tilt`/`intensity` mirror what the flight module integrates, so everything that already
+// reads them keeps reading the same numbers the meshes moved by. `flight` is the module's own object,
+// built when the count reaches zero — before that the stack is props.js's, untouched.
+const launch = { phase: 'idle', t: 0, cd: 11, y: 0, tilt: 0, intensity: 0, flash: 0,
+  doneAt: 0, held: false, flight: null };
 let showOn = 0;          // night light-show timer
 let demoPin = null;      // demo cinematic: hold the rover parked
 const race = { active: false, idx: 0, t: 0, gates: [], rings: [] };
@@ -942,68 +947,128 @@ function startCountdown() {
   launch.held = false;
   launch.phase = 'countdown'; launch.cd = 10.0;
 }
+// The finale fires two beats inside half a second of each other (boost MECO, then ship ignition), and
+// there is one toast slot. Showing them as they land would silently drop one, so the text goes through
+// a queue with a fixed gap while each beat's rings, flash and radio cue still fire the instant the
+// flight module reports it. The event log the HUD will read is unaffected either way.
+const launchQueue = [];
+let launchGap = 0;
 function updateLaunch(dt) {
-  const ship = base.shipGroup;
+  if (launchGap > 0) {
+    launchGap -= dt;
+  } else if (launchQueue.length) {
+    UI.toast(launchQueue.shift(), 3600);
+    launchGap = 6;
+  }
   if (launch.phase === 'countdown') {
     launch.cd -= dt;
     const n = Math.ceil(launch.cd);
     if (n !== launch.lastCd && n > 0) { launch.lastCd = n; UI.countdown(n); audio.cue(); }
-    if (n <= 0) { UI.countdown(t('升空')); audio.radio('good'); launch.phase = 'ignition'; launch.t = 0; }
-  } else if (launch.phase === 'ignition' || launch.phase === 'ascent' || launch.phase === 'fly') {
-    launch.t += dt;
-    const prox = THREE.MathUtils.clamp(1 - Math.hypot(phys.x - base.launchPadPos.x, phys.z - base.launchPadPos.z) / 140, 0.12, 1);
-    if (launch.phase === 'ignition') {
-      launch.intensity = Math.min(1, launch.t / 2.2);
-      if (launch.t > 4.2 && !launch.shockDone) {
-        launch.shockDone = true;
-        launch.phase = 'ascent';
-        launch.flash = 1;
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(10, 1.4, 8, 40), new THREE.MeshBasicMaterial({ color: 0xffd8a0, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
-        ring.rotation.x = Math.PI / 2; ring.position.set(base.launchPadPos.x, surfaceAt(...ZONES.launch.pos) + 2, base.launchPadPos.z);
-        scene.add(ring); ring.userData.born = elapsed;
-        shockRings.push(ring);
-        UI.countdown(null);
-      }
-    } else if (launch.phase === 'ascent') {
-      launch.vy += (14 - launch.vy * 0.05) * dt;
-      launch.y += launch.vy * dt;
-      launch.intensity = 1;
-      if (launch.y > 34) launch.tilt = Math.min(0.42, launch.tilt + dt * 0.09);
-      if (launch.y > 420) launch.phase = 'fly';
-    } else if (launch.phase === 'fly') {
-      launch.vy += 22 * dt; launch.y += launch.vy * dt;
-      launch.intensity = Math.max(0.35, launch.intensity - dt * 0.08);
-      if (launch.y > 2600) { ship.visible = false; launch.phase = 'done'; launch.doneAt = elapsed; UI.toast('✦ 星舰已离开大气层 — 「愿它在群星间找到家」', 6000); missions[3].done = true; renderMissions(); audio.radio('good'); stormField.freeSky(); }
+    if (n <= 0) {
+      UI.countdown(t('升空')); audio.radio('good');
+      launch.phase = 'flight';
+      // From here the flight module owns where the two vehicles are. What still lives down here is
+      // everything the game *does* about a launch: the notices, the rings, the particles, the shake.
+      launch.flight = createLaunch(base.launchRig, launch);
+      launch.flight.start();
     }
-    if (launch.phase !== 'done') {
-      ship.position.y = 2.2 + launch.y;
-      ship.position.x = ZONES.launch.pos[0] + Math.sin(launch.tilt) * launch.y * 0.3;
-      ship.rotation.z = -launch.tilt;
-      // plume particles — the stack crosses tens of metres per frame on a slow machine,
-      // so seed along the swept path instead of at one point or the trail becomes a dotted chain
-      const climb = launch.vy * dt;
-      const steps = THREE.MathUtils.clamp(1 + Math.floor(climb / 6), 1, 8);
-      const n = Math.max(1, Math.round(26 * quality.particles * (0.4 + launch.intensity) / steps));
-      for (let s = 0; s < steps; s++) {
-        const ey = ship.position.y - climb * (1 - s / steps);
-        for (let i = 0; i < n; i++) {
-          const a = Math.random() * 6.283, r = 0.3 + Math.random() * 2.2;
-          fx.flame.emit(
-            ship.position.x + Math.cos(a) * r, ey + 0.5, ship.position.z + Math.sin(a) * r,
-            Math.cos(a) * 3, -15 - Math.random() * 8, Math.sin(a) * 3,
-            0.7 + Math.random() * 0.5, 3 + Math.random() * 3
-          );
-          if (Math.random() < 0.5) fx.smoke.emit(
-            ship.position.x + Math.cos(a) * (3 + Math.random() * 4), ey + Math.random() * 2, ship.position.z + Math.sin(a) * (3 + Math.random() * 4),
-            Math.cos(a) * 6, 2 + Math.random() * 2.5, Math.sin(a) * 6, 2.6 + Math.random() * 2, 6 + Math.random() * 6
+    return;
+  }
+  const F = launch.flight;
+  if (!F || launch.phase !== 'flight') return;
+  F.update(dt);
+  for (const b of F.drain()) launchBeat(b);
+  if (F.done) finishLaunch();
+  else {
+    seedPlumes(F);
+    const prox = THREE.MathUtils.clamp(1 - Math.hypot(phys.x - base.launchPadPos.x, phys.z - base.launchPadPos.z) / 140, 0.12, 1);
+    chase.trauma = Math.max(chase.trauma, 0.25 + prox * 0.75 * launch.intensity);
+    audio.updateLaunch?.(launch.intensity);
+    launch.audioLevel = launch.intensity * prox;
+  }
+  if (launch.flash > 0) launch.flash = Math.max(0, launch.flash - dt * 0.85);
+}
+
+const _bp = new THREE.Vector3();
+function launchBeat(b) {
+  const F = launch.flight, rig = base.launchRig;
+  const line = getLang() === 'en' ? b.en : b.zh;
+  launchQueue.push(`◦ ${line} · T+${b.t.toFixed(0)}s`);
+  if (b.id === 'liftoff') {
+    // The deck's own beat: the overpressure ring that used to be keyed to a timer is now the moment
+    // the thrust actually beats the weight, so it fires when the stack leaves, not when the clock says.
+    UI.countdown(null);
+    launch.flash = 1;
+    const ring = shockWave(base.launchPadPos.x, surfaceAt(...ZONES.launch.pos) + 2, base.launchPadPos.z, 0xffd8a0, 10);
+    if (ring) ring.userData.grow = 9;
+    audio.cue();
+  } else if (b.id === 'staging') {
+    const s = F.point(_bp, rig.seam - 0.5);
+    const ring = shockWave(s.x, s.y, s.z, 0xffc46a, 6);
+    if (ring) ring.userData.grow = 5;
+    launch.flash = Math.max(launch.flash, 0.45);
+    audio.cue();
+  } else if (b.id === 'boosterlanding') {
+    // Two vehicles, two returns: the booster coming home to the deck it left is the beat the whole
+    // guided descent exists to produce, so it gets the pad ring and the good news on the radio.
+    const s = F.point(_bp.set(0, 0, 0), 2);
+    const ring = shockWave(s.x, surfaceAt(...ZONES.launch.pos) + 1.5, s.z, 0x9fe8ff, 7);
+    if (ring) ring.userData.grow = 7;
+    launchQueue.unshift(`✦ ${t('助推级回到发射台')}`);
+    audio.radio('good');
+  } else if (b.id === 'seco') {
+    // The old sequence ended by declaring the ship out of the atmosphere at 2600 m; SECO is the same
+    // fact, said by the engine that stops pushing rather than by a height the camera can't resolve.
+    launchQueue.unshift(t('✦ 星舰已离开大气层 — 「愿它在群星间找到家」'));
+    missions[3].done = true; renderMissions(); stormField.freeSky(); audio.radio('good');
+  }
+}
+function finishLaunch() {
+  launch.phase = 'done'; launch.doneAt = elapsed;
+  // Only the ship leaves. The booster came home, and a booster standing on its own pad with the
+  // engines cold is the picture the whole sequence was built to arrive at — hiding the mount, as the
+  // old code did, erased it along with the vehicle that had already flown away.
+  base.launchRig.upper.visible = false;
+}
+
+const _pq = new THREE.Vector3(), _pr = new THREE.Vector3(), _pt = new THREE.Vector3(), _pv = new THREE.Vector3();
+function seedPlumes(F) {
+  for (const p of F.plumes) {
+    if (p.power <= 0) continue;
+    // A vehicle crossing the sky covers tens of metres in one frame on a slow machine, so the trail
+    // has to be seeded along the swept path instead of at one point or it becomes a dotted chain.
+    const reach = _pq.copy(p.pos).sub(p.prev).length();
+    const steps = THREE.MathUtils.clamp(1 + Math.floor(reach / 6), 1, 8);
+    const n = Math.max(1, Math.round(2.0 * p.engines * quality.particles * (0.4 + p.power) / steps));
+    // The ring of particles is laid out in the plane normal to that vehicle's own exhaust axis, so
+    // the plume follows the lean instead of assuming the rocket is standing up.
+    _pr.set(0, 1, 0);
+    if (Math.abs(p.axis.y) > 0.98) _pr.set(1, 0, 0);
+    _pt.crossVectors(p.axis, _pr).normalize();
+    _pr.crossVectors(_pt, p.axis).normalize();
+    for (let s = 0; s < steps; s++) {
+      _pq.copy(p.prev).lerp(p.pos, (s + 1) / steps);
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * 6.283, r = 0.3 + Math.random() * 2.2;
+        _pv.copy(_pt).multiplyScalar(Math.cos(a) * r).addScaledVector(_pr, Math.sin(a) * r);
+        fx.flame.emit(
+          _pq.x + _pv.x + p.axis.x * 0.6, _pq.y + _pv.y + p.axis.y * 0.6, _pq.z + _pv.z + p.axis.z * 0.6,
+          p.axis.x * (15 + Math.random() * 8) + _pv.x * 1.4,
+          p.axis.y * (15 + Math.random() * 8) + _pv.y * 1.4,
+          p.axis.z * (15 + Math.random() * 8) + _pv.z * 1.4,
+          0.7 + Math.random() * 0.5, 3 + Math.random() * 3
+        );
+        if (Math.random() < 0.5) {
+          const rr = 3 + Math.random() * 4;
+          _pv.copy(_pt).multiplyScalar(Math.cos(a) * rr).addScaledVector(_pr, Math.sin(a) * rr);
+          fx.smoke.emit(
+            _pq.x + _pv.x, _pq.y + _pv.y + Math.random() * 2, _pq.z + _pv.z,
+            _pv.x * 2, 2 + Math.random() * 2.5, _pv.z * 2,
+            2.6 + Math.random() * 2, 6 + Math.random() * 6
           );
         }
       }
-      chase.trauma = Math.max(chase.trauma, 0.25 + prox * 0.75 * launch.intensity);
-      audio.updateLaunch?.(launch.intensity);
-      launch.audioLevel = launch.intensity * prox;
     }
-    if (launch.flash > 0) launch.flash = Math.max(0, launch.flash - dt * 0.85);
   }
 }
 const shockRings = [];
@@ -1013,6 +1078,7 @@ function shockWave(x, y, z, color = 0x8fe8ff, r = 5) {
   ring.rotation.x = Math.PI / 2; ring.position.set(x, y, z);
   scene.add(ring); ring.userData.born = elapsed; ring.userData.grow = 1.7;
   shockRings.push(ring);
+  return ring;
 }
 let launchCamW = 0;                       // 0..1 blend into the launch framing
 const launchAim = new THREE.Vector3();
@@ -1687,7 +1753,12 @@ function update(dt) {
     chase.raise = 5 * launchCamW;
     chase.fovAdd = 14 * launchCamW;
     if (launching) {
-      const sp = base.shipGroup.position;
+      // A real point on the real vehicle. The mount the camera used to chase has not moved since the
+      // pad was built — the flight module moves the two bodies inside it — so following it would park
+      // the view above an empty tower. Before the count clears there is no flight object yet, and the
+      // stack is still the asset props.js authored, so the +15 m lift is what frames it.
+      const F = launch.flight;
+      const sp = F ? F.shipAim : base.shipGroup.position;
       const padX = base.launchPadPos.x, padZ = base.launchPadPos.z;
       // Two-stage launch rig. A: a crane station pulled back off the deck, so the rover, the
       // tower and the whole stack share one frame. B: an aerial chase that climbs WITH
@@ -1704,7 +1775,7 @@ function update(dt) {
       launchAir.y = ay + (by - ay) * climb;
       launchAir.z = az2 + (bz - az2) * climb;
       launchAir.w = launchCamW;
-      launchAim.set(sp.x, sp.y + 15 - 6 * climb, sp.z);
+      launchAim.set(sp.x, sp.y + (F ? 0 : 15) - 6 * climb, sp.z);
       chase.aim = launchAim;
       chase.aimW = launchCamW;
       chase.fovAdd = 12 * launchCamW + 8 * climb;
@@ -2077,8 +2148,23 @@ window.__RSB = {
       for (let p = o; p && p !== trunk; p = p.parent) if (p === r.booster || p === r.upper) return;
       stray.push(`${o.name || 'mesh'}:${o.geometry.attributes.position.count}v`);
     });
-    return { seam: r.seam, pad: r.pad.map(v => +v.toFixed(2)),
+    return { seam: r.seam, pad: r.pad.map(v => +v.toFixed(2)), engines: r.engines,
       booster: body(r.booster), upper: body(r.upper), stray };
+  },
+  // The flight, as the integrator sees it. `log` is the same record the telemetry panel will render
+  // and `touch` is what the booster's return actually cost, so a claim about the sequence can be
+  // checked against numbers the sim produced rather than against the code that was meant to produce them.
+  flight: () => {
+    const F = launch.flight;
+    if (!F) return null;
+    const t = F.tel, r3 = v => v.toArray().map(n => +n.toFixed(1));
+    return { phase: launch.phase, done: F.done, separated: F.separated, landed: F.landed,
+      tel: { met: +t.met.toFixed(1), alt: +t.alt.toFixed(0), vel: +t.vel.toFixed(1), accel: +t.accel.toFixed(1),
+        down: +t.down.toFixed(0), mach: +t.mach.toFixed(2), gamma: +t.gamma.toFixed(3),
+        litBooster: t.litBooster, litUpper: t.litUpper },
+      bodies: { booster: r3(F.plumes[0].body.node.position), ship: r3(F.plumes[1].body.node.position) },
+      mouths: F.plumes.map(p => +p.mouth.toFixed(1)),
+      touch: F.touch, log: F.log.map(e => [e.met.toFixed(1), e.id, e.alt, e.vel]) };
   },
   warp: (x, z, face, search) => warpTo(x, z, face, search ?? 8),
   pois: () => interactivePoints(),
@@ -2127,6 +2213,14 @@ window.__RSB = {
     const CLEAR = 1.6 + 0.4, CELL = 24;   // body clearance + a little respect, and the hash cell size
     const cellKey = (cx, cz) => cx * 8192 + cz;
     const keys = ['KeyW'];
+    // Two kinds of per-point state, deliberately split. `best`, `bestAt`, `dwell` and `retried` are
+    // the run's evidence — the closest the wheel ever came, which the acceptance bar reads — so they
+    // only ever improve. `lapBest`, `since`, `held` and `park` are the *current lap's* arrival state
+    // and must be re-armed when the loop recycles. They used to be one field, so from lap 2 on every
+    // point was already "arrived" the frame it became the target: `s.wp++` then fired once per frame,
+    // burning all 46 waypoint indices in 0.77 s. A run that reported `laps: 175` had not driven 175
+    // laps — it had stopped driving and kept counting.
+    const armLap = p => { p.lapBest = 1e9; p.since = null; p.held = 0; p.park = undefined; };
     let s = qaDrive;
     if (!s || opts.reset) {
       const ride = phys.y - phys.groundY;
@@ -2156,7 +2250,7 @@ window.__RSB = {
           }
         }
       }
-      for (const p of spots) { p.best = 1e9; p.bestAt = null; p.since = null; p.dwell = 0; p.held = 0; p.park = undefined; p.retried = false; }
+      for (const p of spots) { p.best = 1e9; p.bestAt = null; p.dwell = 0; p.retried = false; armLap(p); }
       const route = [];
       let at = [phys.x, phys.z];
       const pending = spots.slice();
@@ -2339,8 +2433,24 @@ window.__RSB = {
       if (opts.keepPower && s.runFrames % 15 === 0) { grid.battery = 1; grid.dead = false; grid.lowWarned = false; }
       input.inp.brake = (recovering || holding) ? 1 : 0;   // read() re-derives pedals from the key set
       const step = Math.hypot(phys.x - before[0], phys.z - before[1]);
-      s.dist += step;
-      s.maxStep = Math.max(s.maxStep, step);
+      // A frame that starts with the rover here and ends 50 m down the map is not driving, and the
+      // sim owns exactly one legitimate way to do it: the teleport network, which force-homes the
+      // rover to the hub the moment the cell dies. The hop is therefore measured against where the
+      // *last frame* ended, classified, and only a frame the wheels actually cover is allowed into
+      // the metrics that claim to describe the road. Counting a hand-off as a stride made
+      // `maxStepMetres` read 57.64 — indistinguishable from a collision blow-through — while the
+      // ring-depth and sink counters, which only ever see real contact, stayed at zero; and the
+      // odometer quietly added the jump to the distance driven.
+      const hop = Math.hypot(phys.x - s.prevPos[0], phys.z - s.prevPos[1]);
+      const teleported = hop > 8;
+      if (teleported) {
+        s.events.push({ t: +s.t.toFixed(1), kind: 'teleport', from: s.prevPos.map(v => +v.toFixed(1)),
+                        to: [phys.x, phys.z].map(v => +v.toFixed(1)), metres: +hop.toFixed(1),
+                        battery: +grid.battery.toFixed(3) });
+      } else {
+        s.dist += step;
+        s.maxStep = Math.max(s.maxStep, step);
+      }
       s.peakSpeed = Math.max(s.peakSpeed, phys.speed);
       const _sf = env.state.stormF;
       if (_sf > s.stormMax) s.stormMax = _sf;
@@ -2359,10 +2469,6 @@ window.__RSB = {
       if (sink < -0.1 && !phys.onFloor) s.sinkFrames++;
       if (sink < s.worstSink) { s.worstSink = sink; s.sinkPos = [+phys.x.toFixed(1), +phys.z.toFixed(1)]; }
       if (teleOpen) s.gated++;
-      if (Math.hypot(phys.x - s.prevPos[0], phys.z - s.prevPos[1]) > 8) {
-        s.events.push({ t: +s.t.toFixed(1), kind: 'teleport', from: s.prevPos.map(v => +v.toFixed(1)),
-                        to: [phys.x, phys.z].map(v => +v.toFixed(1)), battery: +grid.battery.toFixed(3) });
-      }
       s.prevPos = [phys.x, phys.z];
       if (grid.dead !== s.prevDead) {
         s.events.push({ t: +s.t.toFixed(1), kind: grid.dead ? 'battery-dead' : 'battery-restored',
@@ -2405,6 +2511,7 @@ window.__RSB = {
       // report as a miss with its closest approach, instead of stalling the rest of the route.
       const dT = Math.hypot(phys.x - tgt.x, phys.z - tgt.z);
       if (dT < tgt.best) { tgt.best = dT; tgt.bestAt = [+phys.x.toFixed(1), +phys.z.toFixed(1)]; }
+      if (dT < tgt.lapBest) tgt.lapBest = dT;
       if (tgt.since === null) tgt.since = s.t;
       // Dwell is the second half of the proof. Touching a circle for one frame at 14 m/s is not a
       // stop the player can act on — the game only offers the pad prompt and the link below walking
@@ -2415,14 +2522,14 @@ window.__RSB = {
       // A fly-through only proves the road exists. `pause` parks the rover inside the trigger circle
       // with the brake on — the state a player actually has to reach to work a pad or lift a sample —
       // and it turns the dwell column into measured standing time instead of one frame of a pass.
-      const arrived = tgt.best <= tgt.r || s.t - tgt.since > (opts.grace ?? 25);
+      const arrived = tgt.lapBest <= tgt.r || s.t - tgt.since > (opts.grace ?? 25);
       if (arrived && !tgt.held) { tgt.held = +opts.pause || 0; s.holdUntil = s.t + tgt.held; }
       if (arrived && s.t >= s.holdUntil) {
         // Running out of patience on a point is not evidence that the map is broken: an unstick can
         // carry the rover off-route and spend the whole grace window on the detour. So a missed point
         // goes back on the tail of the route once, aimed at from wherever the rover now stands. Two
         // misses is a real defect, and the report labels which points needed the second try.
-        if (tgt.best > tgt.r && !tgt.retried && s.t < s.budget - 90) {
+        if (tgt.lapBest > tgt.r && !tgt.retried && s.t < s.budget - 90) {
           tgt.retried = true; tgt.since = null; tgt.held = 0; tgt.park = undefined;
           s.route.push(tgt); s.retries++;
         }
@@ -2431,8 +2538,10 @@ window.__RSB = {
       if (s.runFrames % 15 === 0) s.trace.push([+phys.x.toFixed(1), +phys.z.toFixed(1)]);
       // A five-minute run is longer than one lap of the map. Recycling the waypoint list keeps the
       // rover rolling instead of parking it at the finish line, and it never teleports: the next lap
-      // starts from wherever the last one ended.
-      if (s.loop && s.wp >= s.route.length) { s.wp = 0; s.laps++; }
+      // starts from wherever the last one ended. Re-arming the arrival state is what makes the next
+      // lap an actual lap; `retried` is deliberately not cleared, so a point that needed a second try
+      // once is a defect named in the report, not one charged again against every later lap.
+      if (s.loop && s.wp >= s.route.length) { s.wp = 0; s.laps++; s.spots.forEach(armLap); }
       if (f % 900 === 899 && performance.now() - wall > 9000) break;  // never outlive the call budget
     }
     // Release the pedal between chunks: the real animation loop keeps running while QA thinks,
@@ -2446,7 +2555,8 @@ window.__RSB = {
     const stalls = [...s.stallCells.values()].sort((a, b) => b.n - a.n);
     // D1's acceptance bar reads this block: every interactive point, the closest the wheel ever got,
     // against the radius that point actually needs. `never` means the budget ran out before the route
-    // reached it — not a wall, just a short clock.
+    // reached it — not a wall, just a short clock. `laps` counts *driven* laps: the arrival state is
+    // re-armed at every recycle, so a lap is 46 points steered to, not 46 indices skipped.
     const pois = s.spots.filter(p => p.kind !== 'street');
     const hit = pois.filter(p => p.best <= p.r).length;
     return { done, simSeconds: +s.t.toFixed(1), metres: Math.round(s.dist), laps: s.laps,
@@ -2464,11 +2574,14 @@ window.__RSB = {
              stuckPockets: stalls.length,
              stuckFrames: stalls.reduce((a, b) => a + b.n, 0),
              inputGatedFrames: s.gated,
-             // zero clipping means both halves of it: never inside a wall, never under the ground
+             // zero clipping means both halves of it: never inside a wall, never under the ground.
+             // `maxStepMetres` is the largest ground span the *wheels* covered in one frame — at
+             // 15.2 m/s peak that is well under 30 cm — with teleport hand-offs excluded, so a jump
+             // here now means the solver moved the rover, not the game.
              clip: { bodyPenMax: +s.worstPen.toFixed(2), bodyPenAt: s.penPos, bodyClipFrames: s.penFrames,
                sinkMax: +s.worstSink.toFixed(2), sinkAt: s.sinkPos, sinkFrames: s.sinkFrames,
                maxStepMetres: +s.maxStep.toFixed(2), events: s.clipLog },
-             teleports: s.events.filter(e => e.kind === 'teleport').length,
+             teleports: s.events.filter(e => e.kind === 'teleport').map(e => `${e.metres}m@${e.t}s batt${e.battery}`),
              batteryEvents: s.events.filter(e => /battery/.test(e.kind)).length,
              battery: +grid.battery.toFixed(3), gridOnline: grid.online, realFps: Math.round(fpsAvg),
              stalls: stalls.slice(0, 8), events: s.events.slice(0, 12),
@@ -2799,8 +2912,10 @@ window.__RSB = {
       ship: v(sp), shipH: +sp.y.toFixed(1), camPos: v(camera.position), dist: +d.length().toFixed(1),
       azDeg: +(Math.asin(cl(dn.dot(right))) * 57.3).toFixed(1),
       elDeg: +(Math.asin(cl(dn.dot(up))) * 57.3).toFixed(1),
-      fov: camera.fov, vis: base.shipGroup.visible, phase: launch.phase,
+      fov: camera.fov, vis: base.launchRig ? base.launchRig.upper.visible : base.shipGroup.visible,
+      phase: launch.phase,
       ly: +launch.y.toFixed(1), lt: +launch.t.toFixed(1),
+      tel: launch.flight ? launch.flight.tel : null,
     };
   },
   // ground truth for the no-clipping check: the height the drawn mesh actually puts
@@ -2835,8 +2950,15 @@ window.__RSB = {
   los: () => {
     const rc = new THREE.Raycaster();
     const out = [];
-    for (const h of [3, 40, 80, 120]) {
-      const target = new THREE.Vector3(ZONES.launch.pos[0], 2.2 + launch.y + h, ZONES.launch.pos[1]);
+    // Fractions of the stack that is actually there, not metres typed in for the rocket this
+    // replaced — two of those probes used to sit above the nose entirely. Each one asks the flight
+    // where that point on the vehicle is, so after staging the high probes track the ship away and
+    // the low ones track the booster coming home.
+    const rig = base.launchRig, F = launch.flight;
+    for (const f of [0.05, 0.35, 0.65, 0.95]) {
+      const h = f * rig.h;
+      const target = F && launch.phase !== 'countdown' ? F.point(new THREE.Vector3(), h)
+        : new THREE.Vector3(ZONES.launch.pos[0], rig.y + 2.9 + h, ZONES.launch.pos[1]);
       const dir = target.clone().sub(camera.position);
       const dist = dir.length();
       rc.set(camera.position, dir.normalize());
@@ -2844,7 +2966,8 @@ window.__RSB = {
       const hits = rc.intersectObjects(scene.children, true).filter(x => x.object.visible);
       const p = target.clone().project(camera);
       out.push({
-        h, px: [Math.round((p.x * 0.5 + 0.5) * 1280), Math.round((-p.y * 0.5 + 0.5) * 720)], onScreen: p.z < 1 && Math.abs(p.x) < 1 && Math.abs(p.y) < 1,
+        h: +h.toFixed(1),
+        px: [Math.round((p.x * 0.5 + 0.5) * 1280), Math.round((-p.y * 0.5 + 0.5) * 720)], onScreen: p.z < 1 && Math.abs(p.x) < 1 && Math.abs(p.y) < 1,
         blocked: hits.length ? (hits[0].object.name || `${hits[0].object.type}/${hits[0].object.material?.name || '?'}`) : null,
         bd: hits.length ? +hits[0].distance.toFixed(1) : null,
       });

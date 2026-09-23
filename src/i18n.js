@@ -132,6 +132,7 @@ const EN = {
   '✦ 星舰灯光秀开始': '✦ Starship light show starting',
   '✦ 星舰已离开大气层 — 「愿它在群星间找到家」':
     '✦ Starship has left the atmosphere — may it find a home among the stars',
+  '助推级回到发射台': 'the booster is back on the pad',
   '⚠ 沙尘暴来袭…': '⚠ Dust storm incoming…',
   '沙尘消散 · 天空恢复': 'The dust has settled — the sky is clear',
   // ── the dust ledger: a front deposits, the arrays pay, the rover's lance clears ──

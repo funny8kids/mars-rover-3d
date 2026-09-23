@@ -11,6 +11,7 @@ import { ChaseCamera } from './camera/chase.js';
 import { createInput } from './input.js';
 import { createFX, updateStorm } from './fx/particles.js';
 import { createLaunch } from './fx/launch.js';
+import { createJetPlumes } from './fx/plume.js';
 import { StormField, createStormWall, placeStormWall } from './world/storm.js';
 import { createRimVeil } from './world/rim_veil.js';
 import { createPost } from './fx/post.js';
@@ -994,6 +995,7 @@ function updateLaunch(dt) {
 }
 
 const _bp = new THREE.Vector3();
+let launchJets = null;
 function launchBeat(b) {
   const F = launch.flight, rig = base.launchRig;
   const line = getLang() === 'en' ? b.en : b.zh;
@@ -1036,42 +1038,81 @@ function finishLaunch() {
 }
 
 const _pq = new THREE.Vector3(), _pr = new THREE.Vector3(), _pt = new THREE.Vector3(), _pv = new THREE.Vector3();
+// Two roles, two pools, and each one sized to what the pool can actually hold.
+//
+// The flame pool used to *be* the plume: forty-odd sprites a frame, three to six metres across, laid
+// down along the swept path. That is two and a half times what the pool holds, and a ring buffer that
+// wraps under live particles does not simply get dimmer — it strobes, because the slots it recycles
+// are the oldest still-drawn puffs, so the trail came out as a string of pearls spaced on the wrap
+// cadence. The continuous column is fx/plume.js's job now. What sprites do better than any analytic
+// shell is flicker, so that is all they are asked for: short life, small disc, no swept path.
+//
+// The smoke is the thing genuinely left behind. Its rate is set from the pool (cap ÷ mean lifetime
+// ÷ 60) rather than from the bell count, which is the difference between a column and a banded wall
+// of overlapping discs.
 function seedPlumes(F) {
+  // Below the pad's own dust cloud the exhaust is digging through gas thick enough to entrain
+  // something; by a few hundred metres there is nothing left to lift, and a trail that keeps its
+  // density all the way up is why the vehicle looked like it was towing a plume of fog.
+  const padF = THREE.MathUtils.clamp(1 - (F.alt - 12) / 120, 0, 1);
   for (const p of F.plumes) {
     if (p.power <= 0) continue;
-    // A vehicle crossing the sky covers tens of metres in one frame on a slow machine, so the trail
-    // has to be seeded along the swept path instead of at one point or it becomes a dotted chain.
-    const reach = _pq.copy(p.pos).sub(p.prev).length();
-    const steps = THREE.MathUtils.clamp(1 + Math.floor(reach / 6), 1, 8);
-    const n = Math.max(1, Math.round(2.0 * p.engines * quality.particles * (0.4 + p.power) / steps));
     // The ring of particles is laid out in the plane normal to that vehicle's own exhaust axis, so
     // the plume follows the lean instead of assuming the rocket is standing up.
     _pr.set(0, 1, 0);
     if (Math.abs(p.axis.y) > 0.98) _pr.set(1, 0, 0);
     _pt.crossVectors(p.axis, _pr).normalize();
     _pr.crossVectors(_pt, p.axis).normalize();
-    for (let s = 0; s < steps; s++) {
-      _pq.copy(p.prev).lerp(p.pos, (s + 1) / steps);
-      for (let i = 0; i < n; i++) {
-        const a = Math.random() * 6.283, r = 0.3 + Math.random() * 2.2;
-        _pv.copy(_pt).multiplyScalar(Math.cos(a) * r).addScaledVector(_pr, Math.sin(a) * r);
-        fx.flame.emit(
-          _pq.x + _pv.x + p.axis.x * 0.6, _pq.y + _pv.y + p.axis.y * 0.6, _pq.z + _pv.z + p.axis.z * 0.6,
-          p.axis.x * (15 + Math.random() * 8) + _pv.x * 1.4,
-          p.axis.y * (15 + Math.random() * 8) + _pv.y * 1.4,
-          p.axis.z * (15 + Math.random() * 8) + _pv.z * 1.4,
-          0.7 + Math.random() * 0.5, 3 + Math.random() * 3
-        );
-        if (Math.random() < 0.5) {
-          const rr = 3 + Math.random() * 4;
-          _pv.copy(_pt).multiplyScalar(Math.cos(a) * rr).addScaledVector(_pr, Math.sin(a) * rr);
-          fx.smoke.emit(
-            _pq.x + _pv.x, _pq.y + _pv.y + Math.random() * 2, _pq.z + _pv.z,
-            _pv.x * 2, 2 + Math.random() * 2.5, _pv.z * 2,
-            2.6 + Math.random() * 2, 6 + Math.random() * 6
-          );
-        }
-      }
+    const n = Math.max(1, Math.round(0.55 * p.engines * quality.particles * (0.4 + p.power)));
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * 6.283, r = 0.25 + Math.random() * 1.15;
+      _pv.copy(_pt).multiplyScalar(Math.cos(a) * r).addScaledVector(_pr, Math.sin(a) * r);
+      fx.flame.emit(
+        p.pos.x + _pv.x + p.axis.x * 0.6, p.pos.y + _pv.y + p.axis.y * 0.6, p.pos.z + _pv.z + p.axis.z * 0.6,
+        p.axis.x * (9 + Math.random() * 5) + _pv.x * 1.4,
+        p.axis.y * (9 + Math.random() * 5) + _pv.y * 1.4,
+        p.axis.z * (9 + Math.random() * 5) + _pv.z * 1.4,
+        0.16 + Math.random() * 0.12, 1.1 + Math.random() * 1.4
+      );
+    }
+    // Two different clouds, because the exhaust makes two different clouds. While the jet still
+    // reaches the deck it is turned sideways by the ground, and the visible mass rolls outward along
+    // the pad from the strike point — it does not rise with the vehicle. Once the deck is out of
+    // reach the only smoke left is the column the vehicle drags behind it.
+    const deckY = surfaceAt(p.pos.x, p.pos.z);
+    const mPad = Math.round(4.2 * quality.particles * padF * (0.4 + p.power));
+    for (let k = 0; k < mPad; k++) {
+      const a = Math.random() * 6.283, rr = 2 + Math.random() * 9;
+      const ux = Math.cos(a), uz = Math.sin(a);
+      fx.smoke.emit(
+        p.pos.x + ux * rr, deckY + 1 + Math.random() * 2.5, p.pos.z + uz * rr,
+        ux * (8 + Math.random() * 8), 2.5 + Math.random() * 3, uz * (8 + Math.random() * 8),
+        1.8 + Math.random() * 1.2, 7 + Math.random() * 7
+      );
+    }
+    // The wake is born past the flame's tip, not at the mouth. It used to be seeded between `prev`
+    // and `pos` — one frame of travel, 1.2 m at 70 m/s — so every sprite appeared in the same annulus
+    // around the throat, and since a sprite is brightest at birth the vehicle flew with a luminous
+    // collar welded to its base in every frame of the ascent. Physically the exhaust only becomes
+    // smoke once the column has slowed and entrained enough to condense, which is downstream of where
+    // the shell's own emission has already died. `axis` is the path direction to within the few degrees
+    // of attack a rocket ever flies at, retrograde burns included, so it does not need the finite
+    // difference to know which way is behind.
+    const mTrail = Math.max(1, Math.round(quality.particles * (0.9 + 1.7 * (1 - padF)) * (0.4 + p.power)));
+    // The shell's length, from the same law fx/plume.js poses with: mouth radius scales on the
+    // cluster, column length on the throttle.
+    const flame = 1.30 * Math.sqrt(Math.max(1, p.engines)) * (4.0 + 4.2 * p.power);
+    for (let k = 0; k < mTrail; k++) {
+      const d = flame * (0.52 + Math.random() * 0.72);
+      const a = Math.random() * 6.283, rr = 2 + Math.random() * 4;
+      _pv.copy(_pt).multiplyScalar(Math.cos(a) * rr).addScaledVector(_pr, Math.sin(a) * rr);
+      _pq.copy(p.pos).addScaledVector(p.axis, d);
+      if (_pq.y < deckY + 1) continue;
+      fx.smoke.emit(
+        _pq.x + _pv.x, _pq.y + _pv.y, _pq.z + _pv.z,
+        _pv.x * 0.7 + p.axis.x * 2, 0.6 + Math.random() * 1.4, _pv.z * 0.7 + p.axis.z * 2,
+        1.4 + Math.random(), 4 + Math.random() * 4
+      );
     }
   }
 }
@@ -1885,6 +1926,16 @@ function update(dt) {
     }
   } else updatePhotoCam(dt);
 
+  // The jet shells are posed after the camera block, not with the rest of the launch effects: their
+  // extinction is computed in the shader from the fog density, and the density the frame actually
+  // renders with is the height-attenuated one written just above. Reading the ground value instead
+  // would snuff a 1.4 km plume out at the exact moment the camera has climbed above the dust it is
+  // flying through, which is the one shot where the plume is the subject.
+  if (launch.phase === 'flight' && launch.flight) {
+    launchJets = launchJets || createJetPlumes(scene, base.launchRig);
+    launchJets.update(launch.flight.plumes, elapsed, camera, scene.fog);
+  }
+
   // Slender masts and lamp posts are not colliders, so the rig still parks behind them and the
   // whole frame turns into a black slab. Ghost anything sitting on the camera→rover line.
   {
@@ -2248,6 +2299,25 @@ window.__RSB = {
       lean: { booster: +(F.plumes[0].body.phi * 57.2958).toFixed(1), ship: +(F.plumes[1].body.phi * 57.2958).toFixed(1) },
       mouths: F.plumes.map(p => +p.mouth.toFixed(1)),
       touch: F.touch, log: F.log.map(e => [e.met.toFixed(1), e.id, e.alt, e.vel]) };
+  },
+  // Which layer of the exhaust is on screen. The geometric jet and the particle pools are drawn in the
+  // same tens of metres under the vehicle, so a frame that still reads as a string of pearls cannot be
+  // fixed by tuning the shell until the shell is proven to be there — and the three ways it can fail
+  // (never posed, too short, too faint at that range) look identical from a screenshot. `hide` takes
+  // one layer out of the render so the pair of frames says which layer was doing the drawing.
+  plume: (hide = null) => {
+    const count = (pool) => {
+      if (!pool) return 0;
+      let n = 0;
+      for (let i = 0; i < pool.count; i++) if (pool.life[i] < 1) n++;
+      return n;
+    };
+    for (const k of ['flame', 'smoke']) if (fx?.[k]) fx[k].points.visible = hide !== k;
+    return {
+      hidden: hide, jets: launchJets ? launchJets.probe(camera) : null,
+      alive: { flame: count(fx?.flame), smoke: count(fx?.smoke) },
+      cap: { flame: fx?.flame.count, smoke: fx?.smoke.count },
+    };
   },
   // Is the vehicle actually in the frame the player is looking at, and how much of it is there.
   // Range alone cannot answer that: a camera that tracks the wrong point can sit 200 m from a rocket

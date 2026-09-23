@@ -69,6 +69,42 @@ float rsbRipEnv( vec2 w ){
 }
 `;
 
+// ─── ripples only lie on ground that can hold them ───
+// Aeolian ripples are a feature of a *depositional* surface. Loose sand stops stacking at the angle
+// of repose — 32..34° on Mars, where the grain is dry and cohesionless — and above it the face is an
+// active slip plane or bare scarp, which is smooth or blocky but never combed. The ripple tile was
+// being laid on every facet regardless, so the crater rampart read as corduroy right up to its crest.
+// Proven by ablation on the same camera: forcing this gate to 1.0 (72b_nogate_87.5) sends the comb
+// climbing to the top of the wall, while the live build (72a_875) stops it partway up. The 160x100
+// histogram sees it too — the darkest luminance bin drops from 81 px to 7 px, which is the ripple
+// troughs leaving. (The earlier frames that looked identical were `rsbSweep`, which is mean-preserving
+// by construction; a stripe field is only visible in a histogram when it carries albedo.)
+//
+// The gate is the facet's own steepness, read from the world position's derivatives. That is the
+// mesh's ~1.4 m triangle normal, i.e. the macroscopic slope, and deliberately not the ripple-laden
+// shading normal — feeding the shading normal back in would make every trough flatter than its
+// crest and let the comb survive by grading itself.
+//
+// 28..36° (cos 0.883..0.809), open below and shut above. Calibrated against per-facet normals
+// measured off the drawn terrain mesh (96 800 triangles), which is the statistic this function
+// consumes. Binned into 2 m radial bands, each band reporting its median facet slope and the slope of
+// its steepest decile:
+//   r <= 90 m   median <= 3.6°, steepest decile <= 12.9°  -> gate is exactly 1.00 on all 27 392 facets
+//   r 118..128  median 19..25°, steepest decile 34.5..36.8° -> the crest-side third goes bare
+//   r 134..140  median 67..72° (the outer scarp, +8.9 m down to -22 m) -> fully bare
+// So the sand apron at the wall's foot keeps its grain, the flank loses it only where the flank is
+// actually over the repose angle, and the far side loses it entirely.
+//
+// Do not set this window from the "~38.9°" figure in height.js's `rimWall` note. That is a per-bearing
+// number about the wall's rising face; the same ground measured facet-by-facet, which is what a pixel
+// here sits on, is 19..25° median. A gate keyed to the larger statistic would strip the comb off
+// ground that is nowhere near the angle of repose.
+const RIP_SLOPE = /* glsl */`
+float rsbRipSlope( vec3 p ){
+  return smoothstep( 0.809, 0.883, abs( normalize( cross( dFdx( p ), dFdy( p ) ) ).y ) );
+}
+`;
+
 export function makeSandDetail(size = 512) {
   // All six trains run within ±6° of one another. Crossing them at wide angles — the obvious
   // thing to reach for — weaves a diamond lattice that reads as carpet, not sand; wind lays ripples
@@ -247,14 +283,16 @@ export function makeDriftMaterial() {
     vNormalMapUv = rsbSandUv( vec2( rsbDrift.x, -rsbDrift.z ) );
   #endif`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 rsbDriftF;\n' + SAND_WARP + '\nfloat gDrift = 1.0;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 rsbDriftF;\n' + SAND_WARP + RIP_SLOPE + '\nfloat gDrift = 1.0;')
       .replace('#include <map_fragment>', `vec3 rsbDriftBase = diffuseColor.rgb;
   #include <map_fragment>
   // The same Nyquist window the terrain fades its ripples with, so a drift never keeps grain after
   // the desert beside it has lost theirs to the mip chain — and the same world-space envelope, so a
-  // mound crossing into a scoured patch loses grain at exactly the same line the ground does.
+  // mound crossing into a scoured patch loses grain at exactly the same line the ground does. And
+  // the same slope gate: a mound parked on the rampart's flank would otherwise stay combed while
+  // the slope it sits on went bare, which is the one seam this material exists to hide.
   gDrift = ( 1.0 - smoothstep( 0.0028, 0.0095, fwidth( vMapUv.x ) + fwidth( vMapUv.y ) ) )
-         * rsbRipEnv( rsbDriftF.xz );
+         * rsbRipEnv( rsbDriftF.xz ) * rsbRipSlope( rsbDriftF );
   diffuseColor.rgb = mix( rsbDriftBase * vec3( 0.92, 0.895, 0.88 ), diffuseColor.rgb, gDrift );`)
       .replace('#include <normal_fragment_maps>', `#ifdef USE_NORMALMAP_TANGENTSPACE
   vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
@@ -262,7 +300,7 @@ export function makeDriftMaterial() {
   normal = normalize( tbn * mapN );
 #endif`);
   };
-  mat.customProgramCacheKey = () => 'rsb-drift-sand';
+  mat.customProgramCacheKey = () => 'rsb-drift-sand-2';
   return mat;
 }
 
@@ -657,7 +695,7 @@ function applyPaving(mat) {
   // the sort of thing that costs an iGPU its frame budget.
   vDeck = aDeck;`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vDeck;\n' + PARS + SAND_WARP)
+      .replace('#include <common>', '#include <common>\nvarying float vDeck;\n' + PARS + SAND_WARP + RIP_SLOPE)
       .replace('#include <map_fragment>', `#include <map_fragment>
   // The 512² ripple tile spans 11.5 m, so its trains run from 0.94 to 5.0 cycles per metre and the
   // 20 cm one falls below Nyquist as soon as a pixel covers more than half of it. Past that point
@@ -667,7 +705,7 @@ function applyPaving(mat) {
   // The window is the Nyquist limit of the *fastest* train, not a taste cutoff: 3.2 cm per pixel in,
   // 11 cm out. The old 4.6–18.5 cm window was tuned to a spectrum whose coarsest ridge was 1.07 m.
   gRipple = ( 1.0 - smoothstep( 0.0028, 0.0095, fwidth( vMapUv.x ) + fwidth( vMapUv.y ) ) )
-          * rsbRipEnv( vWP.xz );
+          * rsbRipEnv( vWP.xz ) * rsbRipSlope( vWP );
   gPave = rsbPave( vWP.xz, max( vPave, vDeck ) );
   // Where an avenue meets a district apron the plate wins, so the grading terminates at the rim of
   // the pad it serves instead of stitching a dirt seam straight through a landing pad.
@@ -718,7 +756,7 @@ function applyPaving(mat) {
 #endif`);
   };
   // three keys its program cache on the shader source; a patched material must not share one
-  mat.customProgramCacheKey = () => 'rsb-paved-terrain';
+  mat.customProgramCacheKey = () => 'rsb-paved-terrain-2';
   return u;
 }
 
@@ -850,7 +888,22 @@ export function createTerrain(scene) {
 // so the dunes now use it too: same stone as the rampart, one merged batch for all the basalt on the
 // island, and — because that kit's footprint *is* the disc table in rim_rock.js rather than a guess
 // at it — the scatter inherits C3 for free instead of approximating a silhouette with a box.
+// Gravel's domain, which reaches over the rampart: a 0.4 m chip on the scarp is scree, and no frame
+// reads it as a floating boulder. The boulders are bounded by SAND_R below instead.
 const SCATTER_R = ISLAND.rim + 12;   // 144 m: past the crest, inside the mesh's 150 m half-width
+// Where a boulder is allowed to stand, which is not the same question as where a chip of gravel is.
+// The rampart's toe is `ISLAND.radius - 5.5 ± 2.5`, so 110 m is the nearest ground the wall starts
+// on, and everything outside it is scarp the rover can never reach. Measured before this line
+// existed: 37 of the 64 stones drawn out to SCATTER_R landed at r >= 108 — 29 of them on the upper
+// flank and crest, 7 on the far-side scarp 15..26 m *below* the island. Every one of them was seated
+// correctly (worst sole-to-ground standoff 0.47 m), and every one of them still read as a rock
+// floating against the sky, because a low eye on the sand sheet looks over the concave lower flank
+// and sees nothing under the stone. A boulder cannot be a silhouette prop on ground nobody can
+// stand on; it is only ever an artifact there.
+const SAND_R = ISLAND.radius - 8;    // 110 m: the sand sheet, and the whole domain of the scatter
+// Checked again after the line above landed, off the collider set the finished build exports: 30
+// stones, centres spanning r 53.3..107.1, and the widest body — centre plus its own footprint —
+// reaching 108.74, with none past 110. The old frame's artifact is gone by construction, not by luck.
 export async function createRocks(scene, avoid = []) {
   const kit = await loadModel('rim_rock');   // already fetched by buildBase's hero list
   // A weighted bag rather than a uniform pick. Six archetypes also means six silhouettes — with the
@@ -877,9 +930,15 @@ export async function createRocks(scene, avoid = []) {
   let guard = 0;
   // Rejection is the cost of doing business here — paved ground and steep faces are most of the
   // island — so the budget has to be far above the count it is chasing.
-  while (placed.length < 64 && guard++ < 8000) {
+  //
+  // 30, not the 64 this ran at when its domain was the whole mesh. The count is set by the ground
+  // the stones are now allowed to sit on: 28 of the old 64 fell inside r = 110, so keeping the
+  // sand sheet at roughly the density the island was accepted at means ~30 stones over that disc,
+  // and the other 34 were only ever standing on the rampart. 30 is what the build actually places —
+  // the rejection budget is not the binding constraint, so the domain is a bound and not a wish.
+  while (placed.length < 30 && guard++ < 8000) {
     const a = rand() * Math.PI * 2;
-    const r = 26 + Math.pow(rand(), 0.62) * (SCATTER_R - 26);
+    const r = 26 + Math.pow(rand(), 0.62) * (SAND_R - 26);
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (gradedAt(x, z) > 0.02) continue;             // no boulder on engineered ground
     if (surfaceSlope(x, z) > 0.5) continue;          // one clinging to a 27° face reads as a mistake
@@ -898,6 +957,10 @@ export async function createRocks(scene, avoid = []) {
     // the plan, so any anisotropic horizontal scale would make this table a lie again.
     const rad = spec.discs.reduce((m, [dx, dz, dr]) =>
       Math.max(m, Math.hypot(dx, dz) * s + dr * s), 0);
+    // The *body* sorts inside the toe, not the centre: the largest clast measured 3.32 m across, so
+    // one landing with its middle at 107 still has most of itself standing on the scarp. Rejecting
+    // here is what makes the line above a rule rather than a suggestion.
+    if (r + rad > SAND_R) continue;
     let ok = true;
     // What has to be spaced is the gap, not the centres: two discs 2 m apart still hold the 3.2 m
     // body between them, and the deadlock scan calls that a slot.
@@ -923,6 +986,14 @@ export async function createRocks(scene, avoid = []) {
     // Measured seating, not a constant: aim the lowest point of the transformed stone a little under
     // the surveyed surface, so the sole seals into the sand at any tilt instead of standing off it at
     // its corners the way a flat chord does.
+    //
+    // The residual that correction cannot reach, measured on the finished 30 by raycasting the drawn
+    // terrain up through each stone's own lowest 0.3 m band of vertices: worst standoff 0.357 m, and
+    // at those points the drawn mesh and the sampled grid are the same height to within the 0.01 m
+    // the readout reports, so the number does not belong to whichever of the two is a lie. It is not
+    // the seating missing the ground it was aimed at either — it is a rigid sole spanning the flanks
+    // of ripple dunes, which is what a metre-scale block does in the field, and the only way to
+    // remove it is to deform the stone, i.e. to stop using the kit that carries the silhouette.
     const bb = new THREE.Box3().setFromObject(o);
     o.position.y += (surfaceAt(x, z) - 0.045 * spec.h * sy) - bb.min.y;
     o.updateMatrixWorld(true);
@@ -939,10 +1010,12 @@ export async function createRocks(scene, avoid = []) {
     }
   }
   scene.add(group);
-  // 64 boulders are ~190 draw calls across the main and shadow passes, and the measured cost of the
-  // scatter was almost entirely that submission, not its triangles. The rocks never move, so they go
-  // through the same collapsing as the rest of the static base: measured after the merge, the whole
-  // scatter is one mesh on one material and costs 2 draw calls (1 039 → 1 041).
+  // Every stone would be its own mesh in both the main and the shadow pass, and the measured cost of
+  // the scatter was almost entirely that submission, not its triangles. The rocks never move, so they
+  // go through the same collapsing as the rest of the static base. Reproduce with: hide and show
+  // `rock-scatter` across two otherwise identical composer frames with info.autoReset off, camera at
+  // spawn — the 30 stones come to one mesh on one material and cost 2 of a frame's 1 556 draw calls
+  // and 93 960 of its 2 055 529 triangles, i.e. 46 980 drawn once and again into the shadow map.
   mergeInto(group);
   return solids;
 }

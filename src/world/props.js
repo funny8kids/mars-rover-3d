@@ -198,7 +198,20 @@ export async function buildBase(scene, quality) {
   // `rim_rock` is a third of the same kind, and the reason is harder: its three nodes are
   // alternative clasts, and each one's collision discs in rim_rock.js are measured about *that
   // node's* origin. Baking the kit into one mesh would delete the nodes the rampart clones from.
-  const keepsParts = new Set(['crystal', 'barrier_kit', 'rim_rock']);
+  const keepsParts = new Set(['crystal', 'barrier_kit', 'rim_rock', 'starship_stack']);
+  // `starship_stack` is a fifth of the same kind, for the hardest reason to see: the launch flies
+  // it as two vehicles, so the export carries `booster` and `ship` as nodes and baking the root
+  // would weld them back into one buffer no animation can pull apart. Each body collapses to one
+  // mesh per material on its own, which keeps the draw-call win and the separation.
+  // The bodies are looked up by name rather than read off `children`, and that distinction is the
+  // whole bug: the template's outer node is the glTF scene wrapper, so treating `children[0]` as a
+  // body flagged the wrapper, left both vehicles' parts exposed, and the pad's own merge pass then
+  // pulled 193 parts from the two bodies into shared buffers welded across the seam — a stack that
+  // could never come apart while every count still looked healthy.
+  for (const key of ['booster', 'ship']) {
+    const body = models.starship_stack?.getObjectByName(key);
+    if (body) { noMerge(body); mergeInto(body); }
+  }
   for (const [name, root] of Object.entries(models)) {
     if (root && !keepsParts.has(name)) mergeInto(root);
   }
@@ -587,6 +600,8 @@ export async function buildBase(scene, quality) {
   const teleports = [];
   const padAudit = [];
   let showBeams = null;
+  // The two bodies of the launch stack, filled where the stack is placed. See the LAUNCH district.
+  let launchRig = null;
   let shipGroup = null;
 
   const zoneY = (zz) => heightAt(zz.pos[0], zz.pos[1]);
@@ -1026,9 +1041,26 @@ export async function buildBase(scene, quality) {
     // the pad itself has to supply: the deck the mount stands on, and the engine bells that
     // hang three metres below the vehicle's own datum.
     const SHIP_H = 71.4, SHIP_R = 5.1;
+    // Where the export cuts the loft, matched to STAGE in tools/blender/build_starship.py. Every
+    // fitting on the stack has to be assigned to a side by this line, or staging leaves half of them
+    // hanging in mid-air welded to the wrong vehicle.
+    const STAGE_H = 38.4;
     const ship = new THREE.Group();
     const stack = cloneModel(models['starship_stack']);
     stack.traverse(shade);
+    // The two vehicles the export was authored as. Mated, both sit at their authored offset and the
+    // silhouette is the asset itself; from staging onward each carries its own motion, which is the
+    // only reason the launch can show a ship pulling away from a booster instead of a decal sliding
+    // up a cylinder. A stack that lost its body nodes is a stale asset, so this fails loudly — a
+    // silent fallback would let the sequence "work" while nothing separates.
+    // Spelled `upper` here rather than `ship`: this file already has a `ship`, and it is the pad
+    // mount that holds the whole stack. The GLB node keeps its authored name `ship` — that is the
+    // Starship stage; `base.shipGroup` is the thing it rides on.
+    const booster = stack.getObjectByName('booster');
+    const upper = stack.getObjectByName('ship');
+    if (!booster || !upper) {
+      throw new Error('starship_stack has no booster/ship nodes — rebuild tools/blender/build_starship.py');
+    }
     // On its mount, not in it: the Raptor field is three metres of bell and the pad deck
     // would swallow the whole engine section if the stack sat at grade.
     ship.position.set(px, py + 2.9, pz);
@@ -1036,11 +1068,19 @@ export async function buildBase(scene, quality) {
     const RING_HUES = [0x3fd9ff, 0xff8a3c, 0xa05cff, 0x3fffc9, 0xff4d6d, 0xffd166];
     const ringGeo = new THREE.TorusGeometry(SHIP_R + 0.1, 0.1, 6, 40);
     for (const [i, f] of [0.05, 0.18, 0.33, 0.5, 0.68, 0.88].entries()) {
+      const y = f * SHIP_H;
       const tr = new THREE.Mesh(ringGeo, M.shipLightRing.clone());
       tr.material.color.setHex(RING_HUES[i]); tr.material.emissive.setHex(RING_HUES[i]);
-      tr.rotation.x = Math.PI / 2; tr.position.y = f * SHIP_H; tr.visible = false; noMerge(tr); ship.add(tr);
+      tr.rotation.x = Math.PI / 2; tr.position.y = y; tr.visible = false; noMerge(tr);
+      (y < STAGE_H ? booster : upper).add(tr);
       lightStrips.push(tr.material); lightRings.push(tr);
     }
+    launchRig = { stack, mount: ship, booster, upper,
+      pad: [px, py, pz], y: py, h: SHIP_H, r: SHIP_R, seam: STAGE_H,
+      // The separation animation moves each body off its rest offset. Reading those offsets now,
+      // before anything has touched them, is the only way to know what "mated" was; hardcoding zero
+      // would silently re-derive the whole 71 m stack's stance from an assumption.
+      rest: { booster: booster.position.clone(), upper: upper.position.clone() } };
     G.add(ship); shipGroup = ship;
     lot('starship', px, pz, 9.2, 9.2);
 
@@ -2022,7 +2062,7 @@ export async function buildBase(scene, quality) {
   scene.add(G);
   const flamePoint = new THREE.Vector3(SHIP_POS[0], 1.6, SHIP_POS[1]);
   return {
-    group: G, colliders, infoZones, samples, sparkPoints, beacons, lightStrips, lightRings, showBeams, showBeamMats, shipGroup, teleports, padGlow, heroLights, occluders, gridRigs, crystalMat: M.crystal,
+    group: G, colliders, infoZones, samples, sparkPoints, beacons, lightStrips, lightRings, showBeams, showBeamMats, shipGroup, launchRig, teleports, padGlow, heroLights, occluders, gridRigs, crystalMat: M.crystal,
     plan: auditPlan, lots,
     leakPoint: new THREE.Vector3(LEAK_POS[0], heightAt(LEAK_POS[0], LEAK_POS[1]) + 1.8, LEAK_POS[1]),
     flamePoint,

@@ -204,9 +204,25 @@ def build_starship():
     purge()
     root = empty("starship")
 
-    # ── airframe: one lofted body, barrel through ogive ──────────────────────────
-    add(revolve("hull", hull_stations(), hull_r, P["skin"],
+    # ── airframe: the same loft, but carried as two bodies ───────────────────────
+    # The stack leaves the pad as one silhouette and crosses the sky as two, so the
+    # barrel is split on the line this file already documents as the vehicle boundary:
+    # STAGE, the top of the interstage, where the ship's aft skirt starts and the tile
+    # line is. Splitting the *loft* rather than bisecting the exported mesh puts a ring
+    # exactly on the interface, so both rims are welded circles instead of a torn band,
+    # and each half's tile lattice restarts at that weld — which is where a real girth
+    # seam is.
+    zs = hull_stations()
+    add(revolve("hull_booster", [z for z in zs if z < STAGE] + [STAGE], hull_r, P["skin"],
                 verts=64, uv=uvfor("steel", R), shade=46))
+    add(revolve("hull_ship", [STAGE] + [z for z in zs if z > STAGE], hull_r, P["skin"],
+                verts=64, uv=uvfor("steel", R), shade=46))
+    # Both halves are tubes, and a tube you can see the inside of is a hole the moment
+    # they part. Each interface rim therefore gets the structure a real vehicle has
+    # there: the booster's interstage is roofed over, and the ship hangs its three aft
+    # Raptors off its own bulkhead.
+    add(cyl("booster_bulkhead", R - 0.02, 0.10, (0, 0, STAGE - 0.10), P["struct"], br=0, verts=64))
+    add(cyl("ship_aft_bulkhead", R - 0.02, 0.10, (0, 0, STAGE + 0.10), P["burnt"], br=0, verts=64))
     # the aft skirt takes every Raptor start: straw-blue oxide at the flame edge
     add(revolve("aft_skirt", ring_stations(0.0, 4.6, 16), lambda z: hull_r(z) + 0.022,
                 P["flame"], verts=64, uv=uvfor("burnt", R + 0.022), shade=46))
@@ -308,10 +324,35 @@ def build_starship():
     add(revolve("wordmark", [9.0, 14.0], lambda z: R + 0.065, P["word"], verts=20,
                 arc=1.6, a0=-math.pi / 2 - 0.8, uv=(1 / 1.6, 1 / 5.0), shade=60))
 
+    # ── two bodies, not one pile of parts ────────────────────────────────────────
+    # The stack leaves the pad as one silhouette and crosses the sky as two, so the
+    # export carries the split as actual nodes. Every part is filed by the prefix its
+    # author used; a name that matches nothing fails the build instead of quietly
+    # welding itself to the wrong vehicle, because a forgotten part would be the one
+    # thing left standing on the pad when the ship goes.
+    booster = empty("booster")
+    ship = empty("ship")
+    booster.parent = root
+    ship.parent = root
+    BOOTSIDE = ("hull_booster", "booster_bulkhead", "aft_skirt", "raptor_o", "raptor_c",
+                "interstage", "stage_bolt", "gas_bell", "grid_fin", "cupper", "feed_pipe",
+                "ladder_rail", "ladder_rung", "wordmark")
+    SHIPSIDE = ("hull_ship", "ship_aft_bulkhead", "raptor_s", "tps_", "flap_", "bay_door",
+                "door_rail", "rcs_", "window")
+    counts = {"booster": 0, "ship": 0}
     for o in PARTS:
-        o.parent = root
+        side = [k for k, table in (("booster", BOOTSIDE), ("ship", SHIPSIDE))
+                if o.name.startswith(table)]
+        if len(side) != 1:
+            raise RuntimeError("part %r matches %s — the body table needs exactly one entry"
+                               % (o.name, side or "no body"))
+        o.parent = booster if side[0] == "booster" else ship
+        counts[side[0]] += 1
+    booster["height"] = STAGE
+    ship["height"] = SHIP
     root["height"] = TIP
     root["radius"] = R + 0.6
+    print("BODIES", counts, "parts", len(PARTS))
     return root
 
 

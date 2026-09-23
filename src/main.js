@@ -2052,6 +2052,34 @@ window.__RSB = {
   // which no phase-pinning standoff can do from outside the object
   stormRef: () => stormField,
   phys: () => phys, env: () => env, launchRef: launch,
+  // The stack as two vehicles. The merge pass is allowed to collapse each body to a handful of
+  // meshes, so "how many nodes" proves nothing; what the separation depends on is that every part
+  // rides with exactly one body. `stray` holds anything welded at the seam instead — it has to come
+  // back empty, and a non-empty list means a merge pass got in front of the body split again.
+  launchRig: () => {
+    const r = base?.launchRig;
+    if (!r) return null;
+    const body = (o) => {
+      const b = new THREE.Box3().setFromObject(o);
+      const v = new THREE.Vector3(); o.getWorldPosition(v);
+      let m = 0, verts = 0;
+      o.traverse(x => { if (x.isMesh) { m++; verts += x.geometry.attributes.position.count; } });
+      return { y: [+b.min.y.toFixed(1), +b.max.y.toFixed(1)], world: v.y.toFixed(1),
+        meshes: m, verts, off: o.position.toArray().map(n => +n.toFixed(2)) };
+    };
+    // The invariant is not "two nodes exist", it is "no visible thing is left outside them": a mesh
+    // under the shared trunk is welded across the seam and will shear or hang in mid-air at staging.
+    // Measured from the bodies' own parent, because the instance's outer node is the glTF wrapper.
+    const trunk = r.booster.parent;
+    const stray = [];
+    trunk.traverse(o => {
+      if (!o.isMesh) return;
+      for (let p = o; p && p !== trunk; p = p.parent) if (p === r.booster || p === r.upper) return;
+      stray.push(`${o.name || 'mesh'}:${o.geometry.attributes.position.count}v`);
+    });
+    return { seam: r.seam, pad: r.pad.map(v => +v.toFixed(2)),
+      booster: body(r.booster), upper: body(r.upper), stray };
+  },
   warp: (x, z, face, search) => warpTo(x, z, face, search ?? 8),
   pois: () => interactivePoints(),
   sampleList: () => (base?.samples || []).map(s => [Math.round(s.x), Math.round(s.z), !!s.taken]),

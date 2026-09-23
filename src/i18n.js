@@ -144,7 +144,7 @@ const EN = {
   倒计时: 'COUNTDOWN', 任务时间: 'MET', 弹道: 'TRK', 倾角: 'TILT', 高度: 'ALT', 速度: 'VEL',
   马赫: 'MACH', 加速度: 'ACCEL', 垂速: 'V/S', 距台: 'TO PAD', 状态: 'STATE',
   上面级: 'UPPER STG', 助推级: 'BOOSTER', '高度 — 时间剖面': 'ALTITUDE — TIME PROFILE',
-  回收: 'CAUGHT', 爬升: 'CLIMB', 制动: 'BRAKE', 返场: 'RETURN',
+  回收: 'CAUGHT', 爬升: 'CLIMB', 制动: 'BRAKE', 返场: 'RETURN', 滑行: 'COAST',
   '⚠ 沙尘暴来袭…': '⚠ Dust storm incoming…',
   '沙尘消散 · 天空恢复': 'The dust has settled — the sky is clear',
   // ── the dust ledger: a front deposits, the arrays pay, the rover's lance clears ──

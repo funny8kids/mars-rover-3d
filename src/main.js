@@ -1020,7 +1020,7 @@ let launchJets = null;
 function launchBeat(b) {
   const F = launch.flight, rig = base.launchRig;
   const line = getLang() === 'en' ? b.en : b.zh;
-  launchQueue.push(`◦ ${line} · T+${b.t.toFixed(0)}s`);
+  launchQueue.push(`◦ ${line} · T+${b.label}s`);
   if (b.id === 'ignition') {
     // The shock front, not the cloud. Overpressure crosses the deck faster than the condensed
     // vapour it pushes, so this ring deliberately outruns `blast` in seedPlumes — the two reading
@@ -2345,7 +2345,11 @@ window.__RSB = {
     return { phase: launch.phase, done: F.done, separated: F.separated, landed: F.landed,
       tel: { met: +t.met.toFixed(1), alt: +t.alt.toFixed(0), vel: +t.vel.toFixed(1), accel: +t.accel.toFixed(1),
         down: +t.down.toFixed(0), mach: +t.mach.toFixed(2), gamma: +t.gamma.toFixed(3),
-        litBooster: t.litBooster, litUpper: t.litUpper },
+        litBooster: t.litBooster, litUpper: t.litUpper,
+        // Whether the return's field is actually burning, and both throttles. The whole point of the
+        // burn windows is that the fire in the frame and the lamps on the panel answer to the same
+        // clock, and a claim about that is only checkable if the frame carries the state out.
+        bBurn: F.bBurn, thr: [+F.bThr.toFixed(2), +F.uThr.toFixed(2)], bVs: +t.bVs.toFixed(1) },
       bodies: { booster: r3(F.plumes[0].body.node.position), ship: r3(F.plumes[1].body.node.position) },
       // Degrees off vertical, per body. A landed booster's position says nothing about whether it is
       // standing up, and the one thing that makes a parked first stage read wrong is the lean.

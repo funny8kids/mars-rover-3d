@@ -61,7 +61,21 @@ const THRUST_TABLE = [
   [38, 46, 8.0],      // thinning air, thinning mass
 ];
 const SECO_AT = 46;               // mission second the ship's engines shut down
-const STAGE_AT = 22;              // the hot-staging beat, 2 s after the ship lights
+// The burn windows. Hot staging in the order it really happens: the ship's three light while the
+// booster's field is still pushing, and the booster's last frame of pushing is 0.4 s later. So no bell
+// is ever on screen that the log has not lit, and the stack never loses its fire across the split —
+// the 4 m/s² row in THRUST_TABLE is flown while the boosters are already dark, which is the whole
+// reason the vehicle goes on accelerating on a field the sequence has just shut down. After separation
+// the return coasts engines-cold while the vehicle turns itself over, and only then relights: that is
+// the booster's own gap, and the one the sequence announces. Walked frame by frame the two throttles
+// are never both cold between the hold-down ramp and the booster's touchdown — the longest cold
+// streak in the flight is 2.47 s, and it begins 0.06 s after the landing has already happened.
+// The relit booster is the full field rather than a triplet because the clamp the guidance flies
+// against, `RETURN_MAX_ACCEL`, is a full-field number; three bells would make that a false claim.
+const MECO_AT = 20;
+const SHIP_IGNITION_AT = MECO_AT - 0.4;   // s, the overlap that makes the staging hot
+const STAGE_AT = 22;              // the hot-staging beat, 1.6 s after the ship lights
+const RELIGHT_AT = STAGE_AT + 3;  // s, boostback burn start, once the flip is done
 // How far the vehicle leans over, and how fast it starts to. Tied to altitude rather than time
 // because a gravity turn *is* the vehicle leaning into thinning air, and an altitude law gives the
 // same arc at 30 fps and at 144.
@@ -74,12 +88,18 @@ const GAMMA_MAX = 0.19, GAMMA_ALT = 900;
 const BEATS = [
   { t: 7, id: 'maxq', zh: '最大动压', en: 'Max-Q' },
   { t: 13, id: 'throttleup', zh: '通过最大动压 · 推力回升', en: 'Throttle up' },
-  { t: 20, id: 'meco', zh: '助推级主发动机关机', en: 'Boost MECO' },
-  { t: 20.4, id: 'shipignition', zh: '飞船发动机点火', en: 'Ship ignition' },
+  { t: SHIP_IGNITION_AT, id: 'shipignition', zh: '飞船发动机点火', en: 'Ship ignition' },
+  { t: MECO_AT, id: 'meco', zh: '助推级主发动机关机', en: 'Boost MECO' },
   { t: STAGE_AT, id: 'staging', zh: '级间分离', en: 'Staging' },
-  { t: STAGE_AT + 6, id: 'boostback', zh: '助推级返场点火', en: 'Boostback' },
+  { t: RELIGHT_AT, id: 'boostback', zh: '助推级返场点火', en: 'Boostback' },
   { t: SECO_AT, id: 'seco', zh: '主发动机关机 · 飞出稠密大气', en: 'SECO' },
 ];
+
+// How a beat's mission second is written. Whole seconds stay bare — that is what a mission log looks
+// like — and anything else keeps its tenth, because hot staging parks two beats 0.4 s apart and rounding
+// both to `T+20s` reads as one event announced twice. The string is built where the beat fires so the
+// toast and the panel's log rail cannot disagree about the same event.
+const metLabel = (t) => { const s = t.toFixed(1); return s.endsWith('.0') ? s.slice(0, -2) : s; };
 
 // The word the instrument panel shows beside MET. It is indexed off the same clock the beats fire on,
 // so a phase can never appear on the panel without having happened in the sim — and it is a table
@@ -87,7 +107,7 @@ const BEATS = [
 // know where in the flight we are.
 const PHASES = [
   [0, '压紧点火'], [HOLD_DOWN, '上升'], [7, '最大动压'], [13, '推力回升'],
-  [20, '助推关机'], [STAGE_AT, '二级分离'], [28, '助推返场'], [SECO_AT, '入轨'],
+  [MECO_AT, '助推关机'], [STAGE_AT, '二级分离'], [RELIGHT_AT, '助推返场'], [SECO_AT, '入轨'],
 ];
 const phaseAt = (t) => {
   let p = PHASES[0][1];
@@ -102,9 +122,10 @@ function accelAt(t) {
 
 export function createLaunch(rig, launch) {
   const seam = rig.seam, top = rig.h;
-  // Pivot each body about, in stack-local metres: a mated stack balances low because the loaded
-  // booster is the mass, a lone ship balances near its own middle. Rotating a rocket about anything
-  // other than its balance point is the hinge-door look this replaces.
+  // Both halves of a mated stack lean about the same point: until the bolts release there is one
+  // vehicle, and one vehicle has one balance point. Each body takes its own only from the split —
+  // a lone ship balances near its own middle, a lone booster lower down because that is where its
+  // mass is. Rotating a rocket about anything other than its balance point is the hinge-door look.
   const COM = {
     mated: seam * 0.46,
     booster: seam * 0.52,
@@ -138,9 +159,10 @@ export function createLaunch(rig, launch) {
     return y;
   };
 
-  // One body's pose: `d` displaces its datum from the mount, `phi` leans it about PIVOT_AXIS.
+  // One body's pose: `d` displaces its datum from the mount, `phi` leans it about PIVOT_AXIS, and `off`
+  // carries whatever a pivot change would otherwise have thrown the body by (see `setPivot`).
   const makeBody = (node, rest, pivot) => ({
-    node, rest, pivot, d: new THREE.Vector3(), phi: 0,
+    node, rest, pivot, off: new THREE.Vector3(), d: new THREE.Vector3(), phi: 0,
     pos: new THREE.Vector3(), q: new THREE.Quaternion(),
     apply() {
       // Pivoting a node about a point it does not own is the whole trick: the parts hang off the node
@@ -155,11 +177,26 @@ export function createLaunch(rig, launch) {
       // with a 69 m gap between them from the first frame of the hold-down.
       _q.setFromAxisAngle(PIVOT_AXIS, this.phi);
       _b.set(0, this.pivot, 0);
-      _a.copy(rest).sub(_b).applyQuaternion(_q).add(_b).add(this.d);
+      _a.copy(rest).sub(_b).applyQuaternion(_q).add(_b).add(this.d).add(this.off);
       this.pos.copy(_a);
       this.q.copy(_q);
       this.node.position.copy(this.pos);
       this.node.quaternion.copy(this.q);
+      return this;
+    },
+    // Hand this body a new rotation centre without moving it. `pivot` is where it leans about, and the
+    // honest answer changes mid-flight: the upper half of a mated stack balances at the mated vehicle's
+    // centre of mass, but once it is alone it is a ship, and a ship rotates about its own. Switching the
+    // number alone is a teleport — at the split it would throw the ship 3.7 m sideways, because the
+    // position the transform produces is `d + (I − R)·pivot`, and that term is exactly what changes.
+    // Banking the difference into a constant `off` buys the real thing instead: the body keeps its pose
+    // on the frame of the switch, and from the next frame it leans about its own balance point.
+    setPivot(p) {
+      _q.setFromAxisAngle(PIVOT_AXIS, this.phi);
+      _a.set(0, this.pivot - p, 0);
+      _b.copy(_a).applyQuaternion(_q);
+      this.off.sub(_b).add(_a);
+      this.pivot = p;
       return this;
     },
     // World metres of a point `y` up the stack, carried by this body. `at()` answers in the frame
@@ -169,7 +206,7 @@ export function createLaunch(rig, launch) {
     // The body's own nose direction. Exhaust leaves the other way; a rocket accelerates along it.
     axis(out) { return out.copy(UP).applyQuaternion(this.q); },
   });
-  const ship = makeBody(rig.upper, rig.rest.upper, COM.upper);
+  const ship = makeBody(rig.upper, rig.rest.upper, COM.mated);
   const booster = makeBody(rig.booster, rig.rest.booster, COM.mated);
 
   const L = {
@@ -184,10 +221,16 @@ export function createLaunch(rig, launch) {
     engines: rig.engines,
     litBooster: 0,
     litUpper: 0,
+    // How hard each field is actually pushing, 0..1. The plumes, the particle budget and the panel all
+    // read these instead of `ramp`, which is only ever the *start* ramp and stays at 1 for the whole
+    // flight once the stack is off the deck.
+    bThr: 0,
+    uThr: 0,
+    bBurn: false,
     separated: false,
     landed: false,
     fired: new Set(),
-    log: [],                                // {met, id, zh, en, alt, vel} — the event record
+    log: [],                                // {met, label, id, zh, en, alt, vel} — the event record
     pending: [],                            // beats since the last drain
     path: new THREE.Vector3(),              // the ship's datum, pad-relative metres
     bPos: new THREE.Vector3(),              // the booster's, once it is on its own
@@ -199,7 +242,7 @@ export function createLaunch(rig, launch) {
     shipAim: new THREE.Vector3(),           // world metres of whatever the camera should look at
     tel: { met: 0, alt: 0, vel: 0, accel: 0, down: 0, mach: 0, gamma: 0, ramp: 0, phase: PHASES[0][1],
       litBooster: 0, litUpper: 0, separated: false, engines: rig.engines,
-      bAlt: 0, bVs: 0, bDown: 0, bTGo: 0, landed: false },
+      bAlt: 0, bVs: 0, bDown: 0, bTGo: 0, landed: false, bBurn: false },
     // The flight as actually flown, as flat [mission seconds, altitude metres] pairs. Sampled by the
     // integrator rather than reconstructed by the panel, so the curve on the plot is the curve the mesh
     // drew. Time is the horizontal axis and not ground distance because the guidance keeps the climb
@@ -221,8 +264,9 @@ export function createLaunch(rig, launch) {
   const fire = (id, t, zh, en) => {
     if (L.fired.has(id)) return;
     L.fired.add(id);
-    L.log.push({ met: t, id, zh, en, alt: +L.alt.toFixed(1), vel: +L.v.toFixed(1) });
-    L.pending.push({ id, t, zh, en });
+    const label = metLabel(t);
+    L.log.push({ met: t, label, id, zh, en, alt: +L.alt.toFixed(1), vel: +L.v.toFixed(1) });
+    L.pending.push({ id, t, label, zh, en });
   };
   L.drain = () => { const p = L.pending.slice(); L.pending.length = 0; return p; };
 
@@ -286,8 +330,14 @@ export function createLaunch(rig, launch) {
       _b.y += G_MARS;                              // the field carries the vehicle's weight, then steers
       const mag = _b.length();
       if (mag > RETURN_MAX_ACCEL) _b.multiplyScalar(RETURN_MAX_ACCEL / mag);
+      // The demand above is what the *aim* is, and the aim is flown from the first separated frame:
+      // it is what turns the vehicle over. The burn is not. Thrust starts on the clock, so the coast
+      // between staging and the relight is spent falling, and the sequence never shows a vehicle
+      // pushing on bells its own log shut down two seconds ago.
+      L.bBurn = t >= RELIGHT_AT;
+      L.bThr = L.bBurn ? Math.min(1, mag / RETURN_MAX_ACCEL) : 0;
       L.bVel.y -= G_MARS * dt;
-      L.bVel.addScaledVector(_b, dt);
+      if (L.bBurn) L.bVel.addScaledVector(_b, dt);
       L.bPos.addScaledVector(L.bVel, dt);
       // Engines point where the thrust does. This is the whole flip: guidance asks for a retro-burn
       // while the booster is still climbing away, so it turns itself around on its own.
@@ -315,6 +365,7 @@ export function createLaunch(rig, launch) {
       // is what the first frame-checked arrival did: it stood on the deck visibly off vertical for
       // the whole rest of the sequence. Engines off, the booster comes back up on its legs.
       L.bPhi *= Math.exp(-dt / 0.5);
+      L.bThr = 0; L.bBurn = false;
     }
 
     // ── the beats ───────────────────────────────────────────────────────────────────
@@ -328,16 +379,27 @@ export function createLaunch(rig, launch) {
       L.bVel.copy(_a.set(dir.x * s, c, dir.z * s)).multiplyScalar(L.v - SEPARATION_PUSH);
       L.bPhi = L.gamma;
       L.v += SEPARATION_PUSH;
-      booster.pivot = COM.booster;
-      ship.pivot = COM.upper;
+      // From this frame each half is its own vehicle, so each takes its own balance point — through
+      // `setPivot` rather than by writing the number, so the frame of the split is the same pose the
+      // frame before it was instead of a sideways jump.
+      booster.setPivot(COM.booster);
+      ship.setPivot(COM.upper);
       // Where the split happened, on the same [seconds, metres] axes as the rest of the track. The plot
       // marks it because it is the one point on the curve where two vehicles become three lines.
       L.track.sep = [t, L.alt];
     }
 
-    // ── who is lit ────────────────────────────────────────────────────────────────────
-    L.litBooster = L.ramp > 0.05 && !L.landed && (t < SECO_AT || !L.separated) ? L.engines.booster : 0;
-    L.litUpper = L.ramp > 0.05 && L.separated && t < SECO_AT ? L.engines.upper : 0;
+    // ── who is lit, and how hard ──────────────────────────────────────────────────────
+    // A bell count and a throttle are the same statement read two ways: the count is what the panel
+    // ticks up, the fraction is how far those nozzles are open. Up to MECO the booster's throttle *is*
+    // the engine-start ramp; from the relight it is whatever the guidance is asking the field for,
+    // which is why the column shortens over the landing burn instead of holding take-off power all the
+    // way to the deck. The ship lights inside the booster's plume — hot staging — so its own field is
+    // online from its ignition beat, not from the split.
+    if (!L.separated) L.bThr = t < MECO_AT ? L.ramp : 0;
+    L.uThr = t >= SHIP_IGNITION_AT && t < SECO_AT ? L.ramp : 0;
+    L.litBooster = L.bThr > 0.02 ? L.engines.booster : 0;
+    L.litUpper = L.uThr > 0.02 ? L.engines.upper : 0;
 
     // ── write the scene ─────────────────────────────────────────────────────────────
     booster.d.copy(L.separated ? L.bPos : L.path);
@@ -350,7 +412,7 @@ export function createLaunch(rig, launch) {
       p.prev.copy(p.pos);
       p.body.at(p.pos, p.mouth);
       p.body.axis(p.axis).negate();
-      p.power = (p.body === booster ? L.litBooster : L.litUpper) ? L.ramp : 0;
+      p.power = p.body === booster ? L.bThr : L.uThr;
     }
     if (!L.written) { L.plumes.forEach(p => p.prev.copy(p.pos)); L.written = true; }
     L.point(L.shipAim, L.separated ? (seam + top) / 2 : 20);
@@ -358,12 +420,12 @@ export function createLaunch(rig, launch) {
     L.tel.met = t; L.tel.alt = L.alt; L.tel.vel = L.v; L.tel.accel = a;
     L.tel.down = L.down; L.tel.mach = L.v / SOUND_MARS; L.tel.gamma = L.gamma;
     L.tel.litBooster = L.litBooster; L.tel.litUpper = L.litUpper; L.tel.separated = L.separated;
-    // The ramp is what the thrust is being multiplied by, so a lit-bell count read off it is the sim's
-    // own statement of how much engine is online — which is why engine start ticks up across the
-    // hold-down instead of arriving as sixteen at once.
+    // The ramp is what the thrust is being multiplied by during engine start, so the bell count is
+    // read off it and the hold-down ticks sixteen lamps up instead of arriving all at once. Once the
+    // stack is flying the ramp is pinned at 1 and the honest answer lives in the two throttles above.
     L.tel.ramp = L.ramp; L.tel.phase = phaseAt(t);
     L.tel.bAlt = L.bPos.y; L.tel.bVs = L.bVel.y; L.tel.bDown = Math.hypot(L.bPos.x, L.bPos.z);
-    L.tel.bTGo = L.tGo; L.tel.landed = L.landed;
+    L.tel.bTGo = L.tGo; L.tel.landed = L.landed; L.tel.bBurn = L.bBurn;
 
     // One sample per 0.15 s of mission time, not per frame: the plot redraws a dozen times a second,
     // so a 144 fps machine would carry three times the vertices to draw the same line.
@@ -382,7 +444,10 @@ export function createLaunch(rig, launch) {
     launch.y = L.alt;
     launch.t = t;
     launch.tilt = L.gamma;
-    launch.intensity = L.ramp * (L.separated ? Math.max(0.35, 1 - (t - STAGE_AT) * 0.02) : 1);
+    // The shake and the rumble are driven off what is actually pushing, not off a fade keyed to the
+    // clock: the hold-down gets the whole field, the coast between staging and the relight gets the
+    // ship alone, and SECO takes the last of it away.
+    launch.intensity = Math.max(L.bThr, L.uThr);
     launch.separated = L.separated;
     launch.boosterLanded = L.landed;
 

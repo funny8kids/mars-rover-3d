@@ -45,12 +45,12 @@ const BOOST_ROWS = [
   ['高度', x => (x.separated ? len(x.bAlt) : null)],
   ['垂速', x => (x.separated ? [signed(x.bVs), 'm/s'] : null)],
   ['距台', x => (x.separated ? [x.bDown.toFixed(1), 'm'] : null)],
-  // The word is read off the vertical speed and the time-to-deck printed beside it, so it cannot claim
-  // a phase the numbers on the same line contradict. It is the one row whose value is not a number, and
-  // so the one row allowed to take the unit column as well — an English annunciator is six letters, and
-  // a column built for four digits has no room for it.
+  // The word is read off the vertical speed, the time-to-deck and whether the field is burning, all
+  // printed beside it, so it cannot claim a phase the numbers on the same line contradict. It is the one
+  // row whose value is not a number, and so the one row allowed to take the unit column as well — an
+  // English annunciator is six letters, and a column built for four digits has no room for it.
   ['状态', x => (x.landed ? ['回收', ''] : !x.separated ? null
-    : x.bVs > 0 ? ['爬升', ''] : x.bTGo < 12 ? ['制动', ''] : ['返场', '']), true],
+    : !x.bBurn ? ['滑行', ''] : x.bVs > 0 ? ['爬升', ''] : x.bTGo < 12 ? ['制动', ''] : ['返场', '']), true],
 ];
 
 // Mission elapsed time, in the T±mm:ss.s the watch decks use. It is one string for both languages,
@@ -222,7 +222,7 @@ export function mountTelemetry() {
     log.textContent = '';
     for (const e of F.log.slice(-3)) {
       const row = el('div', 'tel-ev');
-      row.append(el('b', null, `T+${e.met.toFixed(0)}s`), el('span', null, getLang() === 'en' ? e.en : e.zh));
+      row.append(el('b', null, `T+${e.label}s`), el('span', null, getLang() === 'en' ? e.en : e.zh));
       log.appendChild(row);
     }
   };

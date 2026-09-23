@@ -34,7 +34,7 @@ export async function buildBase(scene, quality) {
   const HERO = ['habitat_dome', 'hab_link', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
     'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'reactor_tap', 'lox_stand', 'roadster', 'lamp',
     'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut', 'barrier_kit', 'flag_mast',
-    'hazard_sign', 'telemetry_board', 'feeder_pillar', 'rim_rock'];
+    'hazard_sign', 'telemetry_board', 'feeder_pillar', 'rim_rock', 'beacon_kit'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA',
     'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
@@ -198,7 +198,12 @@ export async function buildBase(scene, quality) {
   // `rim_rock` is a third of the same kind, and the reason is harder: its three nodes are
   // alternative clasts, and each one's collision discs in rim_rock.js are measured about *that
   // node's* origin. Baking the kit into one mesh would delete the nodes the rampart clones from.
-  const keepsParts = new Set(['crystal', 'barrier_kit', 'rim_rock', 'starship_stack']);
+  const keepsParts = new Set(['crystal', 'barrier_kit', 'rim_rock', 'starship_stack', 'beacon_kit']);
+  // `beacon_kit` is a kit for the same reason as `barrier_kit`, with one more thing riding on it:
+  // the optical drum has to survive as its own node, because the night pulse reaches the beacons
+  // through `beacons[]` — the placement code clones the fitting and hands over the mesh named
+  // `lens`. Baking the kit into one mesh per material would delete the node the five sites clone
+  // from and silently take the blinking out of the base.
   // `starship_stack` is a fifth of the same kind, for the hardest reason to see: the launch flies
   // it as two vehicles, so the export carries `booster` and `ship` as nodes and baking the root
   // would weld them back into one buffer no animation can pull apart. Each body collapses to one
@@ -617,6 +622,24 @@ export async function buildBase(scene, quality) {
   const infoZones = [];
   const sparkPoints = [];
   const beacons = [];
+  // One fitting, five sites. A site buys these in a box of twelve, so the base places the same
+  // exported assembly at whatever scale its host needs — a tank drum roof, a mast cap, a dish rim,
+  // a wreck-site pole. `y` is where the old drum's centre sat: the lens is authored at local z 0.31,
+  // so sinking the mount by 0.31·s keeps the one part the eye actually reads at the height the
+  // layout was tuned to, and the heat sink, hood and conduit arrive with it rather than being
+  // drawn as a red pill. The fallback is a cylinder on purpose: if the asset ever fails to load,
+  // a base whose night markers have gone dark is a safety regression, not a missing detail.
+  const beaconAt = (x, y, z, s) => {
+    const kit = models.beacon_kit;
+    if (!kit) return beacons.push(cyl(0.4 * s, 0.4 * s, 0.6 * s, M.beacon, x, y, z, 10));
+    const g = cloneModel(kit);
+    g.position.set(x, y - 0.31 * s, z);
+    g.scale.setScalar(s);
+    G.add(g);
+    const lens = g.getObjectByName('lens');
+    if (lens) return beacons.push(lens);
+    g.traverse(o => { if (o.isMesh && /beacon_lens/.test(o.material?.name || '')) beacons.push(o); });
+  };
   const lightStrips = [];
   const lightRings = [];
   const showBeamMats = [];
@@ -1020,7 +1043,7 @@ export async function buildBase(scene, quality) {
     // that is what they are now. The emissive guard is what keeps the hero lamps lit: their accents
     // carry a real emissive term and are the base's night lighting, not a surface colour.
     for (const [mname, root] of Object.entries(models)) {
-      if (!root || /^(starship_stack|crew_rover|optimus_bot|watch_deck|spaceport_gate|hub_plaza|reactor_tap|lox_stand|roadster|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad)$/.test(mname)) continue;
+      if (!root || /^(starship_stack|crew_rover|optimus_bot|watch_deck|spaceport_gate|hub_plaza|reactor_tap|lox_stand|roadster|crystal|rover|lamp|habitat_dome|greenhouse|cryo_tank|lander|teleport_pad|beacon_kit)$/.test(mname)) continue;
       const deck = /^platform_/.test(mname);
       // A pipe elbow weathered to flat matte pale grey lost the one thing that says "manufactured":
       // a specular streak along its length. Outdoors it read as a 4 m cream boulder sitting in the
@@ -1248,9 +1271,12 @@ export async function buildBase(scene, quality) {
     putDeck('teleport_pad', vx + 16, vz + 2, 1.05, 0, -0.08);
     teleports.push({ key: 'habitat', name: ZONES.habitat.name, x: vx + 16, z: vz + 2 });
     const vy = zoneY(ZONES.habitat);
-    // A lamp bulb, not a structure: the beacon is the night-side marker the autopilot aims at, so
-    // it is one cylinder and it has to be sampled from terrain, which no exported GLB can be.
-    beacons.push(cyl(0.35, 0.35, 0.5, M.beacon, drum.x, vy + 8.3, drum.z, 10));   // seated on the drum roof
+    // The night-side marker the autopilot aims at. It used to be one flat-ended cylinder argued
+    // into staying a primitive because "it has to be sampled from terrain, which no exported GLB
+    // can be" — but the terrain sampling is the caller's `vy`, and the asset never had to know
+    // about it; what the primitive could not do is be a light: no heat sink, no shade hood, no
+    // bolt circle, no conduit. Ø0.70 m at the drum roof, the biggest of the five.
+    beaconAt(drum.x, vy + 8.3, drum.z, 1.6);
     infoZones.push({
       key: 'habitat', pos: [vx, vz], r: 28, tag: 'SETTLEMENT · MODULE A-D',
       name: '火星生活舱区', params: ['加压体积 3×920 m³ · 连通走廊 5.5 m · 气闸 ×2', '干燥储存鼓 Ø15 m · LOX 转注 12 m³/h', '常驻 24 名工程师与植物学家'],
@@ -1312,8 +1338,11 @@ export async function buildBase(scene, quality) {
       cyl(0.07, 0.07, 0.9, M.orange, mx + Math.cos(a) * 5.4, my2 + 0.45, mz + Math.sin(a) * 5.4, 6);
     }
     cyl(0.09, 0.09, 1.6, M.struct, mx - 3.4, my2 + 0.8, mz - 3.4, 8);
-    beacons.push(cyl(0.4, 0.4, 0.6, M.beacon, mx - 3.4, my2 + 1.85, mz - 3.4, 10));
-    box(0.9, 0.12, 0.9, M.struct, mx - 3.4, my2 + 2.35, mz - 3.4);
+    // The hooded mast the ring is there to warn about. Two primitives used to stand in for it —
+    // a red drum and a 0.9 m square cap plate under it, which read as a lantern balanced on a
+    // box. The fitting's own cast mounting plate *is* the cap now, so the plate is gone and the
+    // mast carries an obstruction light with a hood, struts, a clamp band and a conduit stub.
+    beaconAt(mx - 3.4, my2 + 1.85, mz - 3.4, 1.8);
     // The placard at the road end of the ring. It warns the driver who is about to reach the
     // hazard, so its face is aimed at the nearest street centreline instead of at the leak behind
     // it, and the `+ PI` is what makes the aim land on the printed side: the exporter turns the
@@ -1362,7 +1391,10 @@ export async function buildBase(scene, quality) {
     putDeck('teleport_pad', cx2 - 9, cz2 - 8, 1.0, 0, -0.08);
     teleports.push({ key: 'comms', name: ZONES.comms.name, x: cx2 - 9, z: cz2 - 8 });
     const cy = zoneY(ZONES.comms);
-    beacons.push(cyl(0.3, 0.3, 0.45, M.beacon, cx2 + 3.6, cy + 4.4, cz2 - 1.5, 10));  // on the big dish's rim
+    // The smallest of the five, clipped to the rim of the 7.3 m dish — the DSN node's own
+    // aviation light, and the one instance where the fitting's conduit stub actually has something
+    // to run into.
+    beaconAt(cx2 + 3.6, cy + 4.4, cz2 - 1.5, 1.25);
     infoZones.push({
       key: 'comms', pos: [cx2, cz2], r: 22, tag: 'DEEP SPACE NETWORK · NODE M1',
       name: '通讯阵列', params: ['主碟 7.3 m · X 波段', '与地球单程时延 4–24 分钟', '日出日落各一次全星通联'],
@@ -1621,7 +1653,9 @@ export async function buildBase(scene, quality) {
       k('terrain_roadStraight', yx - 14 + Math.cos(a) * (i * 3.5), yz - 6 + Math.sin(a) * (i * 2.8), a, 0.7); // scorch debris strip
     }
     cyl(0.25, 0.3, 6, M.struct, yx - 8, wy2 + 3, yz - 7, 8);
-    beacons.push(cyl(0.55, 0.55, 0.9, M.beacon, yx - 8, wy2 + 6.4, yz - 7, 10));
+    // The tallest pole on the island, so the biggest instance of the same fitting — and the one
+    // that has to be readable from the plaza 90 m away, which a 1.1 m red pill never was.
+    beaconAt(yx - 8, wy2 + 6.4, yz - 7, 2.2);
     infoZones.push({
       key: 'storm', pos: [yx, yz], r: 24, tag: 'HAZARD ZONE · AEOLIS FIELD',
       name: '残骸场 · 货运飞船“黎明号”', params: ['上次事件：全球性沙尘暴 Sol 388', '太阳能板蒙尘之后，机遇号也这样安静下来'],

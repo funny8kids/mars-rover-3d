@@ -1092,16 +1092,21 @@ function seedPlumes(F) {
     if (Math.abs(p.axis.y) > 0.98) _pr.set(1, 0, 0);
     _pt.crossVectors(p.axis, _pr).normalize();
     _pr.crossVectors(_pt, p.axis).normalize();
+    // The shell's own two numbers, from the law fx/plume.js poses with: the mouth radius scales on
+    // the cluster, the column length on the throttle. Everything seeded below is a fraction of these
+    // rather than a fixed number of metres — see the note above the trail.
+    const mouth = 1.30 * Math.sqrt(Math.max(1, p.engines));
+    const flame = mouth * (4.0 + 4.2 * p.power);
     const n = Math.max(1, Math.round(0.55 * p.engines * quality.particles * (0.4 + p.power)));
     for (let i = 0; i < n; i++) {
-      const a = Math.random() * 6.283, r = 0.25 + Math.random() * 1.15;
+      const a = Math.random() * 6.283, r = mouth * (0.30 + Math.random() * 0.55);
       _pv.copy(_pt).multiplyScalar(Math.cos(a) * r).addScaledVector(_pr, Math.sin(a) * r);
       fx.flame.emit(
         p.pos.x + _pv.x + p.axis.x * 0.6, p.pos.y + _pv.y + p.axis.y * 0.6, p.pos.z + _pv.z + p.axis.z * 0.6,
         p.axis.x * (9 + Math.random() * 5) + _pv.x * 1.4,
         p.axis.y * (9 + Math.random() * 5) + _pv.y * 1.4,
         p.axis.z * (9 + Math.random() * 5) + _pv.z * 1.4,
-        0.16 + Math.random() * 0.12, 1.1 + Math.random() * 1.4
+        0.16 + Math.random() * 0.12, mouth * (0.45 + Math.random() * 0.55)
       );
     }
     // Two different clouds, because the exhaust makes two different clouds. While the jet still
@@ -1152,19 +1157,31 @@ function seedPlumes(F) {
     // of attack a rocket ever flies at, retrograde burns included, so it does not need the finite
     // difference to know which way is behind.
     const mTrail = Math.max(1, Math.round(quality.particles * (0.9 + 1.7 * (1 - padF)) * (0.4 + p.power)));
-    // The shell's length, from the same law fx/plume.js poses with: mouth radius scales on the
-    // cluster, column length on the throttle.
-    const flame = 1.30 * Math.sqrt(Math.max(1, p.engines)) * (4.0 + 4.2 * p.power);
     for (let k = 0; k < mTrail; k++) {
       const d = flame * (0.52 + Math.random() * 0.72);
-      const a = Math.random() * 6.283, rr = 2 + Math.random() * 4;
+      // Both of these are fractions of the mouth radius, and that is the fix: anything wrapped
+      // around a rocket has to be sized by the rocket. They used to be absolute metres, so one
+      // literal set of constants wrapped a 42.6 m booster column and an 18.5 m upper-stage column
+      // at the same scale. The numbers below are what `__RSB.plume().sheath` prints as
+      // `pctMean · pctMax` — the drawn pixel size of a live smoke puff, as a share of the drawn
+      // pixel length of the flame column it wraps. Same ruler for both bodies because the ratio is
+      // size/col at any camera range (that range's own `colPx` came out at 31.6 and 16.3 px):
+      //   booster MET 15     absolute metres (was) 29 · 97 %   ship MET 24     67 · 229 %
+      //   1.3–2.2 mouth      "                      44 · 118 %  "              44 · 146 %
+      //   0.6–1.15 mouth (now)  "                  21 ·  74 %  "              22 ·  74 %
+      // Proportional scaling alone only made the two bodies *equally* wrong, and the booster had
+      // been the tolerable one by luck: its 5.2 m mouth happened to sit near the old literal metres.
+      // The second line is what the change is for — until then one sheath puff could be drawn
+      // longer than the whole flame behind it. `pctMax` is a single oldest sprite, and the pool's
+      // `(1-t)` fade has that one near a tenth of its birth opacity, so `pctMean` is what carries.
+      const a = Math.random() * 6.283, rr = mouth * (0.45 + Math.random() * 0.95);
       _pv.copy(_pt).multiplyScalar(Math.cos(a) * rr).addScaledVector(_pr, Math.sin(a) * rr);
       _pq.copy(p.pos).addScaledVector(p.axis, d);
       if (_pq.y < deckY + 1) continue;
       fx.smoke.emit(
         _pq.x + _pv.x, _pq.y + _pv.y, _pq.z + _pv.z,
         _pv.x * 0.7 + p.axis.x * 2, 0.6 + Math.random() * 1.4, _pv.z * 0.7 + p.axis.z * 2,
-        1.4 + Math.random(), 4 + Math.random() * 4
+        1.4 + Math.random(), mouth * (0.6 + Math.random() * 0.55)
       );
     }
   }
@@ -2375,11 +2392,60 @@ window.__RSB = {
       for (let i = 0; i < pool.count; i++) if (pool.life[i] < 1) n++;
       return n;
     };
+    // What the particle sheath is *on screen*, read off the live pool instead of off the seeding
+    // formula. A claim like "one puff is smaller than the flame it sheathes" cannot be checked against
+    // the emit() arguments, because the pool multiplies every sprite's size after birth — so this walks
+    // the slots that are actually alive and reports their drawn pixel size under the vertex shader's own
+    // law, plus how far off the jet's axis each one sits. The window is the column itself: anything
+    // outside it is the deck cloud or an older flight's leftovers, not the sheath.
+    // Does the smoke sheath still read as a sheath. `pctMean` / `pctMax` answer it directly: the
+    // drawn pixel size of a live puff, as a share of the drawn pixel length of the flame column it
+    // wraps, over the sprites currently inside that column. Read the `lit` row — after staging, the
+    // other entry's `col` and `at` are whatever the shell last held, so its window catches the
+    // surviving particles at a range the eye is not looking at.
+    const sheath = () => {
+      const F = launch.flight;
+      if (!launchJets || !F) return null;
+      const jets = launchJets.probe(camera), cp = camera.position, out = [];
+      for (let i = 0; i < F.plumes.length; i++) {
+        const p = F.plumes[i], mouth = p.pos, ax = p.axis, col = jets[i].len;
+        // The column's drawn length is the ruler the puffs are measured against, because "the sheath
+        // is bigger than the flame" is a statement about the frame, not about metres — and the frame
+        // answer has to come out the same for a 42.6 m booster and an 18.5 m upper stage.
+        const colPx = col * 160 / cp.distanceTo(mouth);
+        const row = { col, at: jets[i].at, colPx: +colPx.toFixed(1), lit: jets[i].visible };
+        for (const key of ['flame', 'smoke']) {
+          const pool = fx[key], u = pool.mat.uniforms, cap = u.uMaxSize.value, pr = u.uPixelRatio.value;
+          let n = 0, pxSum = 0, pxMax = 0, rrSum = 0, rrMax = 0;
+          for (let s = 0; s < pool.count; s++) {
+            if (pool.life[s] >= 1) continue;
+            const i3 = s * 3;
+            const vx = pool.pos[i3] - mouth.x, vy = pool.pos[i3 + 1] - mouth.y, vz = pool.pos[i3 + 2] - mouth.z;
+            const along = vx * ax.x + vy * ax.y + vz * ax.z;
+            if (along < -2 || along > col * 1.8) continue;
+            const rr = Math.hypot(vx - ax.x * along, vy - ax.y * along, vz - ax.z * along);
+            if (rr > col) continue;
+            const d = Math.hypot(pool.pos[i3] - cp.x, pool.pos[i3 + 1] - cp.y, pool.pos[i3 + 2] - cp.z);
+            const px = Math.min(pool.sizeArr[s] * 160 / d, cap) * pr;
+            n++; pxSum += px; rrSum += rr;
+            if (px > pxMax) pxMax = px;
+            if (rr > rrMax) rrMax = rr;
+          }
+          row[key] = n ? { n, pctMean: +(100 * pxSum / n / colPx).toFixed(0),
+            pctMax: +(100 * pxMax / colPx).toFixed(0),
+            pxMean: +(pxSum / n).toFixed(1), pxMax: +pxMax.toFixed(1),
+            rrMean: +(rrSum / n).toFixed(1), rrMax: +rrMax.toFixed(1) } : { n: 0 };
+        }
+        out.push(row);
+      }
+      return out;
+    };
     for (const k of ['flame', 'smoke']) if (fx?.[k]) fx[k].points.visible = hide !== k;
     return {
       hidden: hide, jets: launchJets ? launchJets.probe(camera) : null,
       alive: { flame: count(fx?.flame), smoke: count(fx?.smoke) },
       cap: { flame: fx?.flame.count, smoke: fx?.smoke.count },
+      sheath: sheath(),
     };
   },
   // Is the vehicle actually in the frame the player is looking at, and how much of it is there.

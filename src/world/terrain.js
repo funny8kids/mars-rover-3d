@@ -1071,30 +1071,56 @@ export async function createRocks(scene, avoid = []) {
 
 // The terrain mesh samples the surface every 1.4 m and a normal map can only fake relief per
 // pixel, so at driving height the island was a painted sheet with nothing standing on it. Real
-// stones — one instanced draw call, colour and silhouette variation for free, and they catch the
-// low sun along the whole dune field.
+// stones — instanced, colour and silhouette variation for free, and they catch the low sun along
+// the whole dune field.
+//
+// They are tiled because one island-wide InstancedMesh cannot be culled: its bounding sphere covers
+// every chip from here to the rim, so all 3 600 went into every frame at every camera angle. Measured
+// at the spawn camera, 889x967, that single draw was 288k of the frame's 2 153k triangles and 3.5 ms
+// of its 23.5 ms — the most expensive object in the scene, and one that never casts a shadow. A 30 m
+// tile gives each InstancedMesh a sphere the renderer's own per-object test can reject, and the
+// detail-0 twin past STONE_LOD_D takes the survivors from 80 triangles to 20 once a chip is only a
+// few pixels wide. Near chips keep detail 1: at the base of a dune a 20-face chip is a handful of
+// triangles and it was the one object in the frame that read as unmodelled geometry.
+//
+// What it actually bought, same pose and same sun either side of this commit (camera [0,24,92] →
+// [0,4,0]): 245k of 2 669k triangles, and 0.7-1.4 ms — 24.11→23.39 at 889x967, 34.39→33.17 at
+// 1920x1080. Not the 3.5 ms the old single draw cost: an LOD that keeps every chip on screen gives
+// back most of its triangle saving to the same fill and to 88 object submissions instead of one, so
+// dense small geometry is submission- and fill-bound and triangle arithmetic over-promises on it.
+// Per-tile frustum rejection is now possible but has not been measured; the 3.5 ms needs the field
+// itself to get smaller or nearer the terrain it sits on.
+const STONE_CELL = 30;
+const STONE_LOD_D = 45;
+
 export function createStones(scene, count = 3600) {
   const rand = mulberry32(0x5c0ffee);
-  // Detail 1, not 0: at the base of a dune a 20-face chip is a handful of triangles, and mid-way
-  // out it was the one object in the frame that read as unmodelled geometry. The extra facet loop
-  // costs 4x the verts of a single instanced draw call and gives the noise something to chew on.
-  const geo = new THREE.IcosahedronGeometry(1, 1);
-  const p = geo.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    // A chip broken off a basalt slab is flat-ish and angular, not a ball: squash Y and push each
-    // vertex out by its own noise value so no two silhouettes match.
-    const k = 0.55 + vnoise(p.getX(i) * 2.7 + 5, p.getZ(i) * 2.7 + 9) * 0.9;
-    p.setXYZ(i, p.getX(i) * k, p.getY(i) * k * 0.55, p.getZ(i) * k);
-  }
-  geo.computeVertexNormals();
+  // A chip broken off a basalt slab is flat-ish and angular, not a ball: squash Y and push each
+  // vertex out by its own noise value so no two silhouettes match. The jitter is driven by vertex
+  // position, not by the loop index, so both detail levels carve the same stone at facet density
+  // 80 and 20 — swapping them at a distance boundary changes the silhouette's smoothness only.
+  const chip = detail => {
+    const g = new THREE.IcosahedronGeometry(1, detail);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const k = 0.55 + vnoise(p.getX(i) * 2.7 + 5, p.getZ(i) * 2.7 + 9) * 0.9;
+      p.setXYZ(i, p.getX(i) * k, p.getY(i) * k * 0.55, p.getZ(i) * k);
+    }
+    g.computeVertexNormals();
+    return g;
+  };
+  const geoHi = chip(1), geoLo = chip(0);
   // Smooth-shaded. Flat shading on top of the jitter made every stone a cut gem that caught the
   // low sun as 20 hard bright facets — real scoria chips are dust-coated and read matte.
   const mat = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0.04 });
-  const mesh = new THREE.InstancedMesh(geo, mat, count);
+
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), s = new THREE.Vector3();
   const e = new THREE.Euler(), col = new THREE.Color();
-  let n = 0, guard = 0;
-  while (n < count && guard++ < count * 4) {
+  // The draw order and the rejection test are unchanged, so the field is the same stones in the same
+  // places as the pre-tiling build and a frame diff across this commit isolates the detail swap.
+  const placed = [];
+  let guard = 0;
+  while (placed.length < count && guard++ < count * 4) {
     const a = rand() * Math.PI * 2;
     const r = 5 + Math.pow(rand(), 0.6) * (SCATTER_R - 5);
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
@@ -1108,15 +1134,40 @@ export function createStones(scene, count = 3600) {
     q.setFromEuler(e);
     v.set(x, heightAt(x, z) - sc * 0.28, z);
     s.set(sc * (0.75 + rand() * 0.7), sc * (0.7 + rand() * 0.6), sc * (0.75 + rand() * 0.7));
-    mesh.setMatrixAt(n, m4.compose(v, q, s));
     col.copy(SPECK).lerp(GRAVEL, rand()).lerp(SAND_C, rand() * 0.5);
-    mesh.setColorAt(n, col);
-    n++;
+    placed.push({ p: v.clone(), q: q.clone(), s: s.clone(), c: col.clone() });
   }
-  mesh.count = n;
-  mesh.instanceMatrix.needsUpdate = true;
-  mesh.computeBoundingSphere();
-  mesh.frustumCulled = true;
-  scene.add(mesh);
-  return mesh;
+
+  const cells = new Map();
+  for (const it of placed) {
+    const key = Math.floor(it.p.x / STONE_CELL) + ':' + Math.floor(it.p.z / STONE_CELL);
+    let list = cells.get(key);
+    if (!list) cells.set(key, list = []);
+    list.push(it);
+  }
+
+  const field = new THREE.Group();
+  field.name = 'stone-field';
+  const tmp = new THREE.Vector3();
+  for (const list of cells.values()) {
+    // The LOD sits at the tile's centre of mass so its distance is the distance to the stones, not to
+    // a grid corner two tiles away, and each level's instances hang off that origin.
+    const lod = new THREE.LOD();
+    for (const it of list) lod.position.add(it.p);
+    lod.position.divideScalar(list.length);
+    for (const [lvl, geo] of [[0, geoHi], [1, geoLo]]) {
+      const mesh = new THREE.InstancedMesh(geo, mat, list.length);
+      for (let i = 0; i < list.length; i++) {
+        const it = list[i];
+        mesh.setMatrixAt(i, m4.compose(tmp.copy(it.p).sub(lod.position), it.q, it.s));
+        mesh.setColorAt(i, it.c);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+      lod.addLevel(mesh, lvl === 0 ? 0 : STONE_LOD_D);
+    }
+    field.add(lod);
+  }
+  scene.add(field);
+  return field;
 }

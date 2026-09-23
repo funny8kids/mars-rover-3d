@@ -673,7 +673,7 @@ function applyPaving(mat) {
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, u);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aDeck;\nvarying float vDeck;\n' + PARS + SAND_WARP)
+      .replace('#include <common>', '#include <common>\nattribute float aDeck;\nvarying float vDeck;\nattribute float aRock;\nvarying float vRock;\n' + PARS + SAND_WARP)
       .replace('#include <uv_vertex>', `#include <uv_vertex>
   // The mesh uv *is* the world frame here: a 300 m plane on 26 tiles puts tile 13.0 at x=z=0, so
   // re-deriving the coordinate from the vertex position lands on the same grid the geometry would
@@ -693,9 +693,13 @@ function applyPaving(mat) {
   // A graded building deck is per-vertex data, not a shader loop: the site plan is not finished
   // until props are placed, and dozens of rect SDFs evaluated for 48 000 vertices every frame is
   // the sort of thing that costs an iGPU its frame budget.
-  vDeck = aDeck;`);
+  vDeck = aDeck;
+  // ...and so is where the sand mantle has been stripped off the highland. One scalar drives both
+  // halves of it — the CPU tint and the shader's ripple gate — so dark ground and bare ground are
+  // the same ground by construction instead of two windows that have to be kept in register.
+  vRock = aRock;`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vDeck;\n' + PARS + SAND_WARP + RIP_SLOPE)
+      .replace('#include <common>', '#include <common>\nvarying float vDeck;\nvarying float vRock;\n' + PARS + SAND_WARP + RIP_SLOPE)
       .replace('#include <map_fragment>', `#include <map_fragment>
   // The 512² ripple tile spans 11.5 m, so its trains run from 0.94 to 5.0 cycles per metre and the
   // 20 cm one falls below Nyquist as soon as a pixel covers more than half of it. Past that point
@@ -705,7 +709,7 @@ function applyPaving(mat) {
   // The window is the Nyquist limit of the *fastest* train, not a taste cutoff: 3.2 cm per pixel in,
   // 11 cm out. The old 4.6–18.5 cm window was tuned to a spectrum whose coarsest ridge was 1.07 m.
   gRipple = ( 1.0 - smoothstep( 0.0028, 0.0095, fwidth( vMapUv.x ) + fwidth( vMapUv.y ) ) )
-          * rsbRipEnv( vWP.xz ) * rsbRipSlope( vWP );
+          * rsbRipEnv( vWP.xz ) * rsbRipSlope( vWP ) * ( 1.0 - vRock );
   gPave = rsbPave( vWP.xz, max( vPave, vDeck ) );
   // Where an avenue meets a district apron the plate wins, so the grading terminates at the rim of
   // the pad it serves instead of stitching a dirt seam straight through a landing pad.
@@ -756,7 +760,7 @@ function applyPaving(mat) {
 #endif`);
   };
   // three keys its program cache on the shader source; a patched material must not share one
-  mat.customProgramCacheKey = () => 'rsb-paved-terrain-2';
+  mat.customProgramCacheKey = () => 'rsb-paved-terrain-3';
   return u;
 }
 
@@ -773,6 +777,14 @@ const PAVE   = new THREE.Color(0.150, 0.112, 0.090);  // dust-covered pads & roa
 const TRACK  = new THREE.Color(0.085, 0.046, 0.028);  // compacted wheel lanes
 const SPECK  = new THREE.Color(0.060, 0.026, 0.016);  // grit crust
 const GRAVEL = new THREE.Color(0.075, 0.032, 0.021);  // dark scree drifts
+// Bedrock, which is what the rampart actually is: the sand is a mantle over the weathered highland,
+// and where the mantle has been stripped the highland itself is the surface. Cool and desaturated
+// against every sand term above — the oxide hue is the *mantle's* signature, so a face that has lost
+// the mantle has to lose the colour with it. Value is held near GRAVEL on purpose: the last commit's
+// lesson was that lightness differences do not survive to the horizon while hue differences do, and
+// the rampart is 110 m from the nearest place the rover can stand.
+const BASALT   = new THREE.Color(0.050, 0.043, 0.045);  // fresh face, shade-cool
+const ROCKFACE = new THREE.Color(0.104, 0.088, 0.080);  // ledge dusted by the same fines as everything else
 
 export function createTerrain(scene) {
   const { size, seg } = TERRAIN;
@@ -781,10 +793,12 @@ export function createTerrain(scene) {
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
   const decks = new Float32Array(pos.count);
+  const rocks = new Float32Array(pos.count);
   const nodes = new Float32Array(pos.count);
   const col = new THREE.Color();
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.setAttribute('aDeck', new THREE.BufferAttribute(decks, 1));
+  geo.setAttribute('aRock', new THREE.BufferAttribute(rocks, 1));
 
   // One pass of the ground survey: height, deck cover, and every colour term that follows from
   // them. Run once for the natural surface and again after the site plan has claimed its footings,
@@ -824,11 +838,42 @@ export function createTerrain(scene) {
         col.lerp(TRACK, lane * plate * 0.5);                   // worn, compacted darker strips
         col.lerp(SAND_C, smoothstep(0.7, 0.97, vnoise(x * 0.5, z * 0.5)) * plate * 0.22);
       }
+      // Where the sand mantle is gone, bedrock is the surface. Two gates, because either one alone
+      // is wrong: slope-only paints every steep dune face inside the field with basalt, province-only
+      // paints the rampart's shallow benches. Angle of repose is the physical seam — dry Martian sand
+      // holds ~32-34°, so a face materially steeper than that is holding itself up with rock. The
+      // window is the measured facet-slope table (r116 median 21.8°, r124 p75 29°/p90 35°, r≥132
+      // median 57°), which is why it is 24..36 and not a round number.
+      // Slope is differenced off heightAt here, not off surfaceSlope: surfaceSlope samples the
+      // installed grid, and the installed grid is `nodes`, the very array this loop is writing. The
+      // second survey would then read its own unfinished pass as terrain — a stale-height sweep
+      // around the rampart that would look like a deliberate terrace. Same e, same field, no feedback.
+      const radial = Math.hypot(x, z);
+      const prov = smoothstep(106, 116, radial + 14 * (vnoise(x * 0.013 + 3, z * 0.013 - 8) - 0.5));
+      let outcrop = 0;
+      // Short-circuits the four extra heightAt calls for the ~85% of the island that is dune field.
+      if (prov > 0.002) {
+        const e = 0.8;
+        const slopeDeg = Math.atan(Math.hypot(
+          (heightAt(x + e, z) - heightAt(x - e, z)) / (2 * e),
+          (heightAt(x, z + e) - heightAt(x, z - e)) / (2 * e))) * 57.2958;
+        outcrop = prov * (1 - Math.min(1, eng * 3))
+                * smoothstep(24 + 5 * (vnoise(x * 0.055 + 21, z * 0.055 + 4) - 0.5) * 2, 36, slopeDeg);
+      }
+      rocks[i] = outcrop;
+      // Last in the chain on purpose: everything above is sand, and a tint a later sand term can
+      // repaint over is a tint that will disagree with the shader's own (1 - vRock) ripple gate.
+      if (outcrop > 0.004) {
+        const ledge = smoothstep(0.40, 0.74, fbm(x * 0.048 + 7, z * 0.048 - 19, 3));
+        col.lerp(BASALT, outcrop * 0.90);
+        col.lerp(ROCKFACE, outcrop * ledge * 0.55);
+      }
       colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
     }
     installSurfaceGrid(nodes, seg, size);
     geo.attributes.color.needsUpdate = true;
     geo.attributes.aDeck.needsUpdate = true;
+    geo.attributes.aRock.needsUpdate = true;
     pos.needsUpdate = true;
     geo.computeVertexNormals();
   }

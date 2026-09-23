@@ -1052,11 +1052,17 @@ export async function buildBase(scene, quality) {
     heroLights.push(ring.material);   // a clone escapes the deck-lamp registration; put it back
     ring.rotation.x = Math.PI / 2; ring.position.set(px, py + 0.045, pz); G.add(ring);
     lightStrips.push(ring.material);
+    // Every lens position is handed to `fx/beams.js` as the only honest anchor a pad shaft has: a
+    // beam that starts at a lamp is lit by that lamp, and one that starts at a hand-typed coordinate
+    // next to the pad is the two 44 m cones this replaced — which floated 11 m off the axis with
+    // nothing under them.
+    const floods = [];
     for (let i = 0; i < 24; i++) {
       const a = i / 24 * Math.PI * 2;
       const rx = px + Math.sin(a) * 9.5, rz = pz + Math.cos(a) * 9.5;
       box(0.36, 0.12, 0.22, M.dark, rx, py + 0.1, rz, G).rotation.y = a;
       box(0.24, 0.05, 0.14, ring.material, rx, py + 0.18, rz, G).rotation.y = a;
+      floods.push([rx, py + 0.18, rz]);
     }
 
     // ── Starship riding a Super Heavy: 71 m of stainless on the pad ──
@@ -1099,7 +1105,7 @@ export async function buildBase(scene, quality) {
       lightStrips.push(tr.material); lightRings.push(tr);
     }
     launchRig = { stack, mount: ship, booster, upper,
-      pad: [px, py, pz], y: py, h: SHIP_H, r: SHIP_R, seam: STAGE_H, engines: STACK_ENGINES,
+      pad: [px, py, pz], y: py, h: SHIP_H, r: SHIP_R, seam: STAGE_H, engines: STACK_ENGINES, floods,
       // The separation animation moves each body off its rest offset. Reading those offsets now,
       // before anything has touched them, is the only way to know what "mated" was; hardcoding zero
       // would silently re-derive the whole 71 m stack's stance from an assumption.

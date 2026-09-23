@@ -12,6 +12,7 @@ import { createInput } from './input.js';
 import { createFX, updateStorm } from './fx/particles.js';
 import { createLaunch } from './fx/launch.js';
 import { createJetPlumes } from './fx/plume.js';
+import { createPadBeams } from './fx/beams.js';
 import { StormField, createStormWall, placeStormWall } from './world/storm.js';
 import { createRimVeil } from './world/rim_veil.js';
 import { createPost } from './fx/post.js';
@@ -279,7 +280,7 @@ async function boot() {
   // may still fly over a low prop when the terrain lifts it
   chase.setColliders(base.colliders.map(c => ({ x: c.x, z: c.z, r: c.r, y: surfaceAt(c.x, c.z), top: c.top })));
   buildGates();
-  addVolumetricCones();
+  addPadBeams();
   // Nothing in the frame may be a dead pixel. An albedo under the Mars sky's luminance renders as
   // a flat black cut-out, which is what turned the industrial frames into silhouettes. Lift every
   // opaque, unlit surface proportionally to how close to black it was, so rubber and soot stay
@@ -402,15 +403,18 @@ function buildGates() {
     race.rings.push(g);
   }
 }
-const cones = [];
-function addVolumetricCones() {
-  const [px, pz] = ZONES.launch.pos;
-  const mat = new THREE.MeshBasicMaterial({ color: 0xa8c8ff, transparent: true, opacity: 0.0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-  for (const [x, z, h, r] of [[px + 11, pz - 6, 44, 7], [px + 11, pz + 6, 44, 7], [ZONES.watch.pos[0], ZONES.watch.pos[1], 9, 4]]) {
-    const c = new THREE.Mesh(new THREE.CylinderGeometry(0.4, r, h, 20, 1, true), mat.clone());
-    c.position.set(x, h / 2, z);
-    scene.add(c); cones.push(c);
-  }
+// The pad's flood shafts. `fx/beams.js` poses them off the deck's own ring of lenses; what lives
+// here is only the coupling, because whether a beam is lit at all is a weather question and the
+// weather is this file's. Clean night air carries a faint column, and a sandstorm is the weather that
+// makes a pad's floods actually show — the shafts are scatter, so they have to answer to how much is
+// airborne rather than to how clear the air is. (The driver this replaced multiplied by
+// `(1 - stormF)`, which snuffed them out during the one weather they exist for.)
+const BEAM_CLEAN = new THREE.Color(0x9fc4ff);   // an LED bank's blue-white across clear air
+const BEAM_DUST = new THREE.Color(0xffab63);    // the same lamp after the light crossed a dust column
+const BEAM_TINT = new THREE.Color();
+let beams = null;
+function addPadBeams() {
+  beams = createPadBeams(scene, base.launchRig);
 }
 
 // ───────────────────────── missions UI ─────────────────────────
@@ -1856,7 +1860,7 @@ function update(dt) {
   // Night ceiling trimmed 1.48→1.05 so the faceted silhouette survives the bloom instead of
   // collapsing into a flat white blob (V11 forensics).
   base.crystalMat.emissiveIntensity = 0.04 + cnight * 1.01 + Math.sin(elapsed * 1.9) * (0.02 + cnight * 0.12);
-  // beacon blink + night lamps + light cones
+  // beacon blink + night lamps (the pad's flood shafts are driven below, with the exhaust shells)
   // `st` was hoisted to the top of update(); re-declaring it here is what froze the canvas.
   // An aviation beacon exists to be seen against darkness, so its drive belongs to the night: at a
   // flat 1.5–4.0 it was a hot pink blob on every mast in the day views, the single brightest
@@ -1882,7 +1886,6 @@ function update(dt) {
     const d = m.userData?.dimDay ?? 0.26;
     m.emissiveIntensity = d + night * (1.92 - d);
   }
-  for (const c of cones) c.material.opacity = st.nightF * 0.045 * (1 - st.stormF);
   // pad discs: a flat read-able ring by day, an armed portal at night. The whole base is dimmer
   // until the rover re-links the districts, so progress is legible from anywhere on the map.
   const gp = 0.34 + 0.66 * (grid.online / GRID_COUNT);
@@ -2057,6 +2060,26 @@ function update(dt) {
   if (launch.phase === 'flight' && launch.flight) {
     launchJets = launchJets || createJetPlumes(scene, base.launchRig);
     launchJets.update(launch.flight.plumes, elapsed, camera, scene.fog);
+  }
+  // Same reason as the shells directly above: a beam is extinguished by the air it is crossing, so it
+  // has to read the density the frame actually renders with, not the ground value. `beams.js` poses
+  // the shafts off the pad's own flood lenses; the only number here is how much light is in them.
+  // 0.165 is measured, not chosen by eye. Two framings, each a paused frame with only this level
+  // varying, and the layer's light read as a delta against the same frame with the shafts hidden:
+  //   a third (0.055) — +0.27/255 of whole-frame light looking at the stack from the plaza 99 m off
+  //     the pad axis, peak pixel +31. The shafts are simply not there.
+  //   shipped (0.165) — that same view touches 4.1 % of its pixels at a mean +16.5/255 and +0.71
+  //     whole-frame; from the deck 22 m out it lifts the frame by 7.3/255 with the booster's own
+  //     panel lines still readable through the nearest shaft. Neither clips.
+  //   double (0.33) — the long view survives it (peak +102, clip 0), but from the deck the shafts
+  //     merge into one blue-grey veil over the vehicle's lower third, brighter than the sky behind
+  //     it. The ceiling is set by standing next to the pad, not by the view across the base.
+  // The dust term is deliberately smaller than the clear-air one:
+  // a beam does brighten as the air carries more to scatter, but the same air is also taking the
+  // light back off, and the shader's own extinction grows with the fog the storm writes.
+  if (beams) {
+    BEAM_TINT.copy(BEAM_CLEAN).lerp(BEAM_DUST, Math.min(1, st.stormF * 1.4));
+    beams.update(elapsed, camera, scene.fog, st.nightF * (0.165 + 0.10 * st.stormF), BEAM_TINT);
   }
 
   // Slender masts and lamp posts are not colliders, so the rig still parks behind them and the
@@ -2407,8 +2430,13 @@ window.__RSB = {
       const v = new THREE.Vector3(); o.getWorldPosition(v);
       let m = 0, verts = 0;
       o.traverse(x => { if (x.isMesh) { m++; verts += x.geometry.attributes.position.count; } });
-      return { y: [+b.min.y.toFixed(1), +b.max.y.toFixed(1)], world: v.y.toFixed(1),
-        meshes: m, verts, off: o.position.toArray().map(n => +n.toFixed(2)) };
+      // All three of these are world metres. `off` is the exception and has to say so: it is the node's
+      // own position, which `fx/launch.js` writes in *stack* space, so it reads (0,0,0)-ish while the
+      // mount it hangs off sits 60 m out at the pad. Comparing one against the other without that label
+      // is how a correct scene got reported as a 60 m offset.
+      return { y: [+b.min.y.toFixed(1), +b.max.y.toFixed(1)],
+        world: v.toArray().map(n => +n.toFixed(1)),
+        meshes: m, verts, off: o.position.toArray().map(n => +n.toFixed(2)), offFrame: 'stack' };
     };
     // The invariant is not "two nodes exist", it is "no visible thing is left outside them": a mesh
     // under the shared trunk is welded across the seam and will shear or hang in mid-air at staging.
@@ -2421,7 +2449,20 @@ window.__RSB = {
       stray.push(`${o.name || 'mesh'}:${o.geometry.attributes.position.count}v`);
     });
     return { seam: r.seam, pad: r.pad.map(v => +v.toFixed(2)), engines: r.engines,
-      booster: body(r.booster), upper: body(r.upper), stray };
+      floods: r.floods.length, booster: body(r.booster), upper: body(r.upper), stray };
+  },
+  // The pad's flood shafts and what each one is bolted to. A beam is only believable if its foot is a
+  // lamp, so the falsifiable claim is right here: every `axisR` has to read the ring radius the floods
+  // were cast at, and every `foot` y has to be the lens height above the pad deck. The three cones
+  // this replaced were a hand-typed coordinate list and could not answer the question at all.
+  // `hide` takes the shafts out of the render so the same framing can be shot with and without them —
+  // which is how much of a night frame they are actually carrying. It has to be the module's own
+  // `lit` flag rather than a write to `mesh.visible`: `update` derives visibility from the weather
+  // every frame, so writing the mesh is undone by the very step meant to photograph the difference,
+  // and the pair then compares one render against itself.
+  beams: (hide = false) => {
+    beams?.setLit(!hide);
+    return beams?.probe(camera) ?? null;
   },
   // The flight, as the integrator sees it. `log` is the same record the telemetry panel will render
   // and `touch` is what the booster's return actually cost, so a claim about the sequence can be
@@ -2438,7 +2479,10 @@ window.__RSB = {
         // burn windows is that the fire in the frame and the lamps on the panel answer to the same
         // clock, and a claim about that is only checkable if the frame carries the state out.
         bBurn: F.bBurn, thr: [+F.bThr.toFixed(2), +F.uThr.toFixed(2)], bVs: +t.bVs.toFixed(1) },
-      bodies: { booster: r3(F.plumes[0].body.node.position), ship: r3(F.plumes[1].body.node.position) },
+      // Stack-local, and it has to be said: `fx/launch.js` poses each body's `node.position` inside the
+      // stack, which itself hangs off the mount at the pad. Anything that wants the world has to call
+      // `body.at()` — comparing these against a world-space readout is a 60 m phantom.
+      bodies: { frame: 'stack', booster: r3(F.plumes[0].body.node.position), ship: r3(F.plumes[1].body.node.position) },
       // Degrees off vertical, per body. A landed booster's position says nothing about whether it is
       // standing up, and the one thing that makes a parked first stage read wrong is the lean.
       lean: { booster: +(F.plumes[0].body.phi * 57.2958).toFixed(1), ship: +(F.plumes[1].body.phi * 57.2958).toFixed(1) },

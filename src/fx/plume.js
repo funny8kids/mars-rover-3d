@@ -196,6 +196,10 @@ export function createJetPlumes(scene, rig) {
     probe(camera) {
       return jets.map((j, i) => ({
         visible: j.group.visible, r: +j.r.toFixed(2),
+        // `update` bails out on an invisible shell, so every number below that one is what the last
+        // visible frame left behind. A dead stage's `power: 0.8` is not a readout, it is an artefact
+        // of the sampling, and the only honest thing to do is say which of the two it is.
+        stale: !j.group.visible,
         len: +j.layers[1].mesh.scale.y.toFixed(1),
         power: +j.layers[0].mat.uniforms.uPower.value.toFixed(3),
         ext: camera ? +(1 - Math.exp(-Math.pow(j.group.position.distanceTo(camera.position)

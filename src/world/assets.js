@@ -30,6 +30,61 @@ function desun(mt) {
   if (mt.roughness < floor) mt.roughness = floor + (mt.roughness % 0.05);
 }
 
+// Blender's glTF exporter stamps `doubleSided: true` onto EVERY material it writes, whatever the
+// model is — all 36 hero GLBs and all 91 Kenney ones, with no exceptions and no art decision behind
+// any of it. GLTFLoader turns that into THREE.DoubleSide, which switches off backface culling in the
+// beauty pass and, because three derives `shadowSide` from `side` when `shadowSide` is null, also
+// rasterises both faces of every one of them into the sun's depth map. Measured on the hub at
+// 640x696 with the shadow map refreshed every frame: 1 704 062 of 1 862 694 scene triangles — 91% of
+// everything being drawn — were double-drawn.
+// So: cull by default, and keep DoubleSide only where the geometry genuinely has a back that gets
+// seen. That is decided offline, per primitive, from mesh topology — weld the vertices, then count
+// edges touched by exactly one triangle. A *closed* shell has none, and from outside it the back
+// faces are always behind the front ones, so culling cannot change a pixel. Anything with a boundary
+// edge is an open surface, and culling its back face deletes it the moment the camera sees the
+// concave side. `tools/audit_double_sided.mjs` computes this and prints the table below; `--check`
+// fails if the library and this list have drifted apart.
+//
+// The predicate used to be a *ratio* — a primitive had to be at least 25% boundary edges to count as
+// a sheet. That is what the frame sweep caught it getting wrong: a thin open shell, e.g. the
+// starship's aft skirt, is a lampshade with two rim loops, so it measures ~4% boundary and was
+// classed as a solid. Culled, the skirt vanished when the rover drove under the ship, and the
+// overhead chopstick arm vanished from the pad — 2 739 and 17 546 changed pixels at those two
+// vantages. So the test is now the honest binary one: any boundary edge at all means the shell is
+// not closed. 243 924 of 718 020 library triangles are open, over the 48 material names below
+// (386 476 triangles, 54%). The over-retention is forced by the runtime's granularity — the decision
+// is per material, so a material with one open primitive stays DoubleSide everywhere.
+//
+// Cost, measured on the hub in one synchronous task, 4 rounds x 3 conditions x 15 frames, shadow map
+// pinned every frame, one amortised flush per block (medians; every no-policy block was slower than
+// every honest-list block, which was slower than every ratio-list block):
+//   no policy              12.13 ms   1 704 062 triangles double-drawn
+//   this list (48 names)   11.40 ms   1 094 620   — keeps 0.73 ms of the 1.46 ms the policy is worth
+//   the old ratio list     10.67 ms     611 790   — rejected: it deletes visible surfaces
+// Acceptance for the list above: with the scene rendered twice at 320x348, once with no policy and
+// once with it, 159 camera vantages that the chase rig can actually occupy (filtered against every
+// collider disc and against the standable height) came back with a max luminance delta of 0 — not
+// "small": zero, byte for byte.
+const SHEET_MATERIALS = new Set([
+  // Terrain and rock skins — the ground itself is a single-sided surface in these packs, so culling
+  // would punch holes in the planet: dust_mars is 36 246 of 36 246 triangles open, grass, dirt,
+  // _defaultMat and the rock set are 100%.
+  'dust_mars', 'grass', 'dirt', 'rockTrack', 'rock', 'rockDark', '_defaultMat', 'crystal',
+  // Our own heroes' cladding: shells rather than walls, so the inside of a skin IS the visible face
+  // (cryo tanks, greenhouse, habitat dome, launch tower, watch deck, lamp, lander, gantry, rover).
+  'alu_bright', 'worn_metal', 'hull_white', 'hull_warm', 'composite_rub', 'footing_cast',
+  'deck_roof', 'floor_grate', 'cu_pipe', 'dark', 'dark_panel', 'rust_orange', 'cryo_insul',
+  'steel', 'deck_steel', 'deck_cast', 'pad_white', 'glass_clear', 'hero_steel',
+  'rover_alu', 'rover_dark', 'rover_glass', 'solar_cell', 'grow_soil', 'thruster_soot',
+  // Starship stack: the aft skirt, skin, nozzles, fins, wordmark and glazing are all authored as
+  // open shells, not as solids of revolution — this is the group the ratio test got wrong.
+  'rocket_struct', 'rocket_skin', 'rocket_nozzle', 'rocket_burnt', 'rocket_burnt_tex',
+  'rocket_wordmark', 'rocket_glass',
+  // Emitters and Kenney kit detail — lamps, straps, panel decals and suits, all single-sided quads.
+  'light_cyan', 'light_amber', 'light_warm', 'acc_orange',
+  'metal', 'metalDark', 'metalRed', 'skin',
+]);
+
 function unstub(root) {
   root.traverse((o) => {
     const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
@@ -64,6 +119,10 @@ function unstub(root) {
         pane = true;
       }
       desun(mt);
+      // Cull the back face unless this material is a measured one-sided sheet. Runs after the pane
+      // rewrite on purpose: a blended window that keeps only its near face is the correct glass, not
+      // two overlapping panes, and the audit already exempts the glazing that is a bare quad.
+      if (mt.side === THREE.DoubleSide && !SHEET_MATERIALS.has(mt.name)) mt.side = THREE.FrontSide;
     }
     // A quarter-opaque pane that drops a fully solid shadow is the shadow/solid mismatch the shadow
     // pass is glad to produce, because it reads depth and knows nothing about alpha. The hull, frame

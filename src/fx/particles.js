@@ -128,7 +128,13 @@ export function createFX(scene, quality) {
   fx.driftSmoke = new ParticlePool(scene, Math.round(400 * P), { color0: 0xa08264, color1: 0x6a4a34, opacity: 0.30, gravity: 0.2, drag: 0.95, sizeGrow: 1.5, maxSize: 20, nearFade: 4.0 });
   fx.spark = new ParticlePool(scene, Math.round(600 * P), { color0: 0xfff2b0, color1: 0xff5a10, opacity: 1, gravity: -9.8, drag: 0.985, additive: true, sizeGrow: 0.9 });
   fx.flame = new ParticlePool(scene, Math.round(1400 * P), { color0: 0xfff8e0, color1: 0xff4400, opacity: 1, gravity: 1.0, drag: 0.97, additive: true, sizeGrow: 1.25 });
-  fx.smoke = new ParticlePool(scene, Math.round(1200 * P), { color0: 0xd8c8bc, color1: 0x5a4a42, opacity: 0.5, gravity: 1.6, drag: 0.975, sizeGrow: 1.9 });
+  // The launch spends this pool twice over at once: a wake behind the vehicle and an apron on the
+  // deck under it. The old 1200·P cap (840 slots at standard quality) was already 67% consumed by
+  // the wake alone — 567 live sprites measured at MET 15 — before the pad cloud asked for anything,
+  // and a ring buffer that wraps under live particles strobes rather than dimming. The extra slots
+  // cost tens of KB of attributes and one pass over idle entries per frame; nothing but the launch
+  // fills them.
+  fx.smoke = new ParticlePool(scene, Math.round(2400 * P), { color0: 0xd8c8bc, color1: 0x5a4a42, opacity: 0.5, gravity: 1.6, drag: 0.975, sizeGrow: 1.9 });
   // A near-white puff at 0.45 opacity over a dark deck drew as a cotton ball with a visible
   // polygon outline. Vapour off a cryo leak is loaded with suspended dust, so it is dim, warm-grey
   // and much larger by the time it leaves the plume.

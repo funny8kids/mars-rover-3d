@@ -1000,7 +1000,15 @@ function launchBeat(b) {
   const F = launch.flight, rig = base.launchRig;
   const line = getLang() === 'en' ? b.en : b.zh;
   launchQueue.push(`◦ ${line} · T+${b.t.toFixed(0)}s`);
-  if (b.id === 'liftoff') {
+  if (b.id === 'ignition') {
+    // The shock front, not the cloud. Overpressure crosses the deck faster than the condensed
+    // vapour it pushes, so this ring deliberately outruns `blast` in seedPlumes — the two reading
+    // at the same speed is what made the old deck effects look like one expanding disc.
+    const ring = shockWave(base.launchPadPos.x, surfaceAt(...ZONES.launch.pos) + 2.2, base.launchPadPos.z, 0xffe0b0, 12);
+    if (ring) ring.userData.grow = 20;
+    launch.flash = Math.max(launch.flash, 0.34);
+    audio.cue();
+  } else if (b.id === 'liftoff') {
     // The deck's own beat: the overpressure ring that used to be keyed to a timer is now the moment
     // the thrust actually beats the weight, so it fires when the stack leaves, not when the clock says.
     UI.countdown(null);
@@ -1080,14 +1088,38 @@ function seedPlumes(F) {
     // the pad from the strike point — it does not rise with the vehicle. Once the deck is out of
     // reach the only smoke left is the column the vehicle drags behind it.
     const deckY = surfaceAt(p.pos.x, p.pos.z);
-    const mPad = Math.round(4.2 * quality.particles * padF * (0.4 + p.power));
+    // The apron expands through its own *birth radius*, not through the velocity given to it. The
+    // old seeding threw sprites outward at 8–16 m/s and expected them to travel; the pool damps
+    // velocity by `drag^(dt·60)` = 0.975, which is ×0.22 a second, so a sprite's entire lifetime
+    // travel is v/1.51 — five to ten metres. A cloud whose front covers ten metres in seven seconds
+    // is a puddle, and that is why the hold-down read as a mist behind the tower legs. A blast front
+    // is a decelerating current, so the edge follows `R·(1 − e^(−age/τ))`: 22 m at the moment the
+    // stack clears the hold-down, 41 m by the one the deck stops mattering.
+    const blast = 48 * (1 - Math.exp(-F.met / 5.2));
+    const mPad = Math.round(4.0 * quality.particles * padF * (0.25 + 0.75 * p.power));
     for (let k = 0; k < mPad; k++) {
-      const a = Math.random() * 6.283, rr = 2 + Math.random() * 9;
+      const a = Math.random() * 6.283;
+      // Biased toward the mount, not spread evenly over the area. A uniform-in-area fill spends
+      // most of a fixed particle budget on the widening outer ring, and what the frame got was a
+      // handful of isolated lobes out by the gantries with bare sand between them. The opaque mass
+      // of a real launch sits on the mount; only its fingers reach out.
+      const rr = 6 + Math.pow(Math.random(), 1.8) * Math.max(0, blast - 6);
       const ux = Math.cos(a), uz = Math.sin(a);
+      // Measured from the mount, not from the pad centre: `rr` never goes below the mount radius,
+      // so `rr/blast` would call the sprite 27% of the way to the front while it is still sitting on
+      // the hold-down ring, and the wedge below would flatten out exactly where it should be tallest.
+      const edge = blast > 6 ? Math.min(1, (rr - 6) / (blast - 6)) : 0;
+      // It boils up out of the trench by the mount and flattens to a skirt as it rolls: the cloud
+      // is a wedge, not a slab. The wedge steepens with age, because the jet keeps feeding the mount
+      // while the front is out on the sand — and the pool's own buoyancy only lifts a sprite ~8 m
+      // before it dies (terminal rise is gravity/drag-coefficient = 1.6/1.51 m/s). A cloud that is
+      // the same height at T+3 as at T+10 reads as a painted puddle however dense it is.
+      const boil = 1 + 2.2 * (1 - Math.exp(-F.met / 6));
+      const y = deckY + 0.7 + Math.random() * (1.4 + 6.2 * (1 - edge)) * boil;
       fx.smoke.emit(
-        p.pos.x + ux * rr, deckY + 1 + Math.random() * 2.5, p.pos.z + uz * rr,
-        ux * (8 + Math.random() * 8), 2.5 + Math.random() * 3, uz * (8 + Math.random() * 8),
-        1.8 + Math.random() * 1.2, 7 + Math.random() * 7
+        p.pos.x + ux * rr, y, p.pos.z + uz * rr,
+        ux * (2 + 7 * edge), 1.1 + Math.random() * 2.4, uz * (2 + 7 * edge),
+        5.5 + Math.random() * 4.5, 4.5 + Math.random() * 5.5
       );
     }
     // The wake is born past the flame's tip, not at the mouth. It used to be seeded between `prev`

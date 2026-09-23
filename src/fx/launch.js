@@ -215,6 +215,11 @@ export function createLaunch(rig, launch) {
   L.update = (dt) => {
     if (!L.running || L.done) return false;
     const t = (L.met += dt);
+    // T+0 is an event, and it was the only one the sequence did not announce. The hold-down is three
+    // seconds of sixteen engines pushing against a stack that has not yet beaten its own weight —
+    // visually the loudest moment of the whole flight — and it used to arrive silently, so the deck
+    // just had smoke in it before anything had happened.
+    fire('ignition', t, '十六机全点火 · 箭体压紧台面', 'Engine start · holding down');
 
     // ── the ship's leg: engine start, then one authored thrust profile, integrated ──
     const gross = (t < SECO_AT ? accelAt(t) : 0) + G_MARS;

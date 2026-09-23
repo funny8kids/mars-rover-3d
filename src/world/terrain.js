@@ -842,8 +842,12 @@ export function createTerrain(scene) {
       // is wrong: slope-only paints every steep dune face inside the field with basalt, province-only
       // paints the rampart's shallow benches. Angle of repose is the physical seam — dry Martian sand
       // holds ~32-34°, so a face materially steeper than that is holding itself up with rock. The
-      // window is the measured facet-slope table (r116 median 21.8°, r124 p75 29°/p90 35°, r≥132
-      // median 57°), which is why it is 24..36 and not a round number.
+      // window is the facet-slope table sampled the way this gate samples it (a 0.8 m central chord on
+      // heightAt, binned by radius): r 113..116 median 12.2° with 16 % over 24°, r 116..120 median
+      // 23.0° / 46 %, the climbing face r 120..128 median 30.9° with 40-41 % clear of 36°, and the
+      // far-side scarp past the bench r 138..146 median 66.7°. Which is why it is 24..36 and not a
+      // round number: the lower bound sits just above the rampart's toe, the upper one just below its
+      // face, and the dune field inside r = 113 never reaches either.
       // Slope is differenced off heightAt here, not off surfaceSlope: surfaceSlope samples the
       // installed grid, and the installed grid is `nodes`, the very array this loop is writing. The
       // second survey would then read its own unfinished pass as terrain — a stale-height sweep

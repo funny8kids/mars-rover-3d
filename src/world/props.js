@@ -1961,10 +1961,11 @@ export async function buildBase(scene, quality) {
 
   // ══════════ RIM BORDER — the playfield's edge stops with a ring of discs and *looks* like dust ══════════
   {
-    // A5's permanent-loss case had no object in it at all. Past ISLAND.radius the ground climbs 8.5 m
-    // to a crater rim and then drops 30 m into a void the terrain mesh does not even cover, so a
-    // rover that crests that lip carries 4 m/s slides the far face — and there is no driving out of
-    // a 62° slope, which left the rescue loop re-dropping it onto the same flat nothing forever.
+    // A5's permanent-loss case had no object in it at all. Past ISLAND.radius the ground climbs to a
+    // crater rim standing 10 m at the median over the desert floor (up to 17.2) and then drops
+    // 20..34 m into a void the terrain mesh does not even cover, so a rover that crests that lip
+    // carries 4 m/s slides the far face — and there is no driving out of the 67° median that face
+    // runs at, which left the rescue loop re-dropping it onto the same flat nothing forever.
     //
     // Containment is the collider ring's job, and a ring of equal discs does it as well as a wall of
     // boulders did: `sealCheck` below reads discs alone, and `audit` groups `rim:border#n` into one

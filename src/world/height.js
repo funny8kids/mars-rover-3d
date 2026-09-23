@@ -196,10 +196,11 @@ function craterProfile(dx, dz, c) {
 // flank is one colour at one incidence, and a wall whose slope never changes reads as poured concrete
 // however much its skyline wanders. Channels are the term that varies the flank *radially*, and they
 // are what a rampart actually does: runoff concentrates, incises the scarp, and drops what it strips
-// as a fan at the mouth. Measured over 2 880 bearings against the shipped field: 30 % of the ring is
-// cut deeper than 0.5 m, 5 mouths run right through the crest at 28..38 m of strike and up to 6.7 m
-// of relief, and at the deepest of them the mesh's own 1.364 m lattice holds the cut to within 0.02 m
-// of what the field specifies.
+// as a fan at the mouth. Measured over 1 440 bearings against the same section with the cuts removed:
+// 34 % of the ring is cut deeper than 0.5 m, 17 channels are still open where the crest passes, 5 of
+// them as runs of 16..25 m of strike carrying up to 12.49 m of relief (the other 12 are 0..3 m slivers
+// where a braid's head just pokes through the top of the wall), and at the deepest of them the mesh's
+// own 1.364 m lattice holds the cut to within 0.13 m of what the field specifies.
 //
 // A channel is a thing with an index, so it is addressed by an index rather than by a noise field
 // asked to invent a wavelength — `ringWave`'s header is what that costs. Widths are fractions of the
@@ -234,8 +235,8 @@ function channel(th, s, rise, C) {
   // leaves. A cosine bell makes every channel the same gentle trough, and gentle troughs at 68 m are
   // the flat nothing this is here to remove.
   const shape = 1 - Math.pow(d, 1.6);
-  // The cut closes out downslope, so a channel's lowest metres are never at the toe — the mouth of
-  // the deepest master still starts above r = 113.4, past where a rover's nose can reach. `head` is
+  // The cut closes out downslope, so a channel's lowest metres are never at the toe — the first cut
+  // anywhere on the ring is at r = 114.70, past where a rover's nose can reach. `head` is
   // per-channel: a braid that runs out of steepness before the crest is left hanging, scars the
   // flank, and leaves the skyline alone, which is why 19 braids do not drill 19 holes in the rim.
   const head = C.head + 0.28 * ihash(k * 7.13 + C.seed * 2.11);
@@ -258,19 +259,30 @@ const RIM_BRAID = { N: 19, seed: 9.2, depth: 0.30, hw: 0.055, flare: 0.045, head
 //
 // The four are now actually alive (`ringWave`), which changes what this reads as. Measured over 1 440
 // bearings, taking the wall as the crest height above the lowest ground between r = 100 and 108 on the
-// same bearing: 71 % of the ring stands over 3 m, the wall runs −3.1..10.4 m with a 5.1 m median,
+// same bearing: 82 % of the ring stands over 3 m, the wall runs 0..17.2 m with a 10.0 m median,
 // chaptered by 4 massifs carrying 8 secondary peaks and 27 slump blocks each, broken by 5 mouths, and
-// a crest line that runs at 112..136.5 m instead of one radius. 113 of those bearings are saddles more
-// than 1.5 m below the crest on both sides 5° away; the wash below is what doubled that from 89.
-// Nothing the rover can reach moves — the toe starts at 110 m and the barrier stops a body centre at
-// 110.4 m, so the whole scarp lives beyond the drive line, and the steepest slope inside r<99 is the
-// same 27.7 degrees it was before any of this.
+// topping out anywhere between 108 and 137.5 m instead of at one radius.
+//
+// That median used to be 5.0 m, which is the number this section exists to argue about: a 236 m bowl
+// ringed by a 5 m sill is a tide line, not a rampart, and the raised rim of a simple crater of this
+// diameter is ~0.06 D ≈ 14 m. The scale came from measuring what a taller one costs instead of
+// guessing it, and measured, it costs nothing the rover can feel. Of the 48 000 samples taken at
+// r ≤ 110 every single one moves by exactly 0.000 m; the slope histogram over r 96..110 is bin-for-bin
+// identical to the shipped one, right down to its steepest 0.8 m chord being the same 33.1 degrees at
+// the same place (bearing 131°, r = 110); and the one band a nose can reach, 110..112.4, moves by at
+// most 0.117 m. Continuity is unchanged in kind rather than in number — the largest step between
+// bearings 0.05° apart on the flank (7 200 samples at r = 124) goes 0.396 -> 0.433 m, which is still
+// the slump's own relief and not a new seam — and the cost is flat: six alternating rounds of 400 k
+// `heightAt` samples time at an 860 ms median both before and after, inside an 827..894 ms run-to-run
+// spread. What the metres buy is the horizon, which is the only place any of
+// this is ever seen: bearings standing over 9 m go 6 % -> 59 %, and the median crest subtends 301 px
+// of a 1 080 px frame from r = 100 instead of 163.
 function rimWall(th, r) {
   // Section the rim itself: a long chaptering into massifs, a shorter peak line inside each, and the
-  // slump detail on top of those. Sum of the amplitudes is the maximum excursion off the base. The
-  // whole section is 15 % lower than it was written, because at the old amplitudes the face below
-  // was reading 48 degrees at the median — see the run for what the mesh ceiling allows.
-  const tall = 6.4 + 2.45 * RIM_MASSIF(th) + 1.3 * RIM_SCARP(th) + 0.5 * RIM_SLUMP(th);
+  // slump detail on top of those. Sum of the amplitudes is the maximum excursion off the base, and the
+  // ratio between them is the skyline's own character, so the whole section is scaled as one number
+  // rather than by re-guessing each term: 1.9x on the section that measured a 5.0 m median wall.
+  const tall = 12.2 + 4.65 * RIM_MASSIF(th) + 2.47 * RIM_SCARP(th) + 0.95 * RIM_SLUMP(th);
   // Gaps where the sand has cut clean through the rampart. Without them the wall is unbroken
   // whatever else it does, and an unbroken wall is the thing being fixed. A mouth opens only where
   // *both* surveys are low: thresholding one field alone makes every gap as wide as half that
@@ -288,22 +300,24 @@ function rimWall(th, r) {
   const rise = Math.max(1.2, tall) * (0.13 + 0.87 * breach);
   // ...and where its crest runs. The run is written *against the height* because that is the one
   // thing that keeps the flank honest: the slope of the rising face is the wall divided by this, so a
-  // constant run would leave the low spurs gentle and the massifs near-vertical. 14 m plus 0.8 m per
-  // metre of wall measures a median 38.9 degrees on that face, and nothing on the ring climbs steeper
-  // than 42.6; before the section came down it was a median 48 and a worst 51.8, which is a cliff.
+  // constant run would leave the low spurs gentle and the massifs near-vertical.
   //
-  // It cannot go much further, though, and the reason is arithmetic rather than taste. A smoothstep's
-  // steepest point is 1.5× its own average, and the ceiling below caps the run near 18 m, so an 8 m
-  // wall lands just short of 40 degrees and there is no width available to halve it. What makes that
-  // survivable is that the face is not holding a pile: `rawHeight` cuts the rampart out of the
-  // weathered highland, so these are scarps left in bedrock, and the ~32 degrees that bounds a drift
-  // is a limit on talus, not on a cliff the sand was winnowed off of.
+  // Measured on the section as it now stands, over 1 440 bearings: the face's own secant runs 29.5
+  // degrees at the median and 39.9 at p95, and its steepest metre-long chord — which is the shortest
+  // one the mesh can even draw, at 1.364 m — runs 51 degrees at the median, 65 at p95, 69.5 at worst.
+  // Steep, and survivable, because the face is not holding a pile: `rawHeight` cuts the rampart out of
+  // the weathered highland, so these are scarps left in bedrock, and the ~32 degrees that bounds a
+  // drift is a limit on talus, not on a cliff the sand was winnowed off of. The material agrees —
+  // `terrain.js` paints bare basalt above a 24..36 degree facet slope, which is the same claim in a
+  // shader, and at this section the band that *is* the climbing face (r 120..128) puts 41 % and 40 %
+  // of its 0.8 m samples above 36 degrees where the shipped section put 9 % and 9 %.
   //
-  // The ceiling is not cosmetic. The mesh is a 300 m square, so along the axes there is ground to
-  // draw out to r = 150 and nothing past it: crest + 3..5.5 m of bench + 10 m of far-side scarp has
-  // to finish inside that, which is what bounds the run here rather than a slope limit alone.
-  // Measured, the crest runs out to 134 m at the widest and the profile stops changing by 146.8 m —
-  // 3.2 m of mesh spare, and the clamp binds on 1.4 % of bearings.
+  // The ceiling below is the interesting part, because it is neither a slope limit nor the mesh. It is
+  // `ISLAND.rim + 2 - foot`, which caps crestR at 134 m on every bearing no matter how tall the wall
+  // gets, so height past that point buys slope rather than ground. That is why the section could
+  // double without disturbing the horizon the mesh is drawn to: the bench's outer lip still runs out to
+  // 138.5 m and the profile still stops changing by 148.0 m — 2.0 m inside the 300 m square's
+  // half-width — at every scale measured from 1.25x to 2.3x.
   const run = Math.min(14 + 0.8 * rise * (0.85 + 0.3 * RIM_RUN(th)), ISLAND.rim + 2 - foot);
   const crestR = foot + run;
   let s = smoothstep(foot, crestR, r);
@@ -313,9 +327,11 @@ function rimWall(th, r) {
   s += s * 0.075 * Math.sin(s * Math.PI * 5.0) * smoothstep(0.04, 0.30, s) * (1 - smoothstep(0.62, 0.98, s));
   // Wash, both trains. The gate is the flank fraction, not the radius, because that is what makes the
   // cheapest short-circuit also the provably safe one: every term in `channel` is written against `s`,
-  // all of them are zero below s = 0.16, and the lowest s = 0.16 can sit is r = 113.4 — so below
-  // s = 0.155 nothing has been written that the rover could feel anyway, and the ~85% of samples
-  // taken inland pay one comparison. Measured, the change is exactly 0.000 m for r ≤ 113.
+  // all of them are zero below s = 0.16, and the taller section pushes the s = 0.16 contour outward
+  // with everything else, so nothing at all is cut until r = 114.70. Measured over 720 bearings at
+  // 0.05 m steps, the channel term is exactly 0.00000 m for every sample out to r = 112.4 — the
+  // furthest a rover's nose reaches past the barrier disc at 110.4 — and the ~85 % of samples taken
+  // inland pay one comparison.
   let wash = 0;
   if (s > 0.155) {
     wash = channel(th, s, rise, RIM_MASTER) + channel(th, s, rise, RIM_BRAID);

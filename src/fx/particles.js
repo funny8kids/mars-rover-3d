@@ -1,8 +1,11 @@
 import * as THREE from 'three';
 
+// Both shaders are JS template literals: a backtick inside either one ends the string early, which
+// kills the whole module graph with a syntax error the browser only reports when it parses it.
+// `node --check src/fx/particles.js` catches it in one second.
 const VS = `
 attribute float aLife; attribute float aSize;
-uniform float uPixelRatio, uMaxSize, uNearFade;
+uniform float uPixelRatio, uMaxSize, uNearFade, uFocal;
 varying float vLife;
 varying float vNear;
 void main(){
@@ -11,7 +14,7 @@ void main(){
   float dist = max(-mv.z, 1.0);
   // Uncapped, a mote 1 m from the lens covers the whole screen; the DOF pass then smears it
   // into a flat orange disc that dominates the frame. Clamp the sprite and dissolve it near.
-  gl_PointSize = min(aSize * (160.0 / dist), uMaxSize) * uPixelRatio;
+  gl_PointSize = min(aSize * (uFocal / dist), uMaxSize) * uPixelRatio;
   vNear = smoothstep(uNearFade * 0.3, uNearFade, dist);
   gl_Position = projectionMatrix * mv;
 }`;
@@ -20,16 +23,15 @@ precision mediump float;
 varying float vLife;
 varying float vNear;
 uniform vec3 uColor0, uColor1;
-uniform float uOpacity, uFadeIn;
+uniform float uOpacity, uFadeIn, uInner;
 void main(){
   vec2 uv = gl_PointCoord - 0.5;
   float d = length(uv);
-  float a = smoothstep(0.5, 0.14, d) * vNear;
+  float a = smoothstep(0.5, uInner, d) * vNear;
   if (a <= 0.001 || vLife >= 1.0 || vLife < 0.0) discard;
   float t = vLife;
   vec3 c = mix(uColor0, uColor1, t);
-  float fade = mix(smoothstep(0.0, uFadeIn, t), 1.0 - t, step(0.0, uFadeIn - 0.5) * 0.0 + 1.0);
-  fade = (1.0 - t) * smoothstep(0.0, 0.05, t);
+  float fade = (1.0 - t) * smoothstep(0.0, uFadeIn, t);
   gl_FragColor = vec4(c, a * uOpacity * fade);
 }`;
 
@@ -50,10 +52,36 @@ export class ParticlePool {
         uColor0: { value: new THREE.Color(opts.color0 || 0xffffff) },
         uColor1: { value: new THREE.Color(opts.color1 || 0x222222) },
         uOpacity: { value: opts.opacity ?? 0.8 },
-        uFadeIn: { value: 0 },
+        // A puff is brightest while it is still at its birth size, so a pool of growing sprites
+        // draws as bright dots with the dim giants nobody notices between them. `fadeIn` holds a
+        // puff invisible until it has grown that share of its life. Measured on the MET 8 ascent
+        // frame: the smoke pool's default 0.05 leaves the exhaust trail a dotted line (37 of 102
+        // rows along it carry no smoke at all), 0.14 makes it continuous (5 of 102). It does not,
+        // on its own, stop the trail reading as separate puffs — see the note on the wake in
+        // main.js's seedPlumes. 0.05 is the historical constant for every other pool.
+        uFadeIn: { value: opts.fadeIn ?? 0.05 },
         uPixelRatio: { value: 1 },
         uMaxSize: { value: opts.maxSize ?? 52 },
+        // Where the sprite's alpha stops being flat and starts ramping to the rim, in point-coord
+        // units. 0.14 is the historical shape: a disc is solid out to 28 % of its radius, so a pile
+        // of overlapping discs prints one crisp circle per puff — which is what made the launch cloud
+        // read as balloons rather than smoke. Measured, not tasted: halving uOpacity left every
+        // outline exactly as sharp (band contrast 21.5 against 33.0, correlation 0.956), so the
+        // defect lives in the profile, not in the amplitude. A pool whose sprites are a *volume*
+        // wants the ramp to start at the centre; a mote wants the flat dot.
+        uInner: { value: opts.inner ?? 0.14 },
         uNearFade: { value: opts.nearFade ?? 2.6 },
+        // Pixels-per-metre over focal length, in CSS pixels: `aSize * uFocal / dist` is a pinhole
+        // camera, so a pool whose `aSize` really is metres draws at its real angular size. 160 is the
+        // historical literal and it is *not* a focal length — this rig's is 837 at the driving fov —
+        // so every pool left on the default draws each sprite 5.2x narrower than the metres it was
+        // seeded with. For a mote that is a deliberate cheat (a 0.35 m grain of salt has to be visible
+        // at 30 m or the storm is empty), and the sizes were frame-tuned under it, so it stays. For a
+        // pool whose sprites are a volume it is the whole defect: a 4.5-10 m puff of exhaust drawn as a
+        // 2 m dot over a 150 m pad is a scatter of specks, not a cloud, and no amount of re-seeding or
+        // opacity fixes a size error by changing the count. `phys` opts the pool in; main.js then
+        // writes the camera's actual focal every frame, because the fov animates.
+        uFocal: { value: opts.focal ?? 160 },
       },
       transparent: true, depthWrite: false,
       blending: opts.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
@@ -63,12 +91,15 @@ export class ParticlePool {
     this.points.renderOrder = opts.renderOrder || 5;
     scene.add(this.points);
     this.pos = pos; this.life = life; this.sizeArr = size;
+    this.size0 = new Float32Array(count);
     this.vel = new Float32Array(count * 3);
     this.ttl = new Float32Array(count);
     this.age = new Float32Array(count);
     this.grav = opts.gravity ?? -3.0;
     this.drag = opts.drag ?? 0.98;
     this.sizeGrow = opts.sizeGrow ?? 1;
+    // Opted into a per-frame `uFocal` from the live camera — see the uniform's note.
+    this.phys = opts.phys ?? false;
     // `advect` treats the wind argument as a target velocity in m/s rather than an
     // acceleration, which is what airborne dust actually does: it is carried, not pushed.
     this.advect = opts.advect ?? 0;
@@ -81,10 +112,10 @@ export class ParticlePool {
     const i = this.head; this.head = (this.head + 1) % this.count;
     this.pos[i * 3] = x; this.pos[i * 3 + 1] = y; this.pos[i * 3 + 2] = z;
     this.vel[i * 3] = vx; this.vel[i * 3 + 1] = vy; this.vel[i * 3 + 2] = vz;
-    this.ttl[i] = ttl; this.age[i] = 0; this.sizeArr[i] = size; this.life[i] = 0;
+    this.ttl[i] = ttl; this.age[i] = 0; this.sizeArr[i] = size; this.size0[i] = size; this.life[i] = 0;
   }
   update(dt, windX = 0, windZ = 0, audioBoost = 0) {
-    const { pos, vel, life, age, ttl, sizeArr, grav, drag, count, sizeGrow, advect, floorAt, bounce } = this;
+    const { pos, vel, life, age, ttl, sizeArr, size0, grav, drag, count, sizeGrow, advect, floorAt, bounce } = this;
     for (let i = 0; i < count; i++) {
       if (life[i] >= 1) continue;
       age[i] += dt;
@@ -112,7 +143,16 @@ export class ParticlePool {
           vel[i3] *= 0.72; vel[i3 + 2] *= 0.72;
         }
       }
-      sizeArr[i] *= 1 + (sizeGrow - 1) * dt;
+      // Growth is a share of the puff's own life, not of wall-clock seconds. The old line was
+      // `sizeArr[i] *= 1 + (sizeGrow - 1) * dt`, which compounds once per *frame*, so a puff ended
+      // at e^((sizeGrow-1)·ttl) times its birth size — and `ttl` spans 300× across the pools
+      // (0.16 s for a spark, 10 s for the pad cloud). Measured live on the frame that reported this:
+      // a 2.6 m cryo-steam puff (`sizeGrow: 2.9`, ttl 2.2-3.2 s) drew at up to 817 m across, and a
+      // 4.5-10 m pad puff reached 14,857 m. Nothing looks like that; the vertex shader's pixel cap
+      // clamps every one of them to exactly `uMaxSize`, so a cloud of long-lived sprites renders as
+      // a set of identical discs — which is the string of pearls the MET 8 ascent frame showed under
+      // the booster, and why no amount of re-seeding the trail removed it.
+      sizeArr[i] = size0[i] * (1 + (sizeGrow - 1) * t);
     }
     this.geo.attributes.position.needsUpdate = true;
     this.geo.attributes.aLife.needsUpdate = true;
@@ -124,17 +164,40 @@ export class ParticlePool {
 export function createFX(scene, quality) {
   const P = quality.particles;
   const fx = {};
-  fx.dust = new ParticlePool(scene, Math.round(700 * P), { color0: 0xb98a5c, color1: 0x8a5c38, opacity: 0.26, gravity: -0.6, drag: 0.94, sizeGrow: 1.25, maxSize: 15, nearFade: 4.0 });
-  fx.driftSmoke = new ParticlePool(scene, Math.round(400 * P), { color0: 0xa08264, color1: 0x6a4a34, opacity: 0.30, gravity: 0.2, drag: 0.95, sizeGrow: 1.5, maxSize: 20, nearFade: 4.0 });
+  // `sizeGrow` reads as "how many times bigger a puff is when it dies", which is what every number
+  // below is now. The pools whose look had already been frame-checked under the old per-second law
+  // keep their old *end-of-life* size, converted as e^((sizeGrow-1)·ttl): dust 1.25@1.9 s → 1.6,
+  // driftSmoke 1.5@2.6 s → 3.6, flame 1.25@0.22 s → 1.06, and the three storm layers 1.04 / 1.37 /
+  // 3.1. `steam` and `smoke` are written literally instead, because converting them would have
+  // preserved 173× and 1070× growth — the runaway the law produced for long-lived sprites.
+  fx.dust = new ParticlePool(scene, Math.round(700 * P), { color0: 0xb98a5c, color1: 0x8a5c38, opacity: 0.26, gravity: -0.6, drag: 0.94, sizeGrow: 1.6, maxSize: 15, nearFade: 4.0 });
+  fx.driftSmoke = new ParticlePool(scene, Math.round(400 * P), { color0: 0xa08264, color1: 0x6a4a34, opacity: 0.30, gravity: 0.2, drag: 0.95, sizeGrow: 3.6, maxSize: 20, nearFade: 4.0 });
   fx.spark = new ParticlePool(scene, Math.round(600 * P), { color0: 0xfff2b0, color1: 0xff5a10, opacity: 1, gravity: -9.8, drag: 0.985, additive: true, sizeGrow: 0.9 });
-  fx.flame = new ParticlePool(scene, Math.round(1400 * P), { color0: 0xfff8e0, color1: 0xff4400, opacity: 1, gravity: 1.0, drag: 0.97, additive: true, sizeGrow: 1.25 });
+  fx.flame = new ParticlePool(scene, Math.round(1400 * P), { color0: 0xfff8e0, color1: 0xff4400, opacity: 1, gravity: 1.0, drag: 0.97, additive: true, sizeGrow: 1.06 });
   // The launch spends this pool twice over at once: a wake behind the vehicle and an apron on the
   // deck under it. The old 1200·P cap (840 slots at standard quality) was already 67% consumed by
   // the wake alone — 567 live sprites measured at MET 15 — before the pad cloud asked for anything,
   // and a ring buffer that wraps under live particles strobes rather than dimming. The extra slots
   // cost tens of KB of attributes and one pass over idle entries per frame; nothing but the launch
   // fills them.
-  fx.smoke = new ParticlePool(scene, Math.round(2400 * P), { color0: 0xd8c8bc, color1: 0x5a4a42, opacity: 0.5, gravity: 1.6, drag: 0.975, sizeGrow: 1.9 });
+  // The one pool that is a *volume* rather than a mote, so it is the one pool whose sprites have to
+  // overlap. Two measured numbers say they already do: along the exhaust trail the median gap between
+  // neighbouring near-axis puffs is 0.52 m against a 10.8 px (about 9 m) drawn diameter, so 56 of 56
+  // adjacent pairs overlap, and the MET 8 band averages 4.65 puffs deep. The cloud therefore was not
+  // short of sprites — it was drawing each one as a flat-topped disc. Hence `inner: 0`, which takes
+  // the plateau out of the profile, and *not* more opacity: halving `opacity` left every outline just
+  // as crisp (band contrast 21.5 against 33.0, correlation 0.956). `fadeIn` 0.14 (against the 0.05
+  // every other pool uses) is the other measured fix — at the default the same frame had 37 of 102
+  // rows along the trail carrying no smoke at all; at 0.14 it has 5.
+  // `phys` because every number this pool is seeded with is metres: a 4.5-10 m pad puff and a
+  // mouth-fraction trail puff drawn through the mote fudge came out at 11 px against a flame column
+  // that projects at 138, i.e. a 150 m pad carrying ~1,800 specks rather than one rolling mass. The
+  // cap goes with it — the historical 52 px is a *mote* cap, and at the focal this pool now uses a
+  // 26 m puff at the launch camera's own 186 m range wants 117 px. Left at 52 it would clamp the
+  // whole cloud back to identical discs, which is the string-of-pearls defect the size law was
+  // written to kill. 340 device px is half the frame's height: past that a puff is a fade, not a
+  // shape, and `nearFade` dissolves what gets closer to the lens than that anyway.
+  fx.smoke = new ParticlePool(scene, Math.round(2400 * P), { color0: 0xd8c8bc, color1: 0x5a4a42, opacity: 0.26, gravity: 1.6, drag: 0.975, sizeGrow: 2.6, fadeIn: 0.14, inner: 0, phys: true, maxSize: 340 });
   // A near-white puff at 0.45 opacity over a dark deck drew as a cotton ball with a visible
   // polygon outline. Vapour off a cryo leak is loaded with suspended dust, so it is dim, warm-grey
   // and much larger by the time it leaves the plume.
@@ -144,9 +207,9 @@ export function createFX(scene, quality) {
   // its own sprite scale, opacity and life so they separate in the frame instead of averaging into
   // one flat orange wash, and their wind multipliers follow the boundary layer — faster with height.
   const SP = quality.stormParticles;
-  fx.salt = new ParticlePool(scene, Math.round(SP * 0.50), { color0: 0xdca869, color1: 0xa06f3c, opacity: 0.5, gravity: -2.4, drag: 0.996, sizeGrow: 1.01, maxSize: 26, nearFade: 1.1, advect: 1.0, bounce: 0.32 });
-  fx.susp = new ParticlePool(scene, Math.round(SP * 0.34), { color0: 0xc08a52, color1: 0x8a5a2c, opacity: 0.30, gravity: -0.3, drag: 0.998, sizeGrow: 1.06, maxSize: 54, nearFade: 1.9, advect: 1.25 });
-  fx.haze = new ParticlePool(scene, Math.round(SP * 0.16), { color0: 0xb27c48, color1: 0x8d6034, opacity: 0.10, gravity: -0.02, drag: 0.999, sizeGrow: 1.14, maxSize: 210, nearFade: 3.4, advect: 1.55 });
+  fx.salt = new ParticlePool(scene, Math.round(SP * 0.50), { color0: 0xdca869, color1: 0xa06f3c, opacity: 0.5, gravity: -2.4, drag: 0.996, sizeGrow: 1.04, maxSize: 26, nearFade: 1.1, advect: 1.0, bounce: 0.32 });
+  fx.susp = new ParticlePool(scene, Math.round(SP * 0.34), { color0: 0xc08a52, color1: 0x8a5a2c, opacity: 0.30, gravity: -0.3, drag: 0.998, sizeGrow: 1.37, maxSize: 54, nearFade: 1.9, advect: 1.25 });
+  fx.haze = new ParticlePool(scene, Math.round(SP * 0.16), { color0: 0xb27c48, color1: 0x8d6034, opacity: 0.10, gravity: -0.02, drag: 0.999, sizeGrow: 3.1, maxSize: 210, nearFade: 3.4, advect: 1.55 });
   Object.values(fx).forEach(p => p.setPixelRatio(1));
   return fx;
 }

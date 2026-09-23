@@ -1157,24 +1157,45 @@ function seedPlumes(F) {
     // of attack a rocket ever flies at, retrograde burns included, so it does not need the finite
     // difference to know which way is behind.
     const mTrail = Math.max(1, Math.round(quality.particles * (0.9 + 1.7 * (1 - padF)) * (0.4 + p.power)));
+    // The drawn flame is not the shell's length. `plume.js` stacks a core layer at 0.40 of the column
+    // and a barrel at 1.00, and the shell's own fragment shader multiplies its alpha by
+    // `1 - smoothstep(0.50, 1.0, s)`, so every layer stops emitting at half of its own length: the
+    // bright column the eye sees is 0.20 of the nominal one, and even the faint barrel is gone by 0.50.
+    // The offset below is measured from `core` for that reason. It used to be `flame * (0.52 + rand·0.72)`
+    // under a comment saying "born past the flame's tip" — but `flame` is the nominal length, so the
+    // first puff of the sheath appeared 2.6 flame tips below the last pixel of flame. That gap is the
+    // pearl chain: a bright stub, ~14 m of clear sky, then a string of grey puffs hanging underneath,
+    // which is what the MET 15 ascent frame actually showed.
+    const core = flame * 0.20;
     for (let k = 0; k < mTrail; k++) {
-      const d = flame * (0.52 + Math.random() * 0.72);
+      const d = core * (1 + Math.random() * 4.6), dn = d / flame;
       // Both of these are fractions of the mouth radius, and that is the fix: anything wrapped
       // around a rocket has to be sized by the rocket. They used to be absolute metres, so one
       // literal set of constants wrapped a 42.6 m booster column and an 18.5 m upper-stage column
       // at the same scale. The numbers below are what `__RSB.plume().sheath` prints as
       // `pctMean · pctMax` — the drawn pixel size of a live smoke puff, as a share of the drawn
       // pixel length of the flame column it wraps. Same ruler for both bodies because the ratio is
-      // size/col at any camera range (that range's own `colPx` came out at 31.6 and 16.3 px):
-      //   booster MET 15     absolute metres (was) 29 · 97 %   ship MET 24     67 · 229 %
-      //   1.3–2.2 mouth      "                      44 · 118 %  "              44 · 146 %
-      //   0.6–1.15 mouth (now)  "                  21 ·  74 %  "              22 ·  74 %
+      // size/col at any camera range:
+      //   booster MET 15  absolute metres (was)   29 ·  97 %   ship MET 24    67 · 229 %
+      //   1.3–2.2 mouth   "                       44 · 118 %   "              44 · 146 %
+      //   0.6–1.15 mouth  "                       21 ·  74 %   "              22 ·  74 %
+      //   0.6–1.15 mouth  + focal build (now)     20 ·  36 % (colPx 94.7)   · 20 · 37 % (colPx 45.7)
       // Proportional scaling alone only made the two bodies *equally* wrong, and the booster had
       // been the tolerable one by luck: its 5.2 m mouth happened to sit near the old literal metres.
-      // The second line is what the change is for — until then one sheath puff could be drawn
+      // The second line is what that change is for — until then one sheath puff could be drawn
       // longer than the whole flame behind it. `pctMax` is a single oldest sprite, and the pool's
       // `(1-t)` fade has that one near a tenth of its birth opacity, so `pctMean` is what carries.
-      const a = Math.random() * 6.283, rr = mouth * (0.45 + Math.random() * 0.95);
+      // The last line is the same seeding re-read after the pool started drawing in its own metres
+      // (`uFocal`, see fx.smoke). It is the row that matters: the two bodies now agree to within a
+      // point of each other, which is what sizing by the mouth is supposed to produce, and the
+      // `pctMax` that used to reach 229 % is 37 %. The three rows above it are void as evidence —
+      // that ruler was the shader's `160` fudge, which shrank every puff by 3.8x against its own
+      // metres while leaving the column length projected correctly, so they were comparing a
+      // mis-scaled numerator to a correct denominator.
+      // The band broadens with distance because that is what an entraining plume does, and because the
+      // silhouette it has to cover broadens too: the core layer ends at 0.40 mouths of radius, the
+      // barrel at 1.00.
+      const a = Math.random() * 6.283, rr = mouth * (0.30 + Math.random() * (0.55 + 0.85 * dn));
       _pv.copy(_pt).multiplyScalar(Math.cos(a) * rr).addScaledVector(_pr, Math.sin(a) * rr);
       _pq.copy(p.pos).addScaledVector(p.axis, d);
       if (_pq.y < deckY + 1) continue;
@@ -1903,6 +1924,11 @@ function update(dt) {
   fx.driftSmoke.update(dt, 0, 0, aLvl * 0.5);
   fx.spark.update(dt, 0, 0, 0);
   fx.flame.update(dt, 0, 0, aLvl);
+  // A pool that draws in its own metres has to be told what the camera's focal length is, and the
+  // driving fov animates (55 cruise, `chase.fovAdd` up to +26 on the launch track), so it is a
+  // per-frame float rather than a resize-time constant. CSS px here: the shader multiplies its own
+  // result by `uPixelRatio` to reach the framebuffer, so feeding it device px would double-count.
+  for (const k in fx) if (fx[k].phys) fx[k].mat.uniforms.uFocal.value = camera.projectionMatrix.elements[5] * (innerHeight / 2);
   fx.smoke.update(dt, breezeX * 6, breezeZ * 6, 0);
   fx.steam.update(dt, breezeX * 8, breezeZ * 8, 0);
 
@@ -2403,19 +2429,36 @@ window.__RSB = {
     // wraps, over the sprites currently inside that column. Read the `lit` row — after staging, the
     // other entry's `col` and `at` are whatever the shell last held, so its window catches the
     // surviving particles at a range the eye is not looking at.
+    const ss = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
     const sheath = () => {
       const F = launch.flight;
       if (!launchJets || !F) return null;
       const jets = launchJets.probe(camera), cp = camera.position, out = [];
+      // The sprite's radial profile, read from the pool that owns it. Copying the shader's constants
+      // into this probe is how it ended up measuring a render that no longer existed.
+      const smokeInner = fx.smoke.mat.uniforms.uInner.value;
+      const smokeOp = fx.smoke.mat.uniforms.uOpacity.value;
+      const smokeFi = fx.smoke.mat.uniforms.uFadeIn.value;
       for (let i = 0; i < F.plumes.length; i++) {
         const p = F.plumes[i], mouth = p.pos, ax = p.axis, col = jets[i].len;
-        // The column's drawn length is the ruler the puffs are measured against, because "the sheath
-        // is bigger than the flame" is a statement about the frame, not about metres — and the frame
-        // answer has to come out the same for a 42.6 m booster and an 18.5 m upper stage.
-        const colPx = col * 160 / cp.distanceTo(mouth);
+        // The column's drawn length is the ruler the puffs are measured against, so it has to be in the
+        // same unit as the puff sizes — real device pixels off the camera's own projection matrix. The
+        // `160` in the vertex shader is a point-sprite fudge for motes a metre across, not a focal
+        // length; using it here made a 42.6 m column read as 50 px when it projects to 168, i.e. every
+        // "the sheath is bigger than the flame" ratio this row produced was off by 3.3x.
+        const colPx = col * camera.projectionMatrix.elements[5] * (renderer.domElement.height / 2)
+          / cp.distanceTo(mouth);
         const row = { col, at: jets[i].at, colPx: +colPx.toFixed(1), lit: jets[i].visible };
+        const mr = 1.30 * Math.sqrt(Math.max(1, p.engines));
+        const puffs = [];
         for (const key of ['flame', 'smoke']) {
           const pool = fx[key], u = pool.mat.uniforms, cap = u.uMaxSize.value, pr = u.uPixelRatio.value;
+          // Same rule as the alpha envelope: the focal comes from the uniform, because a pool can be
+          // drawing in its own metres while a copied `160` still reports it 5.2x too small.
+          const focal = u.uFocal.value;
+          // The alpha envelope has to come from the pool's own uniforms. A hardcoded copy of the shader
+          // is how this probe ended up disagreeing with the frame it was measuring.
+          const fi = u.uFadeIn.value, op = u.uOpacity.value;
           let n = 0, pxSum = 0, pxMax = 0, rrSum = 0, rrMax = 0;
           for (let s = 0; s < pool.count; s++) {
             if (pool.life[s] >= 1) continue;
@@ -2426,16 +2469,73 @@ window.__RSB = {
             const rr = Math.hypot(vx - ax.x * along, vy - ax.y * along, vz - ax.z * along);
             if (rr > col) continue;
             const d = Math.hypot(pool.pos[i3] - cp.x, pool.pos[i3 + 1] - cp.y, pool.pos[i3 + 2] - cp.z);
-            const px = Math.min(pool.sizeArr[s] * 160 / d, cap) * pr;
+            const px = Math.min(pool.sizeArr[s] * focal / d, cap) * pr;
             n++; pxSum += px; rrSum += rr;
             if (px > pxMax) pxMax = px;
             if (rr > rrMax) rrMax = rr;
+            if (key === 'smoke') {
+              const t = pool.life[s];
+              puffs.push({ along, rr, size: pool.sizeArr[s], a: op * (1 - t) * ss(0, fi, t) });
+            }
           }
           row[key] = n ? { n, pctMean: +(100 * pxSum / n / colPx).toFixed(0),
             pctMax: +(100 * pxMax / colPx).toFixed(0),
             pxMean: +(pxSum / n).toFixed(1), pxMax: +pxMax.toFixed(1),
             rrMean: +(rrSum / n).toFixed(1), rrMax: +rrMax.toFixed(1) } : { n: 0 };
         }
+        // Is the sheath one envelope or a chain of dots. Peak alpha on the 0.4-mouth ring is the
+        // detector that earned its keep: it caught every gap the frames showed, and the band it walks
+        // comes from the seeding law itself (`y0`/`y1`) because the first 0.20 of the column is shell
+        // only and past 1.12 columns the trail cannot reach — a probe that sampled those and called the
+        // zeros a defect is an instrument reading its own blind spot.
+        // Deleted alongside it: the *integrated* density profile and its coefficient of variation. They
+        // saturate. At the ~1,800 live puffs the MET 8 frame actually carries, `1-exp(-Σa)` reads 1.00 at
+        // every sample while the frame still shows a dotted line, so the number cannot gate anything and
+        // a passing reading from it is not evidence.
+        // The gate is a share of the pool's own brightest possible pixel, not an absolute alpha.
+        // `q.a` peaks at `opacity · (1 - fadeIn)`, so lowering either constant moves the ceiling: at
+        // 0.62 / 0.14 the peak was 0.53 and the old absolute 0.35 meant "two thirds lit", but after
+        // the opacity went to 0.26 the ceiling is 0.22 and a 0.35 gate sits above every value the pool
+        // can produce — `hole` then pinned at its maximum on a frame that was merely dimmer, not
+        // emptier, and the detector was measuring the opacity constant instead of the coverage.
+        const ceil = smokeOp * (1 - smokeFi);
+        const cover = (filt, y0, y1, r0) => {
+          const N = 24, R0 = r0;
+          const peak = [];
+          for (let k = 0; k < N; k++) {
+            const y = y0 + (y1 - y0) * (k + 0.5) / N;
+            let m = 0;
+            for (const q of puffs) {
+              if (!filt(q)) continue;
+              const d = Math.hypot(q.rr - R0, q.along - y) / q.size;
+              if (d >= 0.5) continue;
+              const h = q.a * ss(0.5, smokeInner, d);
+              if (h > m) m = h;
+            }
+            peak.push(m / ceil);
+          }
+          let hole = 0, run = 0;
+          for (const v of peak) { if (v >= 0.66) run = 0; else if (++run > hole) hole = run; }
+          return { pmin: +Math.min(...peak).toFixed(2),
+            hole: +(hole / N * (y1 - y0) / col).toFixed(2) };
+        };
+        // The deck cloud only exists inside the jet window while the stack is still on the pad; once the
+        // vehicle has climbed, every sprite from the trench is at `along` ≈ −70 and the ring's own filters
+        // discard it. Reporting that as zero coverage would be an instrument reading its own blind spot.
+        // Each row's ring sits where that row's mass actually is: the sheath hugs the axis, so it samples
+        // at 0.4 mouths, while the apron's own filter throws away everything inside 1.4 mouths, so it
+        // samples at that edge rather than asking for light at a radius the row had excluded.
+        // Read the apron row with care: it is NOT evidence about the pad cloud. Moving the ring from
+        // 0.4 to 1.4 mouths on a frame carrying 1,394 live puffs moved `hole` only 0.60 → 0.55, which is
+        // what ruled the ring out as the cause. The rest of it is the band: `cover` sweeps `along`, the
+        // axis the jet points down, while the apron is a skirt lying on the deck out to `blast`, so
+        // above ~8 m of `along` there is no apron to find and every one of those samples is the
+        // instrument walking past empty sky. The pad is judged on its frame, not on this row.
+        row.cover = {
+          trail: cover((q) => q.rr <= mr * 1.4, col * 0.20, col * 1.12, mr * 0.4),
+          apron: F.met < 5 ? cover((q) => q.rr > mr * 1.4, 0, col * 0.6, mr * 1.4) : null,
+          mr: +mr.toFixed(2),
+        };
         out.push(row);
       }
       return out;

@@ -34,7 +34,7 @@ export async function buildBase(scene, quality) {
   const HERO = ['habitat_dome', 'hab_link', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
     'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'reactor_tap', 'lox_stand', 'roadster', 'lamp',
     'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut', 'barrier_kit', 'flag_mast',
-    'hazard_sign', 'telemetry_board', 'feeder_pillar', 'rim_rock', 'beacon_kit', 'telescope'];
+    'hazard_sign', 'telemetry_board', 'feeder_pillar', 'rim_rock', 'beacon_kit', 'telescope', 'site_kit'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA',
     'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
@@ -198,7 +198,7 @@ export async function buildBase(scene, quality) {
   // `rim_rock` is a third of the same kind, and the reason is harder: its three nodes are
   // alternative clasts, and each one's collision discs in rim_rock.js are measured about *that
   // node's* origin. Baking the kit into one mesh would delete the nodes the rampart clones from.
-  const keepsParts = new Set(['crystal', 'barrier_kit', 'rim_rock', 'starship_stack', 'beacon_kit']);
+  const keepsParts = new Set(['crystal', 'barrier_kit', 'rim_rock', 'starship_stack', 'beacon_kit', 'site_kit']);
   // `beacon_kit` is a kit for the same reason as `barrier_kit`, with one more thing riding on it:
   // the optical drum has to survive as its own node, because the night pulse reaches the beacons
   // through `beacons[]` — the placement code clones the fitting and hands over the mesh named
@@ -639,6 +639,20 @@ export async function buildBase(scene, quality) {
     const lens = g.getObjectByName('lens');
     if (lens) return beacons.push(lens);
     g.traverse(o => { if (o.isMesh && /beacon_lens/.test(o.material?.name || '')) beacons.push(o); });
+  };
+  // The rest of the kit: delineators, cones, a pit cover, a docking cradle, a stub mast and the
+  // pad's floodlights. One clone per placement, aimed by yaw, and the caller reads a named node
+  // back out of the clone when it needs an anchor that is not the origin (`kitNode`) — which is how
+  // the flood lamps hand the beam rig a lens position that cannot drift from the housing.
+  const kitNode = (name) => models.site_kit?.getObjectByName(name);
+  const kitAt = (name, x, y, z, ry = 0) => {
+    const src = kitNode(name);
+    if (!src) return null;
+    const g = cloneModel(src);
+    g.position.set(x, y, z);
+    g.rotation.y = ry;
+    G.add(g);
+    return g;
   };
   const lightStrips = [];
   const lightRings = [];
@@ -1083,9 +1097,20 @@ export async function buildBase(scene, quality) {
     for (let i = 0; i < 24; i++) {
       const a = i / 24 * Math.PI * 2;
       const rx = px + Math.sin(a) * 9.5, rz = pz + Math.cos(a) * 9.5;
-      box(0.36, 0.12, 0.22, M.dark, rx, py + 0.1, rz, G).rotation.y = a;
-      box(0.24, 0.05, 0.14, ring.material, rx, py + 0.18, rz, G).rotation.y = a;
-      floods.push([rx, py + 0.18, rz]);
+      // Two boxes used to be the lamp: a dark slab and a smaller one in the ring's own material
+      // above it. The fixture now has a housing with fins, a yoke it tilts on and a glass face —
+      // and the anchor the beam rig needs is read back out of the clone's `flood_lens` node, so it
+      // cannot drift from the housing the way the hand-typed +0.18 did.
+      const fl = kitAt('flood', rx, py, rz, a);
+      const lens = fl?.getObjectByName('flood_lens');
+      if (lens) {
+        lens.updateWorldMatrix(true, false);
+        const lv = new THREE.Vector3();
+        lens.getWorldPosition(lv);
+        floods.push([lv.x, lv.y, lv.z]);
+      } else {
+        floods.push([rx, py + 0.18, rz]);
+      }
     }
 
     // ── Starship riding a Super Heavy: 71 m of stainless on the pad ──
@@ -1335,9 +1360,9 @@ export async function buildBase(scene, quality) {
     // hazard ring + red beacon on a hooded mast
     for (let i = 0; i < 10; i++) {
       const a = i / 10 * Math.PI * 2;
-      cyl(0.07, 0.07, 0.9, M.orange, mx + Math.cos(a) * 5.4, my2 + 0.45, mz + Math.sin(a) * 5.4, 6);
+      kitAt('stake', mx + Math.cos(a) * 5.4, my2, mz + Math.sin(a) * 5.4, a);
     }
-    cyl(0.09, 0.09, 1.6, M.struct, mx - 3.4, my2 + 0.8, mz - 3.4, 8);
+    kitAt('mast', mx - 3.4, my2, mz - 3.4);
     // The hooded mast the ring is there to warn about. Two primitives used to stand in for it —
     // a red drum and a 0.9 m square cap plate under it, which read as a lantern balanced on a
     // box. The fitting's own cast mounting plate *is* the cap now, so the plate is gone and the
@@ -1462,7 +1487,7 @@ export async function buildBase(scene, quality) {
     lot('crew-rover', mx - 0.6, mz - 5.2, 4.1, 2.44, ry0);
     // the stand it docks on: a low cradle the rover's rockers sit in, so it reads parked, not fallen
     for (const dx of [-1.2, 1.2])
-      box(0.5, 0.16, 2.5, M.dark, mx - 0.6 + dx, cradleTop + 0.08, mz - 5.2).rotation.y = ry0;
+      kitAt('cradle', mx - 0.6 + dx, cradleTop, mz - 5.2, ry0);
 
     // ── two Optimus on the apron: one checking the airlock, one waiting at the mast ──
     for (const [i, [bx, bz, turn]] of [[mx - 3.9, mz - 3.4, 2.3], [mx + 4.2, mz + 1.6, -1.1]].entries()) {
@@ -1473,7 +1498,7 @@ export async function buildBase(scene, quality) {
       G.add(bot);
       lot(`optimus-0${i + 1}`, bx, bz, 0.62, 0.62);
       // a robot on bare regolith leaves no story; the boot scuff ring and its charge lead do
-      cyl(0.42, 0.46, 0.04, M.concrete, bx, pit(bx, bz) + 0.02, bz, 20);
+      kitAt('cover', bx, pit(bx, bz), bz);
       sparkPoints.push({ x: bx, y: pit(bx, bz) + 0.9, z: bz - 0.2, rate: 0.12 });
     }
 
@@ -1486,8 +1511,7 @@ export async function buildBase(scene, quality) {
     k('rail', mx - 8.5, mz + 5.5, 0.4, 1.2);
     for (const [dx, dz] of [[-2.5, 0.5], [-1, 1.5], [0.5, 2.5]]) {
       const cx2 = mx + dx, cz2 = mz + dz;
-      cyl(0.05, 0.26, 0.42, M.hazard, cx2, pit(cx2, cz2) + 0.21, cz2, 12);
-      cyl(0.3, 0.32, 0.04, M.dark, cx2, pit(cx2, cz2) + 0.02, cz2, 12);
+      kitAt('cone', cx2, pit(cx2, cz2), cz2);
     }
     putDeck('teleport_pad', mx + 1.5, mz + 8.5, 1.05, 0, -0.08);
     teleports.push({ key: 'motor', name: ZONES.motor.name, x: mx + 1.5, z: mz + 8.5 });

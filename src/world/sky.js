@@ -90,7 +90,13 @@ void main(){
     float tw = 0.72 + 0.28 * sin(uTime * 2.4 + st * 71.0);
     float star = lit * tw * smoothstep(0.26 - mag * 0.1, 0.02, length(cf));
     float mw = band * (0.35 + fbm2(sc * 0.05)) * 0.05;
-    sky += (vec3(0.92, 0.94, 1.0) * star * 3.2 + vec3(0.5, 0.55, 0.78) * mw) * nightF * (1.0 - uStorm);
+    // 3.2 put every star ~7x over the bloom threshold (0.42), and UnrealBloomPass smears a
+    // sub-pixel source into the square footprint of its coarsest mip: measured at MET 14 on the
+    // dusk sky, ~15 faint 26 px squares scattered along the galactic band, gone the moment the
+    // term drops to 0.60 and gone with bloom switched off — so they were never stars, they were
+    // the bloom of stars. 0.60 keeps the top of the field just over threshold, which is what a
+    // bright star should do, and leaves the twinkle readable against a night sky at 0.03-0.08.
+    sky += (vec3(0.92, 0.94, 1.0) * star * 0.60 + vec3(0.5, 0.55, 0.78) * mw) * nightF * (1.0 - uStorm);
   }
 
   // the moon: the night key light has a visible source, so the dune shadows

@@ -34,7 +34,7 @@ export async function buildBase(scene, quality) {
   const HERO = ['habitat_dome', 'hab_link', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
     'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'reactor_tap', 'lox_stand', 'roadster', 'lamp',
     'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut', 'barrier_kit', 'flag_mast',
-    'hazard_sign', 'telemetry_board', 'feeder_pillar', 'rim_rock', 'beacon_kit'];
+    'hazard_sign', 'telemetry_board', 'feeder_pillar', 'rim_rock', 'beacon_kit', 'telescope'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA',
     'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
@@ -1605,7 +1605,6 @@ export async function buildBase(scene, quality) {
   {
     const [nx, nz] = ZONES.night.pos;
     ZONE = 'night';
-    const ny = heightAt(nx, nz);
     putSolid('habitat_dome', nx + 6, nz - 4, 0.7, 1.7, 'dome');
     // A 1.2 m pier on a tripod does not need the r=1.6 armour it used to wear — that was a 3.2 m
     // invisible drum around a 0.9 m column, on a hill the player walks around to find the scope.
@@ -1617,16 +1616,20 @@ export async function buildBase(scene, quality) {
       const lx = nx + Math.cos(a) * 9, lz = nz + Math.sin(a) * 9;
       putLamp(`lantern-${i}`, lx, lz, 1.3, a);
     }
-    cyl(0.3, 0.45, 1.8, M.struct, nx - 7, ny + 0.9, nz - 6, 10);
-    const scope = cyl(0.45, 0.62, 2.8, M.white, nx - 7, ny + 2.8, nz - 6, 12);
-    // The merge pass bakes shared-material meshes into batches and removes the originals, which
-    // would orphan this scope's lens child along with it (AF1 forensics: the lens simply vanished).
-    noMerge(scope);
-    scope.rotation.x = -0.7;
-    // The muzzle otherwise draws as a flat sunlit beige disc — a matte black lens must sit ON TOP
-    // of the cylinder's own opaque cap (recessing below it hides nothing, and a metallic lens
-    // mirrors the noon sun — AC1/AD1 forensics).
-    scope.add(cyl(0.43, 0.43, 0.06, new THREE.MeshStandardMaterial({ color: 0x101216, roughness: 0.85, metalness: 0.05 }), 0, 1.43, 0, 12));
+    // Three cylinders used to stand here: a tapered pier, a white tube tipped over at -0.7 rad,
+    // and a matte black disc glued onto the tube's end at +1.43. The disc was the tell — a
+    // telescope's business end is an aperture, a mirror set down inside a dew shield, so the dark
+    // you see sits in a rim of shadow rather than being a coin on a stick. The asset carries the
+    // grouted footing, the pier's conduit, the azimuth ring and fork yoke, the counterweight bar
+    // that stops a 2.8 m tube tipping, the tube rings on their dovetail, the carry handle, the
+    // focuser with its diagonal, eyepiece and two knobs, the finder on its own dovetail, and the
+    // recessed mirror cell. Its 40° elevation is baked in, tipped toward the same app -Z bearing
+    // the old `rotation.x` produced, so this place call carries no rotation.
+    const tel = cloneModel(models.telescope);
+    if (tel) {
+      tel.position.set(nx - 7, heightAt(nx - 7, nz - 6), nz - 6);
+      G.add(tel);
+    }
     infoZones.push({
       key: 'night', pos: [nx, nz], r: 18, tag: 'OBSERVATION HILL',
       name: '夜空观赏丘', params: ['夜晚：按 N 快进到午夜', '灯光秀：夜晚靠近星舰按 E'],

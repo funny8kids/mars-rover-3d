@@ -561,7 +561,14 @@ PANELS = {
 }
 
 ALL = dict(PANELS, **{"steel": steel_maps, "tps": tps_maps,
-       "tps_dark": lambda: tps_maps(tag="tps_dark", tint=0.055), "burnt": burnt_maps,
+       # Not a dimmer. The pale blanket's field spans p2→p98 = 172→255, and multiplying it by
+       # 0.055 collapsed the carbon version to 9→14 — five levels out of 255, i.e. every hex cell
+       # and every grout line erased, which is why the ship's lee half drew as one black slab with
+       # a 170-level step at the seam against the lit blanket (measured on a noon frame, camera 66 m
+       # out: lit 228 / dark 49-63 / sky 139). 0.19 keeps the field at 30→48 — 18 levels of real
+       # tile structure — and because basecolour is sRGB-decoded before lighting, that 3.7× albedo
+       # lifts the unlit side to roughly L 110, still well under the sky and far under the sun side.
+       "tps_dark": lambda: tps_maps(tag="tps_dark", tint=0.19), "burnt": burnt_maps,
        "wordmark": lambda: decal_maps("STARBASE", "wordmark", 7.3, 5.0),
        "deck_cast": lambda: concrete_maps(tag="deck_cast", tint=(0.615, 0.585, 0.525)),
        "deck_plate": lambda: concrete_maps(tag="deck_plate", tile=1.5, joints=False,

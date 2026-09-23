@@ -80,6 +80,11 @@ const RELIGHT_AT = STAGE_AT + 3;  // s, boostback burn start, once the flip is d
 // because a gravity turn *is* the vehicle leaning into thinning air, and an altitude law gives the
 // same arc at 30 fps and at 144.
 const GAMMA_MAX = 0.19, GAMMA_ALT = 900;
+// How fast the separated booster is allowed to turn, in rad/s. The coast between the two beats above
+// exists because that is what a first stage spends turning itself around, so the rate is read off the
+// schedule instead of being hand-matched to it: half a turn across exactly the gap the sequence allows
+// means "boostback burn start, once the flip is done" is a statement the sim has to keep true.
+const FLIP_RATE = Math.PI / (RELIGHT_AT - STAGE_AT);
 
 // The beats the finale is built out of. `id` is what the HUD, the audio and the effects all key on,
 // so a beat can never be announced in one place and skipped in another. `liftoff` is absent on
@@ -347,7 +352,19 @@ export function createLaunch(rig, launch) {
       // measured arrival. The translation keeps taking the full demand; only the attitude stops going
       // with it, so the vehicle is upright over its own feet by the time the legs are called.
       const align = Math.min(1, h / ALIGN_H);
-      L.bPhi = Math.atan2(want.dot(dir) * align, want.y);
+      const cmd = Math.atan2(want.dot(dir) * align, want.y);
+      // What the aim asks for and what a 71 m, hundred-tonne body can be are not the same number. The
+      // demand is a direction, so on the frame after the split it already wants the vehicle flying
+      // backwards, and writing it straight into `bPhi` turned the flip into a one-frame teleport:
+      // measured at +6.0° at MET 22.0 and −176.4° at 22.1, which is 182° in six frames and no thrust
+      // or thruster anywhere in the sim that could have asked for it. So the body chases the aim at
+      // `FLIP_RATE`, taking the short way round, and the coast between staging and the relight is what
+      // spends the half turn.
+      let slew = cmd - L.bPhi;
+      while (slew > Math.PI) slew -= Math.PI * 2;
+      while (slew < -Math.PI) slew += Math.PI * 2;
+      const max = FLIP_RATE * dt;
+      L.bPhi += Math.max(-max, Math.min(max, slew));
       if (L.bPos.y <= 0) {
         L.bPos.y = 0;
         // What the arrival actually cost, taken before the state is zeroed: the whole point of flying

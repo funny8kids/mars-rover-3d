@@ -1334,6 +1334,18 @@ function seedPlumes(F) {
     // of attack a rocket ever flies at, retrograde burns included, so it does not need the finite
     // difference to know which way is behind.
     const mTrail = Math.max(1, Math.round(quality.particles * (0.9 + 1.7 * (1 - padF)) * (0.4 + p.power)));
+    // Lifetime, not count, is what makes a trail continuous. The puffs are laid down at the vehicle's
+    // own speed, so the spacing between neighbours is fixed by that speed and no number of extra
+    // puffs buys it back — the doubled-rate experiment moved `plume().cover.trail.hole` only
+    // 0.38 → 0.31 and left `pmin` at 0, then saturated the shared pool at MET 8 (1 641 / 1 680),
+    // which is the wrap-strobing failure mode this file already documents. What closes a gap is each
+    // puff outliving the interval until the next one arrives, and the honest version of that is
+    // altitude-dependent: on the deck the smoke is a ground-hugging cloud that dissipates against the
+    // pad (1.4-2.4 s, unchanged), and high up it is a trail hanging in still air (3.4-5.8 s at
+    // padF 0). The side frame at MET 14 is what set the target — discrete 20 px balls with dark air
+    // between them for the whole lower two thirds of the column, i.e. a two-second ribbon of path at
+    // 60 m/s. Equilibrium at the far end is 3 puffs/frame × 5.8 s × 60 ≈ 1 040, inside the 1 680 cap.
+    const trailLife = (1.4 + Math.random()) * (1 + 1.4 * (1 - padF));
     // The drawn flame is not the shell's length. `plume.js` stacks a core layer at 0.40 of the column
     // and a barrel at 1.00, and the shell's own fragment shader multiplies its alpha by
     // `1 - smoothstep(0.50, 1.0, s)`, so every layer stops emitting at half of its own length: the
@@ -1379,7 +1391,16 @@ function seedPlumes(F) {
       fx.smoke.emit(
         _pq.x + _pv.x, _pq.y + _pv.y, _pq.z + _pv.z,
         _pv.x * 0.7 + p.axis.x * 2, 0.6 + Math.random() * 1.4, _pv.z * 0.7 + p.axis.z * 2,
-        1.4 + Math.random(), mouth * (0.6 + Math.random() * 0.55)
+        // Two numbers, two different failures. The lifetime is what makes the column continuous (see
+        // `trailLife` above); this band is what stops the continuous column reading as a stack of
+        // cotton balls. The close side frame at MET 14 said that exactly: no dark air between the
+        // puffs any more, but a scalloped silhouette, because `0.6-1.15 mouth` only lets a puff
+        // differ from its neighbour by 1.9×, and same-size puffs overlapping at any offset average to
+        // one flat mass. A volume needs a 2 m puff inside a 9 m one to leave a core at all, so the
+        // band is now a power law over 0.30-1.55 mouths — neighbours differ by up to 5×, and the mean
+        // birth size drops a little rather than a lot, which keeps `pctMax` (the drawn puff against
+        // the drawn flame column, 21 % here) well inside the ceiling the sheath was sized against.
+        trailLife, mouth * (0.30 + Math.pow(Math.random(), 1.7) * 1.25)
       );
     }
   }

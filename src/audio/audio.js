@@ -82,7 +82,7 @@ export class GameAudio {
 
     // launch rumble (positional at pad)
     this.rumble = ctx.createBufferSource(); this.rumble.buffer = nb; this.rumble.loop = true;
-    const rf = ctx.createBiquadFilter(); rf.type = 'lowpass'; rf.frequency.value = 120;
+    const rf = this.rumbleF = ctx.createBiquadFilter(); rf.type = 'lowpass'; rf.frequency.value = 120; rf.Q.value = 0.4;
     this.rumbleG = ctx.createGain(); this.rumbleG.gain.value = 0;
     this.rumbleP = ctx.createPanner(); this.rumbleP.panningModel = 'HRTF'; this.rumbleP.distanceModel = 'inverse'; this.rumbleP.refDistance = 60;
     this.rumble.connect(rf); rf.connect(this.rumbleG); this.rumbleG.connect(this.rumbleP); this.rumbleP.connect(this.master);
@@ -116,7 +116,7 @@ export class GameAudio {
     const g = this.ctx.createGain(); g.gain.value = vol;
     s.connect(g); g.connect(this.master); s.start();
   }
-  update(dt, { speed01, rpm, power, stormF, windLoad, windGust, nightF, camPos, camFwd, camUp, roverPos, leakActive, launchIntensity, padPos, blast }) {
+  update(dt, { speed01, rpm, power, stormF, windLoad, windGust, nightF, camPos, camFwd, camUp, roverPos, leakActive, launchIntensity, launchThrust, launchAlt, launchProx, padPos, blast }) {
     if (!this.ready) return;
     const t = this.ctx.currentTime, L = this.ctx.listener;
     if (L.positionX) {
@@ -156,9 +156,116 @@ export class GameAudio {
     if (b && roverPos) this._setP(this.hissP, roverPos.x, roverPos.y + 0.5, roverPos.z);
     else if (leakActive && this.leakPos) this._setP(this.hissP, this.leakPos.x, this.leakPos.y, this.leakPos.z);
     if (padPos) this._setP(this.rumbleP, padPos.x, padPos.y + 6, padPos.z);
+    // The rumble is not one drone turned up and down. Two separate things move it: how many bells
+    // are actually burning, and how much air is left between the vehicle and the deck. Sixteen at
+    // the pad and three on the upper stage are not the same sound, and by two kilometres up the
+    // top of the band has been absorbed on the way down, so what reaches you is a lower, thinner
+    // version of the same roar. Gain alone could only ever give the pad sound at another volume —
+    // which is what the launch used to be, right up to the moment it went silent.
     const li = launchIntensity || 0;
-    this.rumbleG.gain.setTargetAtTime(li * 0.85, t, 0.1);
-    this.rumbleToneG.gain.setTargetAtTime(li * 0.55, t, 0.1);
+    const thr = launchThrust === undefined ? 1 : launchThrust;
+    // Mars' scale height is ~11 km, so a literal density ratio would still read 0.8 at SECO and buy
+    // nothing the ear can follow. This is the same curve with the exponent the scene needs.
+    const air = 1 / (1 + (launchAlt || 0) / 700);
+    this._launchProx = launchProx === undefined ? 1 : launchProx;
+    this._launchAlt = launchAlt || 0;
+    this.rumbleG.gain.setTargetAtTime(li * 0.85 * (0.26 + 0.74 * air), t, 0.1);
+    // The sub fades on a shallower curve than the noise band, because that is the actual order of
+    // attenuation: a 40 Hz pressure wave crosses several kilometres of thinning air more or less
+    // intact, and the crackle on top of it does not. Both reach 1 at the deck, so nothing about the
+    // pad-side level changed — only the five-kilometres-up version got quieter, which it always should.
+    this.rumbleToneG.gain.setTargetAtTime(li * 0.55 * (0.6 + 0.4 * air), t, 0.1);
+    this.rumbleF.frequency.setTargetAtTime(58 + thr * 196 * (0.34 + 0.66 * air), t, 0.25);
+    this.rumbleTone.frequency.setTargetAtTime(30 + thr * 17 * (0.5 + 0.5 * air), t, 0.4);
+  }
+  // One-shot shaped noise: pink buffer through a filter that travels, under a gain that attacks and
+  // falls away. Every launch beat below is built from this and `_sub`, because a Kenney UI pip has
+  // nothing to say about 16 engines lighting.
+  _burst({ at = 0, dur = 0.5, f0 = 200, f1 = f0, q = 0.7, type = 'lowpass', vol = 0.3, attack = 0.012, rate = 1 }) {
+    if (!this.ready) return;
+    const ctx = this.ctx, t0 = ctx.currentTime + at;
+    const s = ctx.createBufferSource(); s.buffer = this.noiseBuf; s.loop = true;
+    s.playbackRate.value = rate * (0.86 + Math.random() * 0.28);
+    const f = ctx.createBiquadFilter(); f.type = type; f.Q.value = q;
+    f.frequency.setValueAtTime(Math.max(20, f0), t0);
+    f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + attack);
+    g.gain.exponentialRampToValueAtTime(0.0005, t0 + dur);
+    s.connect(f); f.connect(g); g.connect(this.master);
+    s.start(t0); s.stop(t0 + dur + 0.05);
+  }
+  _sub({ at = 0, dur = 1.2, f0 = 26, f1 = f0, vol = 0.3, attack = 0.05 }) {
+    if (!this.ready) return;
+    const ctx = this.ctx, t0 = ctx.currentTime + at;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(f0, t0);
+    o.frequency.exponentialRampToValueAtTime(Math.max(8, f1), t0 + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + attack);
+    g.gain.exponentialRampToValueAtTime(0.0005, t0 + dur);
+    o.connect(g); g.connect(this.master);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  }
+  // The event sounds of a flight. Distance from the pad dims them, and so does the vehicle's own
+  // altitude — the same air-thinning term the rumble uses, because a bang two kilometres up is not
+  // the bang that happens at your feet. Neither ever gates the sound off: on Mars the ground carries
+  // that far, and a silent staging would read as a missing feature, not as physics.
+  // `alt` overrides the blended height for a beat that belongs to one specific vehicle; see the call
+  // site, where SECO passes the ship's altitude because the blend is weighted by thrust.
+  launchEvent(kind = 'ignition', alt) {
+    if (!this.ready) return;
+    this._lastEvent = kind;
+    const prox = this._launchProx === undefined ? 1 : this._launchProx;
+    const h = (alt === undefined ? this._launchAlt : alt) || 0;
+    const air = 1 / (1 + h / 700);
+    this._lastEventAlt = h;
+    const vp = 0.28 + 0.72 * prox;
+    const v = vp * (0.42 + 0.58 * air);
+    if (kind === 'ignition') {
+      // Chamber pressure coming up: the band opens from nothing over the hold-down, and the sub
+      // climbs as the turbopumps get their breath. Deliberately no transient snap — the stack is
+      // still clamped, so this is a swell, not a bang.
+      this._burst({ dur: 2.4, f0: 70, f1: 430, q: 0.6, vol: 0.30 * v, attack: 0.5 });
+      this._sub({ dur: 2.2, f0: 21, f1: 44, vol: 0.30 * v, attack: 0.55 });
+    } else if (kind === 'liftoff') {
+      // The boom is the stack clearing the tower and the trench letting go: energy falling away in
+      // frequency while the level still rises, which is how a shock front reads at a distance.
+      this._burst({ dur: 2.0, f0: 520, f1: 110, q: 0.5, vol: 0.34 * v, attack: 0.06 });
+      this._sub({ dur: 2.6, f0: 46, f1: 24, vol: 0.34 * v, attack: 0.08 });
+    } else if (kind === 'staging') {
+      // Hot staging, so the upper stage is *already* burning — it lit 2.4 mission seconds ago and
+      // `shipignition` said so. What the seam gives you is the pyro and the two vehicles pushing
+      // apart, then the bottle of gas between them venting into the wake.
+      this._burst({ dur: 0.13, f0: 2400, f1: 900, q: 2.6, type: 'bandpass', vol: 0.20 * v, attack: 0.003 });
+      this._sub({ at: 0.05, dur: 0.7, f0: 88, f1: 30, vol: 0.26 * v, attack: 0.01 });
+      this._burst({ at: 0.3, dur: 1.1, f0: 900, f1: 180, q: 0.9, vol: 0.11 * v, attack: 0.08 });
+    } else if (kind === 'meco') {
+      // Sixteen bells letting go at once. Same shape as SECO but twice the chamber still in the
+      // drop, and it lands a beat and a half before the seam blows — the two must not be the same sound.
+      this._sub({ dur: 1.1, f0: 52, f1: 17, vol: 0.30 * v, attack: 0.02 });
+      this._burst({ dur: 0.9, f0: 420, f1: 70, q: 0.5, vol: 0.20 * v, attack: 0.02 });
+    } else if (kind === 'relight') {
+      // Three bells, not sixteen — and by the time the booster does this it is falling, so the
+      // start-up has to be audibly smaller than the ignition it echoes.
+      this._burst({ dur: 1.4, f0: 110, f1: 460, q: 0.7, vol: 0.20 * v, attack: 0.22 });
+    } else if (kind === 'seco') {
+      // The engine stops pushing, so the air stops being worked. A glide down in register under a
+      // short decay — and then nothing, which is the point: above the weather there is no second
+      // sound to arrive.
+      this._sub({ dur: 1.5, f0: 42, f1: 15, vol: 0.24 * v, attack: 0.02 });
+      this._burst({ dur: 1.2, f0: 300, f1: 60, q: 0.5, vol: 0.16 * v, attack: 0.02 });
+    } else if (kind === 'landing') {
+      // Deliberately scaled by proximity alone. The blended height reads the ship's at this moment —
+      // the booster has flamed out, so nothing is left to weight it down, and the flight logged
+      // `alt` 8671 m for a touchdown twenty metres from the listener. Thinning by that would mute the
+      // one beat that happens at your feet.
+      this._burst({ dur: 0.45, f0: 2600, f1: 420, q: 1.4, type: 'bandpass', vol: 0.12 * vp, attack: 0.008 });
+      this._sub({ dur: 1.0, f0: 34, f1: 13, vol: 0.20 * vp, attack: 0.035 });
+      this._burst({ at: 0.1, dur: 1.7, f0: 300, f1: 85, q: 0.5, vol: 0.09 * vp, attack: 0.1 });
+    }
   }
   radio(kind = 'beep') {
     if (!this.ready) return;

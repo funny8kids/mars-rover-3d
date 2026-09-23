@@ -88,6 +88,9 @@ const stormPlay = { lance: false, events: 0, phase: 'calm' };
 // reads them keeps reading the same numbers the meshes moved by. `flight` is the module's own object,
 // built when the count reaches zero — before that the stack is props.js's, untouched.
 const launch = { phase: 'idle', t: 0, cd: 11, y: 0, tilt: 0, intensity: 0, flash: 0,
+  // Proximity defaults to standing at the pad, because the countdown returns before the flight
+  // branch ever computes it — a zero here would quiet the ignition itself, the loudest beat.
+  audioLevel: 0, audioProx: 1, audioAlt: 0, audioThrust: 0,
   doneAt: 0, held: false, flight: null };
 let showOn = 0;          // night light-show timer
 let demoPin = null;      // demo cinematic: hold the rover parked
@@ -1009,18 +1012,45 @@ function updateLaunch(dt) {
     seedPlumes(F);
     const prox = THREE.MathUtils.clamp(1 - Math.hypot(phys.x - base.launchPadPos.x, phys.z - base.launchPadPos.z) / 140, 0.12, 1);
     chase.trauma = Math.max(chase.trauma, 0.25 + prox * 0.75 * launch.intensity);
-    audio.updateLaunch?.(launch.intensity);
     launch.audioLevel = launch.intensity * prox;
+    // The ear needs the bell count, not the throttle of whichever vehicle happens to burn harder:
+    // sixteen bells at half throttle and three bells at full both read `intensity` = 0.5, and only
+    // one of them is a launch. Summed per lit engine, then given back the booster's full rig as 1.
+    // The height is averaged over those same weights, because after the split the two vehicles are
+    // kilometres apart: the ship's altitude alone would voice the booster's 16-bell landing burn as
+    // though it were still on the stack, and the booster's alone would mute the ship clearing the weather.
+    let thr = 0, thrAlt = 0;
+    for (const p of F.plumes) {
+      const c = p.engines * p.power;
+      thr += c;
+      thrAlt += c * (p.body.node.position.y - base.launchPadPos.y);
+    }
+    launch.audioThrust = Math.min(1, thr / F.engines.booster);
+    launch.audioAlt = thr > 0.02 ? thrAlt / thr : F.alt;
+    launch.audioProx = prox;
   }
   if (launch.flash > 0) launch.flash = Math.max(0, launch.flash - dt * 0.85);
 }
 
 const _bp = new THREE.Vector3();
 let launchJets = null;
+// One sound per beat, declared in a single place. The flight used to announce MECO, SECO, the ship's
+// own ignition and the three dramatic events with the same 880 Hz countdown pip — five different
+// moments of a launch, one UI blip, which is the tell that the audio was never written for this.
+const LAUNCH_BEAT_SFX = {
+  ignition: 'ignition', liftoff: 'liftoff', staging: 'staging',
+  meco: 'meco', shipignition: 'relight', boostback: 'relight', seco: 'seco',
+  boosterlanding: 'landing',
+};
 function launchBeat(b) {
   const F = launch.flight, rig = base.launchRig;
   const line = getLang() === 'en' ? b.en : b.zh;
   launchQueue.push(`◦ ${line} · T+${b.label}s`);
+  const sfx = LAUNCH_BEAT_SFX[b.id];
+  // A beat that belongs to one vehicle is thinned by that vehicle's own height, not by the blended
+  // one the rumble uses: the blend weights by thrust, and at SECO the ship's throttle is already zero,
+  // so it reported `air` 0.90 — a shutdown at nine kilometres voiced like it happened on the deck.
+  if (sfx) audio.launchEvent(sfx, (b.id === 'seco' || b.id === 'shipignition') && F ? F.alt : undefined);
   if (b.id === 'ignition') {
     // The shock front, not the cloud. Overpressure crosses the deck faster than the condensed
     // vapour it pushes, so this ring deliberately outruns `blast` in seedPlumes — the two reading
@@ -1028,7 +1058,6 @@ function launchBeat(b) {
     const ring = shockWave(base.launchPadPos.x, surfaceAt(...ZONES.launch.pos) + 2.2, base.launchPadPos.z, 0xffe0b0, 12);
     if (ring) ring.userData.grow = 20;
     launch.flash = Math.max(launch.flash, 0.34);
-    audio.cue();
   } else if (b.id === 'liftoff') {
     // The deck's own beat: the overpressure ring that used to be keyed to a timer is now the moment
     // the thrust actually beats the weight, so it fires when the stack leaves, not when the clock says.
@@ -1036,13 +1065,11 @@ function launchBeat(b) {
     launch.flash = 1;
     const ring = shockWave(base.launchPadPos.x, surfaceAt(...ZONES.launch.pos) + 2, base.launchPadPos.z, 0xffd8a0, 10);
     if (ring) ring.userData.grow = 9;
-    audio.cue();
   } else if (b.id === 'staging') {
     const s = F.point(_bp, rig.seam - 0.5);
     const ring = shockWave(s.x, s.y, s.z, 0xffc46a, 6);
     if (ring) ring.userData.grow = 5;
     launch.flash = Math.max(launch.flash, 0.45);
-    audio.cue();
   } else if (b.id === 'boosterlanding') {
     // Two vehicles, two returns: the booster coming home to the deck it left is the beat the whole
     // guided descent exists to produce, so it gets the pad ring and the good news on the radio.
@@ -2067,7 +2094,14 @@ function update(dt) {
     stormF, windLoad: Math.min(1, stormField.speed / 26) * _wHere, windGust: wind.gust,
     nightF: st.nightF, camPos: camera.position,
     camFwd: camera.getWorldDirection(tmpV.set(0, 0, 1)), camUp: camera.up,
-    roverPos: rover.group.position, leakActive: !leakFixed, launchIntensity: launch.audioLevel || 0,
+    roverPos: rover.group.position, leakActive: !leakFixed,
+    // Every launch channel is gated on the flight actually running. `updateLaunch` returns early
+    // outside it, so the numbers left in `launch` are whatever SECO's last frame happened to write,
+    // and a drone that outlives the engine is not a quiet bug — it is the pad rumbling forever.
+    launchIntensity: launch.phase === 'flight' ? launch.audioLevel : 0,
+    launchThrust: launch.phase === 'flight' ? launch.audioThrust : 0,
+    launchAlt: launch.phase === 'flight' ? launch.audioAlt : 0,
+    launchProx: launch.audioProx,
     padPos: base.launchPadPos, blast: stormPlay.lance ? 1 : 0,
   });
 
@@ -2264,6 +2298,17 @@ function interactivePoints() {
 
 window.__RSB = {
   chart: () => chart, openMap: () => openTeleport(),
+  // A launch rumble is a filter cutoff and a gain, not a sprite anyone can photograph, so judging it
+  // means reading the AudioParams the flight wrote last frame. Without this the voicing is unfalsifiable.
+  sound: () => audio.ready && {
+    rumbleLowpass: +audio.rumbleF.frequency.value.toFixed(1),
+    rumbleTone: +audio.rumbleTone.frequency.value.toFixed(2),
+    rumbleGain: +audio.rumbleG.gain.value.toFixed(4),
+    toneGain: +audio.rumbleToneG.gain.value.toFixed(4),
+    prox: audio._launchProx, eventAlt: Math.round(audio._lastEventAlt || 0), lastEvent: audio._lastEvent,
+    channel: { level: launch.audioLevel, thrust: launch.audioThrust, alt: launch.audioAlt },
+    phase: launch.phase, muted: audio.muted,
+  },
   get state() { return { started, paused, bootMs: Math.round(startedAt), pos: [phys?.x, phys?.y, phys?.z], speed: phys?.speed, yaw: phys?.yaw, fps: fpsAvg, mission: activeMission, launch: launch.phase, launchY: launch.y, samples: samplesTaken, leak: leakFixed, quality: qKey, battery: grid.battery, gridOnline: grid.online, gridDead: grid.dead, faults: updateFaults, rescue: rescue.phase, rescueEvents: rescue.events.length }; },
   skipMissions: () => {
     base.gridRigs.forEach(r => { r.online = true; r.power = 1; r.tp.online = true; });

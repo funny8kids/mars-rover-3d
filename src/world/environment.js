@@ -25,6 +25,14 @@ export class Environment {
     this.dayT = 0.30;
     this.dayLength = 300;           // seconds for full cycle
     this.cycleOn = true;
+    // Stop the sun mid-scene without switching the day off. Measured 2026-09-23 by stepping 600
+    // fixed 1/60 s frames: the clock moved 14:22 -> 15:10 (0.0333 of the cycle = 48 min of solar
+    // time in 10 s of flight) and the key light walked from (165.1, 175.6) to (133.9, 222.5), i.e.
+    // 12.2 deg of elevation. Extrapolated, the 46 s from ignition to SECO climbs ~56 deg, so the
+    // ascent is lit by a different sun in its own second half — and two captures of the same MET,
+    // taken minutes apart in real time, are not comparable at all. That is what this flag exists for:
+    // the launch holds the sky it was gated on instead of cycling through a sunrise over the pad.
+    this.dayHold = false;
 
     this.sun = new THREE.DirectionalLight(0xffdcb0, 3);
     this.sun.castShadow = true;
@@ -80,7 +88,7 @@ export class Environment {
     return this.weather;
   }
   update(dt, focus, elapsed, renderer, viewDir) {
-    if (this.cycleOn) this.dayT = (this.dayT + dt / this.dayLength) % 1;
+    if (this.cycleOn && !this.dayHold) this.dayT = (this.dayT + dt / this.dayLength) % 1;
     // One call, one truth: the field owns its own timing and reports how much dust is at the rover.
     const here = this.field.advance(dt, focus);
     const ang = (this.dayT - 0.25) * Math.PI * 2;
@@ -199,7 +207,14 @@ export class Environment {
     const skyStorm = Math.max(stormMix, this.field.amplitude * 0.62);
     this.sky.setSun(dir, dayF * (1 - skyStorm * 0.75), skyStorm, elapsed, this.moonDir, nightF * (1 - skyStorm * 0.9), dayF);
 
-    const hh = Math.floor(((this.dayT * 24) + 6) % 24), mm = Math.floor((this.dayT * 24 * 60) % 60);
+    // The clock has to be read off the sun the file already owns: `el = sin((dayT-0.25)*2π)` puts
+    // sunrise at dayT 0.25, noon at 0.50 and sunset at 0.75, so the solar hour is simply dayT*24.
+    // The `+ 6` that was here made the topbar disagree with the sky by six hours — measured at the
+    // launch gate's own dusk (dayT 0.7556, nightF 0.502, sun on the horizon) it printed 00:10, and at
+    // a 23°-high sun (dayT 0.3072) it printed 13:22. Both readings are now 06:xx / 18:xx where they
+    // should be, which matters because the launch window tells the player to wait for a sunset the
+    // clock used to date six hours early.
+    const hh = Math.floor((this.dayT * 24) % 24), mm = Math.floor((this.dayT * 24 * 60) % 60);
     this.state.clock = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
     Object.assign(this.state, {
       dayF, nightF, duskF, stormF: stormMix,

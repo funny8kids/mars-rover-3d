@@ -126,8 +126,9 @@ const EN = {
   // The weather gate reads like the other action-slot prompts: a warning mark, the thing being
   // waited for, and a clock — never a bare "no".
   '发射窗口 · 等待沙暴过境': 'Launch window — waiting out the dust',
-  '✦ 天空转晴 — 发射程序启动 · 请留在观礼台安全区':
-    '✦ The sky has cleared — launch sequence started, stay inside the deck safety line',
+  '发射窗口 · 等待日落': 'Launch window — waiting for dusk',
+  '✦ 发射窗口开启 — 星舰点火 · 请留在观礼台安全区':
+    '✦ The launch window is open — ignition, stay inside the deck safety line',
   '★ 已抵达观礼台 — 发射程序即将启动': '★ On the deck — the launch sequence is starting',
   '✦ 星舰灯光秀开始': '✦ Starship light show starting',
   '✦ 星舰已离开大气层 — 「愿它在群星间找到家」':
@@ -172,8 +173,8 @@ const EN = {
   // ── the chain's two forecast beats: the storm stops being weather and becomes a deadline ──
   '▸ 气象预警：一场沙暴将在 {time} 后穿过基地 — 它会改写样本点':
     '▸ Weather advisory: a dust front crosses the base in {time} — it will rewrite the sample map',
-  '▸ 最后一场沙暴 {time} 后压过基地 — 等天空转晴，星舰才会点火':
-    '▸ The last front sweeps the base in {time} — Starship only lights after the sky has cleared',
+  '▸ 最后一场沙暴 {time} 后压过基地 — 等发射窗口（晴空＋日落）开启，星舰才会点火':
+    '▸ The last front sweeps the base in {time} — Starship only lights when the launch window opens: clear sky, then dusk',
   // ── the second tax: suspended fines scramble the rover's optical fix ──
   // '#nav-chip-tag' is absent from STATIC on purpose, like the film tag above: the chip's own label
   // is a state (不稳 at 94 %, 失锁 below the blind line), so only UI.setNav is allowed to say it.

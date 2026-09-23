@@ -433,7 +433,7 @@ function renderMissions() {
 // on purpose: the player has to be able to *choose* to be somewhere when it arrives.
 const STORM_BEAT = {
   samples: { lead: 165, text: '▸ 气象预警：一场沙暴将在 {time} 后穿过基地 — 它会改写样本点' },
-  launch: { lead: 120, text: '▸ 最后一场沙暴 {time} 后压过基地 — 等天空转晴，星舰才会点火' },
+  launch: { lead: 120, text: '▸ 最后一场沙暴 {time} 后压过基地 — 等发射窗口（晴空＋日落）开启，星舰才会点火' },
 };
 const stormBeat = { fired: [], at: 0 };
 function fireStormBeat(name) {
@@ -944,11 +944,25 @@ function updateNav(dt, st) {
 // Seconds come from the field analytically, so the number the deck counts cannot disagree with the
 // wall on the horizon.
 const LAUNCH_DUST_LIMIT = 0.12;
-function launchWeatherHold() {
+// The window has two conditions, and the second is not a taste preference — it is measured. The pad's
+// own rule already treats a launch as a night event (both the 灯光秀 prompt and the pad's interact are
+// gated on `nightF > 0.5`), and the deck cloud under each sky is not the same picture: at dayT 0.3072
+// (sun 23 deg up, key 3.40) 450 smoke sprites are a tan smear with no edge, lost against a pink sky;
+// at dayT 0.76 (nightF 0.736, key 1.28 moonlight, fog 0.00378) 915 of the same sprites read as a lit,
+// rolling mass under the gantry with the stack rim-lit against stars. Same camera, same MET 4.02.
+//
+// `LAUNCH_DUSK_AT` is where the gate's own `nightF` crosses 0.5 on the way down: `nightF` is
+// smoothstep(0.05, -0.12, el), which is 0.5 at el = -0.035, and el = sin((dayT - 0.25)·2pi) puts that
+// on the descending branch at dayT 0.75 + asin(0.035)/2pi = 0.7556.
+const LAUNCH_DUSK_AT = 0.7556;
+function launchWindowHold() {
   const pad = base.launchPadPos;
   const clear = stormField.timeToClear();
-  if (clear <= 0 && stormField.local(pad.x, pad.z) < LAUNCH_DUST_LIMIT) return null;
-  return `⚠ ${t('发射窗口 · 等待沙暴过境')}${clear > 0 ? ' ' + mmss(clear) : ''}`;
+  if (clear > 0 || stormField.local(pad.x, pad.z) >= LAUNCH_DUST_LIMIT)
+    return `⚠ ${t('发射窗口 · 等待沙暴过境')}${clear > 0 ? ' ' + mmss(clear) : ''}`;
+  if (env.state.nightF < 0.5)
+    return `⚠ ${t('发射窗口 · 等待日落')}${' ' + mmss(((LAUNCH_DUSK_AT - env.dayT + 1) % 1) * env.dayLength)}`;
+  return null;
 }
 // The instrument panel the finale is read from. It mounts its own DOM into the HUD and stays dark
 // until the count starts; `launchDeck` is the one thing the game has to do beyond feeding it numbers —
@@ -963,9 +977,15 @@ function launchDeck(on) {
 function startCountdown() {
   if (race.active) { race.active = false; UI.raceShow(false); race.rings.forEach(r => r.visible = false); }
   // One slot, one line: the weather note rides along inside the launch notice instead of overwriting it.
-  UI.toast(launch.held ? '✦ 天空转晴 — 发射程序启动 · 请留在观礼台安全区' : '⚠ 发射程序启动 · 请留在观礼台安全区');
+  UI.toast(launch.held ? '✦ 发射窗口开启 — 星舰点火 · 请留在观礼台安全区' : '⚠ 发射程序启动 · 请留在观礼台安全区');
   launch.held = false;
   launch.phase = 'countdown'; launch.cd = 10.0;
+  // Hold the sun where it is for the rest of the finale. The cycle is 300 s long, so left running it
+  // climbs ~56 deg of elevation across the 46 s to SECO (see `dayHold` in world/environment.js for
+  // the measurement) — the tower would be backlit at T-5 and front-lit at MECO, and the deck cloud
+  // the whole sequence is lit by would change colour under its own smoke. The launch is gated on the
+  // sky it is standing in, so the honest fix is to keep that sky, not to pick a prettier one.
+  env.dayHold = true;
   launchDeck(true);
   telemetry?.countdown(launch.cd, 1);
 }
@@ -1099,6 +1119,10 @@ function launchBeat(b) {
 }
 function finishLaunch() {
   launch.phase = 'done'; launch.doneAt = elapsed;
+  // The hold was taken for the ascent, not for good. `startCountdown` freezes the sky so the climb
+  // keeps the light it was gated on; once the ship is gone the base has to keep living its own sol,
+  // otherwise the whole game stays permanently at dusk after the one event that used it.
+  env.dayHold = false;
   // Only the ship leaves. The booster came home, and a booster standing on its own pad with the
   // engines cold is the picture the whole sequence was built to arrive at — hiding the mount, as the
   // old code did, erased it along with the vehicle that had already flown away.
@@ -1910,7 +1934,7 @@ function update(dt) {
   // The deck is where the chain's weather has to be legible: parked inside the countdown ring with
   // nothing happening, the player must be able to read the reason and its clock.
   if (zone?.key === 'watch' && launchArmed && launch.phase === 'idle') {
-    UI.showInfo({ ...zone, key: 'watch', hudAction: launchWeatherHold() || t('★ 已抵达观礼台 — 发射程序即将启动') });
+    UI.showInfo({ ...zone, key: 'watch', hudAction: launchWindowHold() || t('★ 已抵达观礼台 — 发射程序即将启动') });
   }
 
   // missions
@@ -1945,7 +1969,7 @@ function update(dt) {
     // deck during a front would otherwise start the sequence with dust still on the pad. `held` is
     // recorded here because this is where the game actually knows it said no.
     if (Math.hypot(phys.x - base.watchPos.x, phys.z - base.watchPos.z) < 26) {
-      if (launchWeatherHold()) launch.held = true;
+      if (launchWindowHold()) launch.held = true;
       else startCountdown();
     }
   }
@@ -2492,7 +2516,7 @@ window.__RSB = {
   // right now. The whole point of the workstream is that a front belongs to a mission, so the
   // instrument reports the pairing rather than leaving it to be inferred from the horizon.
   stormBeats: () => ({ fired: stormBeat.fired.slice(), at: +stormBeat.at.toFixed(1),
-    hold: launchWeatherHold(), armed: launchArmed }),
+    hold: launchWindowHold(), armed: launchArmed }),
   // Take the sky back off the schedule. The launch gate is honest about weather, which means a
   // screenshot rig that wants the ignition has to say so here rather than wait out a front it did not
   // ask for — and `?demo=launch` is exactly that rig.
@@ -2545,6 +2569,11 @@ window.__RSB = {
     speed: +phys.speed.toFixed(2), yaw: +phys.yaw.toFixed(3),
     deposit: +stormField.dustLoad.toFixed(4), windG: +((audio.windG?.gain.value || 0) * 1000).toFixed(1) }),
   startNight: () => { env?.forceNight(); },
+  // Set and hold the clock. `?demo=launch` needs this for the same reason the flight needs `dayHold`:
+  // the cycle is 300 s long, so a page that sat open for four minutes before the capture is lit by a
+  // sun 29 deg away from one that sat for one, and two frames of the same MET are not two views of
+  // the same effect. Holding on write is the point — a pin the next frame drifts off of is not a pin.
+  setDay: (v) => { if (!env) return null; env.dayT = v; env.dayHold = true; return { dayT: +env.dayT.toFixed(4), held: env.dayHold }; },
   // the field itself, not its readout: a 300 s drive needs the slab widened past the island,
   // which no phase-pinning standoff can do from outside the object
   stormRef: () => stormField,
@@ -2847,6 +2876,9 @@ window.__RSB = {
     if (t === null) { qaFly = null; return { held: null }; }
     if (launch.phase !== 'flight' || !launch.flight) {
       launch.phase = 'flight';
+      // `startCountdown` is what normally holds the sky, and this bypasses it, so the rig that writes
+      // the flight's clock has to write the sun's too.
+      env.dayHold = true;
       launch.flight = createLaunch(base.launchRig, launch);
       base.launchRig.upper.visible = true;
       launch.flight.start();
@@ -3707,7 +3739,12 @@ onChange(() => {
         // park the rover on the viewing deck, on the side away from the pad, so the shot reads
         // rover → deck → tower → stack instead of a vehicle hidden behind a concrete lip
         const [dwx, dwz] = ZONES.watch.pos;
-        if (demo === 'launch') { window.__RSB.skipMissions(); window.__RSB.clearSky(); warpTo(dwx + 6, dwz - 4, true); }
+        // Pin the sky as well as the schedule. The cycle is 300 s, so a page left open four minutes
+        // before the capture is lit by a sun 23 deg away from one opened a minute ago, and two frames
+        // of the same MET stop being two views of the same effect — that is how a correct deck cloud
+        // was nearly filed as a missing one. 0.76 is the band the launch gate now guarantees (dusk,
+        // nightF 0.736, key down to moonlight), which is where the cloud reads as a mass.
+        if (demo === 'launch') { window.__RSB.skipMissions(); window.__RSB.clearSky(); window.__RSB.setDay(0.76); warpTo(dwx + 6, dwz - 4, true); }
         // the weather demos have to be standing in their zone or the local storm/night
         // terms never show up in a frame — and the storm one has to face the wreck,
         // otherwise the shot is empty haze with a hull filling the lens from behind

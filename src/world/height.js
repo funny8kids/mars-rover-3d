@@ -190,6 +190,64 @@ function craterProfile(dx, dz, c) {
   return -c.depth * (1 - q * q) * (1 - q * 0.15);
 }
 
+// ─── drainage on the rampart ───
+// Every term the rim had until now was azimuthal: massifs, peaks, slump blocks, mouths. Those vary
+// the *silhouette* while the section stays the one smoothstep, so from anywhere inside the island the
+// flank is one colour at one incidence, and a wall whose slope never changes reads as poured concrete
+// however much its skyline wanders. Channels are the term that varies the flank *radially*, and they
+// are what a rampart actually does: runoff concentrates, incises the scarp, and drops what it strips
+// as a fan at the mouth. Measured over 2 880 bearings against the shipped field: 30 % of the ring is
+// cut deeper than 0.5 m, 5 mouths run right through the crest at 28..38 m of strike and up to 6.7 m
+// of relief, and at the deepest of them the mesh's own 1.364 m lattice holds the cut to within 0.02 m
+// of what the field specifies.
+//
+// A channel is a thing with an index, so it is addressed by an index rather than by a noise field
+// asked to invent a wavelength — `ringWave`'s header is what that costs. Widths are fractions of the
+// spacing between channels, which at the crest is 2πr/N: 117 m for seven masters, so a half-width of
+// 0.10 is a 23 m mouth and 0.17 is a 40 m one. The count around the ring is then exactly `N`, and
+// the plan is hierarchic by construction — 7 masters that take the crest, 19 braids that take the
+// flank — rather than one wavelength doing both jobs.
+//
+// `ihash` is the only per-index randomness needed; sin-multiply-fract is good enough to give 26
+// things distinct characters and it has no state.
+const ihash = n => { const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return s - Math.floor(s); };
+
+// Metres of elevation change (negative = incision) from the channel that owns this bearing.
+//
+// The plan-form numbers obey one invariant: |jitter| + |lean| + (hw + flare) = 0.12 + 0.10 + 0.17 of
+// a spacing, so a channel's influence never reaches the midpoint between indices. `Math.round` is
+// then free to pick the only channel that has a vote at a bearing — its neighbour's influence cannot
+// overlap the boundary where the choice flips, which is what keeps the field continuous between
+// channels and across the ring seam, where index 0 and index N are the same channel and are hashed
+// by `k mod N`. Break the invariant and the seam becomes a hard step in a scarp face; the probe
+// measures the largest bearing-to-bearing jump rather than trusting that arithmetic.
+function channel(th, s, rise, C) {
+  const p = (th + Math.PI) / (Math.PI * 2) * C.N;
+  const k = ((Math.round(p) % C.N) + C.N) % C.N;
+  const h = k * 2.31 + C.seed;
+  // Centres sit off the lattice, and lean as they climb. A perfectly radial channel is the spoke of
+  // a wheel, and 26 spokes is the first thing that would read as drawn rather than eroded.
+  const c = Math.round(p) + (ihash(h) - 0.5) * 0.24 + (ihash(h * 1.7) - 0.5) * 0.20 * (1 - s);
+  const d = Math.abs(p - c) / (C.hw + C.flare * (1 - s));
+  if (d >= 1) return 0;
+  // Rounded-V plan: `d^1.6` keeps a flat thalweg and steep banks, which is the cross-section wash
+  // leaves. A cosine bell makes every channel the same gentle trough, and gentle troughs at 68 m are
+  // the flat nothing this is here to remove.
+  const shape = 1 - Math.pow(d, 1.6);
+  // The cut closes out downslope, so a channel's lowest metres are never at the toe — the mouth of
+  // the deepest master still starts above r = 113.4, past where a rover's nose can reach. `head` is
+  // per-channel: a braid that runs out of steepness before the crest is left hanging, scars the
+  // flank, and leaves the skyline alone, which is why 19 braids do not drill 19 holes in the rim.
+  const head = C.head + 0.28 * ihash(k * 7.13 + C.seed * 2.11);
+  const cut = smoothstep(0.16, 0.38, s) * (1 - smoothstep(head, head + 0.30, s));
+  // ...and what it strips is dumped as a low lobe where the channel loses its slope, just above the
+  // toe and well inside the incision's own footprint.
+  const fan = 0.18 * smoothstep(0.19, 0.26, s) * (1 - smoothstep(0.34, 0.52, s));
+  return rise * C.depth * (fan - cut) * shape;
+}
+const RIM_MASTER = { N: 7, seed: 4.7, depth: 0.62, hw: 0.100, flare: 0.070, head: 1.35 };
+const RIM_BRAID = { N: 19, seed: 9.2, depth: 0.30, hw: 0.055, flare: 0.045, head: 0.62 };
+
 // ─── the crater rim that encloses the island ───
 // This used to be `smoothstep(radius, rim, r) * 8.5`: one number, a function of radius alone. Both
 // of those are why the horizon read as a drum — a wall of constant height on a constant radius has
@@ -199,9 +257,11 @@ function craterProfile(dx, dz, c) {
 // live here, and none of them cost a vertex.
 //
 // The four are now actually alive (`ringWave`), which changes what this reads as. Measured over 1 440
-// bearings, counting a bearing as walled where the rampart stands over 3 m: 80 % of the ring is wall,
-// 3.0..8.3 m of it (median 6.5), chaptered by 4 massifs carrying 8 secondary peaks and 27 slump
-// blocks each, broken by 5 mouths, and a crest line that runs at 126.6..134 m instead of one radius.
+// bearings, taking the wall as the crest height above the lowest ground between r = 100 and 108 on the
+// same bearing: 71 % of the ring stands over 3 m, the wall runs −3.1..10.4 m with a 5.1 m median,
+// chaptered by 4 massifs carrying 8 secondary peaks and 27 slump blocks each, broken by 5 mouths, and
+// a crest line that runs at 112..136.5 m instead of one radius. 113 of those bearings are saddles more
+// than 1.5 m below the crest on both sides 5° away; the wash below is what doubled that from 89.
 // Nothing the rover can reach moves — the toe starts at 110 m and the barrier stops a body centre at
 // 110.4 m, so the whole scarp lives beyond the drive line, and the steepest slope inside r<99 is the
 // same 27.7 degrees it was before any of this.
@@ -251,10 +311,19 @@ function rimWall(th, r) {
   // which is where a wall this tall has actually failed. Only mid-climb — a smooth foot and a sharp
   // crest are both things real rims keep.
   s += s * 0.075 * Math.sin(s * Math.PI * 5.0) * smoothstep(0.04, 0.30, s) * (1 - smoothstep(0.62, 0.98, s));
+  // Wash, both trains. The gate is the flank fraction, not the radius, because that is what makes the
+  // cheapest short-circuit also the provably safe one: every term in `channel` is written against `s`,
+  // all of them are zero below s = 0.16, and the lowest s = 0.16 can sit is r = 113.4 — so below
+  // s = 0.155 nothing has been written that the rover could feel anyway, and the ~85% of samples
+  // taken inland pay one comparison. Measured, the change is exactly 0.000 m for r ≤ 113.
+  let wash = 0;
+  if (s > 0.155) {
+    wash = channel(th, s, rise, RIM_MASTER) + channel(th, s, rise, RIM_BRAID);
+  }
   // ...and the far side is not a floor, it is the next formation down.
   const voidR = crestR + 3 + 2.5 * RIM_OUTER(th);
   const drop = smoothstep(voidR, voidR + 10, r) * (27 + 7 * RIM_DEEP(th));
-  return rise * s - drop;
+  return rise * s + wash - drop;
 }
 
 // Stylised island: a toy-plateau of dunes ringed by a raised crater rim that drops into the haze —

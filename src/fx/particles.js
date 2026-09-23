@@ -173,7 +173,17 @@ export function createFX(scene, quality) {
   fx.dust = new ParticlePool(scene, Math.round(700 * P), { color0: 0xb98a5c, color1: 0x8a5c38, opacity: 0.26, gravity: -0.6, drag: 0.94, sizeGrow: 1.6, maxSize: 15, nearFade: 4.0 });
   fx.driftSmoke = new ParticlePool(scene, Math.round(400 * P), { color0: 0xa08264, color1: 0x6a4a34, opacity: 0.30, gravity: 0.2, drag: 0.95, sizeGrow: 3.6, maxSize: 20, nearFade: 4.0 });
   fx.spark = new ParticlePool(scene, Math.round(600 * P), { color0: 0xfff2b0, color1: 0xff5a10, opacity: 1, gravity: -9.8, drag: 0.985, additive: true, sizeGrow: 0.9 });
-  fx.flame = new ParticlePool(scene, Math.round(1400 * P), { color0: 0xfff8e0, color1: 0xff4400, opacity: 1, gravity: 1.0, drag: 0.97, additive: true, sizeGrow: 1.06 });
+  // `phys`, and the reason is a reading off the probe rather than a taste: the launch camera sits
+  // 98-130 m from the deck, the exhaust column it films projects 138 px (`plume().sheath[0].colPx`),
+  // and this pool's 2.6-5.4 m sprites — sized off `mouth`, so already metres, like every other number
+  // on the deck — drew 5-7 px through the 160 px-per-metre mote fudge. Three to five percent of the
+  // column they are supposed to be flickering on, i.e. invisible; the identical defect that put
+  // `fx.smoke` on `phys` ("11 px against a flame column that projects at 138"). On the real focal the
+  // same sprites draw 14-21 px, 10-15 % of the column, which is the band where a puff reads as a
+  // livening core rather than as a disc. `maxSize` 40 is above every reading the probe gives at the
+  // launch range, so it is a guard for a camera that comes in close, not a clamp on this one, and
+  // `nearFade` dissolves a sprite that gets within 2 m of the lens.
+  fx.flame = new ParticlePool(scene, Math.round(1400 * P), { color0: 0xfff8e0, color1: 0xff4400, opacity: 1, gravity: 1.0, drag: 0.97, additive: true, sizeGrow: 1.06, phys: true, maxSize: 40, nearFade: 2.0 });
   // The launch spends this pool twice over at once: a wake behind the vehicle and an apron on the
   // deck under it. The old 1200·P cap (840 slots at standard quality) was already 67% consumed by
   // the wake alone — 567 live sprites measured at MET 15 — before the pad cloud asked for anything,
@@ -236,9 +246,11 @@ export function createFX(scene, quality) {
   // that — MET 2.5-8, no live sprite of any deck pool is inside 60 m of the lens (`lt60` is 0 in all
   // four, nearest reading 64.7 m) and the largest single sprite is 103 px of a 696 px frame. Treat "a
   // sprite over ~150 px within 60 m of the camera" as the failure this ceiling guards.
-  // The reading that is NOT yet satisfied: `.pxMax` on `flame` is 5-7 px, because it is the one deck
-  // pool left on the 160 px-per-metre fudge while the launch camera is 98-130 m out. Its stated job
-  // is flicker on the exhaust column, and at seven pixels it is not delivering it.
+  // `flame` was the one deck pool left on the 160 px-per-metre fudge, which put it at 5-7 px against a
+  // 138 px exhaust column — the flicker it exists to add was below one pixel of contrast per frame. It
+  // is on `phys: true` now, and re-probed at the same MET 4.02 and the same dusk light: `.pxMax` reads
+  // 23-24 px, i.e. ~0.13 of the column, so a sprite is a mouthful of the flame it is supposed to be
+  // boiling rather than a speck on it.
   fx.deluge = new ParticlePool(scene, Math.round(1200 * P), { color0: 0xf3f1ee, color1: 0x9fa9b0, opacity: 0.33, gravity: 0.9, drag: 0.968, sizeGrow: 2.0, fadeIn: 0.10, inner: 0, phys: true, maxSize: 300, nearFade: 3.0 });
   // Sand swept out by the blast front, not smoke: it is a thin curtain riding *ahead* of the cloud,
   // low over the deck, warm-brown, and short-lived because the sand it is made of runs out. `inner`

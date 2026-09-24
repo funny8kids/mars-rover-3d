@@ -29,6 +29,12 @@ ws.onmessage = ev => {
 await new Promise(r => ws.onopen = r);
 await send('Runtime.enable');
 await send('Page.enable');
+// `http.server` sends no `Cache-Control`, so Chrome keeps ES modules in its script cache across
+// navigations: a probe run after editing `src/` can execute the *previous* build's bytes and print an
+// identical report, which reads as "my change did nothing". A `fetch(u,{cache:'reload'})` preflight
+// refreshes the HTTP cache but not the script cache, so it does not fix it either.
+await send('Network.enable');
+await send('Network.setCacheDisabled', { cacheDisabled: true });
 if (url !== '-') await send('Page.navigate', { url });
 
 const readyDeadline = Date.now() + Number(readyStr || 60000);

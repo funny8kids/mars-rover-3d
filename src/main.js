@@ -2829,6 +2829,93 @@ window.__RSB = {
         sep: F.track.sep && F.track.sep.map(n => +n.toFixed(1)) },
       touch: F.touch, log: F.log.map(e => [e.met.toFixed(1), e.id, e.alt, e.vel]) };
   },
+  // E1's 「分层密度与视差」 as the frame actually holds it. The seeding table in fx/particles.js cannot
+  // prove that clause: between birth and the photographed frame the sprites advect, fall, bounce off
+  // the deck and die, so what a layer *is* is the distribution of its live sprites. This walks the
+  // three storm pools' buffers and reports per live sprite — height above the deck it is over,
+  // along-wind m/s, drawn device px, and the px/s it sweeps across the lens (projected at the
+  // sprite's own velocity over 0.05 s, which is the instantaneous angular rate without the arc a
+  // whole second of wind would bend it through). Deliberately no verdict here:
+  // tools/storm-layer-probe.js judges these against a permutation null, which is exactly the
+  // "one sheet of static" hypothesis the three layers were built to refute.
+  stormLayers: (want = 200) => {
+    if (!fx?.salt) return null;
+    const cp = camera.position, dev = renderer.domElement;
+    camera.updateMatrixWorld();
+    const inv = camera.matrixWorldInverse, proj = camera.projectionMatrix;
+    const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    // Camera space first, because that is where the shader does its arithmetic: `gl_PointSize` uses
+    // the depth along the view axis (`max(-mv.z, 1)`), not the range to the lens, and a point behind
+    // the camera has a negative one. Projecting such a point and differencing the pair would report
+    // the sprite's own position reflected through the lens as a "drift".
+    const cam = (x, y, z) => new THREE.Vector3(x, y, z).applyMatrix4(inv);
+    const scr = v => {
+      const p = v.clone().applyMatrix4(proj);
+      return [(p.x * 0.5 + 0.5) * dev.width, (-p.y * 0.5 + 0.5) * dev.height];
+    };
+    const rows = {};
+    for (const key of ['salt', 'susp', 'haze']) {
+      const pool = fx[key], u = pool.mat.uniforms;
+      const focal = u.uFocal.value, capPx = u.uMaxSize.value, pr = u.uPixelRatio.value, op = u.uOpacity.value;
+      const nearFade = u.uNearFade.value, fadeIn = u.uFadeIn.value;
+      const live = [];
+      for (let i = 0; i < pool.count; i++) if (pool.life[i] < 1) live.push(i);
+      // Fixed stride, not a random pick: the same frame read twice must give the same samples, or a
+      // regression in the probe is indistinguishable from a regression in the storm.
+      const stride = Math.max(1, Math.ceil(live.length / want));
+      const m = [];
+      for (let j = 0; j < live.length; j += stride) {
+        const i = live[j], i3 = i * 3;
+        const x = pool.pos[i3], y = pool.pos[i3 + 1], z = pool.pos[i3 + 2];
+        const vx = pool.vel[i3], vy = pool.vel[i3 + 1], vz = pool.vel[i3 + 2];
+        const c = cam(x, y, z), zc = -c.z;
+        const d = Math.hypot(x - cp.x, y - cp.y, z - cp.z);
+        const px = Math.min(pool.sizeArr[i] * focal / Math.max(zc, 1), capPx) * pr;
+        const t = pool.life[i];
+        // The fragment shader's own alpha at the centre of the disc, so a sprite the pass is about to
+        // dissolve costs the census nothing. All three storm pools share `inner` 0.14, so the ratio
+        // between their covers is exact even though this is the peak rather than the profile integral.
+        const a = op * ss(nearFade * 0.3, nearFade, Math.max(zc, 1)) * (1 - t) * ss(0, fadeIn, t);
+        const onLens = zc > 0;
+        const p0 = onLens && scr(c), p1 = onLens && scr(cam(x + vx * 0.05, y + vy * 0.05, z + vz * 0.05));
+        m.push({
+          h: +(y - surfaceAt(x, z)).toFixed(3),
+          va: +(vx * stormField.wx + vz * stormField.wz).toFixed(2),
+          s: +pool.sizeArr[i].toFixed(2),
+          px: +px.toFixed(1), a: +a.toFixed(4),
+          cw: +(0.25 * Math.PI * px * px * a).toFixed(1),
+          dps: p0 ? +(Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) / 0.05).toFixed(1) : null,
+          d: +d.toFixed(1), zc: +zc.toFixed(1), t: +t.toFixed(3),
+        });
+      }
+      rows[key] = {
+        alive: live.length, drawn: m.length, stride, cap: pool.count, op, focal, capPx, pr,
+        nearFade, fadeIn,
+        // The pool's own integration constants, printed beside the census they produced: a distribution
+        // of sprite speeds only means something if the reader knows which skid law made it.
+        physics: { advect: pool.advect, drag: pool.drag, grav: pool.grav, bounce: pool.bounce, skid: pool.skid, floor: !!pool.floorAt },
+        m,
+      };
+    }
+    return {
+      wind: [+stormField.wx.toFixed(3), +stormField.wz.toFixed(3)],
+      speed: +stormField.speed.toFixed(2), gust: +stormField.gustEnv.toFixed(3),
+      amp: +stormField.amplitude.toFixed(3), cam: [cp.x, cp.y, cp.z].map(n => +n.toFixed(1)),
+      frame: [dev.width, dev.height], rows,
+    };
+  },
+  // Fills the storm's particle buffers without rendering a single frame. `__QA.step()` hands out
+  // real rAF slices, so warming the pools past the longest sprite life costs one full render per
+  // 1/60 s — 800 of them is minutes, and the QA rig patches `performance.now` onto its virtual
+  // clock, so a probe cannot even see that coming. The dust simulation itself is plain JS
+  // (`updateStorm` → `ParticlePool.update`), and this drives exactly the line the frame loop drives
+  // (main.js's `updateStorm(fx, dt, camera.position, stormField, surfaceAt)`) with the field left
+  // where `pinStorm` put it: the emitter's `field.local()` therefore sees one fixed finger pattern,
+  // which is the steady state a layer census is supposed to describe.
+  stormStep: (n = 600, dt = 1 / 60) => {
+    for (let i = 0; i < n; i++) updateStorm(fx, dt, camera.position, stormField, surfaceAt);
+    return { n, dt, sim: +(n * dt).toFixed(2) };
+  },
   // Which layer of the exhaust is on screen. The geometric jet and the particle pools are drawn in the
   // same tens of metres under the vehicle, so a frame that still reads as a string of pearls cannot be
   // fixed by tuning the shell until the shell is proven to be there — and the three ways it can fail

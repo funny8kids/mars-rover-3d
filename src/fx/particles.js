@@ -105,6 +105,9 @@ export class ParticlePool {
     this.advect = opts.advect ?? 0;
     this.floorAt = opts.floorAt || null;
     this.bounce = opts.bounce ?? 0;
+    // Horizontal speed kept per *second* while a sprite is in contact with the floor, not per frame:
+    // see the `keep` line in `update()` for the measurement that forced the unit change.
+    this.skid = opts.skid ?? 1;
     this.head = 0;
     this.geo = geo; this.mat = mat;
   }
@@ -115,7 +118,7 @@ export class ParticlePool {
     this.ttl[i] = ttl; this.age[i] = 0; this.sizeArr[i] = size; this.size0[i] = size; this.life[i] = 0;
   }
   update(dt, windX = 0, windZ = 0, audioBoost = 0) {
-    const { pos, vel, life, age, ttl, sizeArr, size0, grav, drag, count, sizeGrow, advect, floorAt, bounce } = this;
+    const { pos, vel, life, age, ttl, sizeArr, size0, grav, drag, count, sizeGrow, advect, floorAt, bounce, skid } = this;
     for (let i = 0; i < count; i++) {
       if (life[i] >= 1) continue;
       age[i] += dt;
@@ -140,7 +143,16 @@ export class ParticlePool {
         if (pos[i3 + 1] < gy) {
           pos[i3 + 1] = gy;
           if (vel[i3 + 1] < 0) vel[i3 + 1] = -vel[i3 + 1] * bounce;
-          vel[i3] *= 0.72; vel[i3 + 2] *= 0.72;
+          // `skid` is read per 1/60 s frame exactly like `drag`, for one reason: the 0.72 that used to
+          // sit here was a bare per-frame constant, so a sprite in contact lost 0.72^60 = 3e-16 of its
+          // horizontal speed per second and any grain that settled simply stopped. Measured off the
+          // live buffers on a pinned peak storm (tools/storm-layer-probe.js): 74.6 % of salt sprites
+          // within 1.5 mm of the sand at a median 1.05 m/s along-wind against a 26 m/s storm (4 % of
+          // the wind), and 37 % of the suspension layer glued to the deck at 1.31 m/s while its other
+          // two thirds moved at 22.6. That is not a rolling ground layer, it is a skin of dead paint
+          // on the dune, and it inverted the only depth cue the layers had.
+          const keep = Math.pow(skid, dt * 60);
+          vel[i3] *= keep; vel[i3 + 2] *= keep;
         }
       }
       // Growth is a share of the puff's own life, not of wall-clock seconds. The old line was
@@ -268,8 +280,14 @@ export function createFX(scene, quality) {
   // its own sprite scale, opacity and life so they separate in the frame instead of averaging into
   // one flat orange wash, and their wind multipliers follow the boundary layer — faster with height.
   const SP = quality.stormParticles;
-  fx.salt = new ParticlePool(scene, Math.round(SP * 0.50), { color0: 0xdca869, color1: 0xa06f3c, opacity: 0.5, gravity: -2.4, drag: 0.996, sizeGrow: 1.04, maxSize: 26, nearFade: 1.1, advect: 1.0, bounce: 0.32 });
-  fx.susp = new ParticlePool(scene, Math.round(SP * 0.34), { color0: 0xc08a52, color1: 0x8a5a2c, opacity: 0.30, gravity: -0.3, drag: 0.998, sizeGrow: 1.37, maxSize: 54, nearFade: 1.9, advect: 1.25 });
+  // `skid` is the ground-contact drag and `bounce` the rebound share; both were tuned against the
+  // boundary-layer reading in tools/storm-layer-probe.js, whose target is the along-wind median as a
+  // fraction of storm speed rising salt → susp → haze. Saltation algebra (hop band median 0.24 m at
+  // g = 2.4 m/s² ⇒ impact 1.07 m/s) says a share of 0.32 dies out in 0.4 s and the layer settles into
+  // skidding, while 0.72 gives a total hop time of 2v/(g(1-b)) ≈ 3.2 s against salt's 3.4 s life, so a
+  // grain that is born hopping stays hopping.
+  fx.salt = new ParticlePool(scene, Math.round(SP * 0.50), { color0: 0xdca869, color1: 0xa06f3c, opacity: 0.5, gravity: -2.4, drag: 0.996, sizeGrow: 1.04, maxSize: 26, nearFade: 1.1, advect: 1.0, bounce: 0.72, skid: 0.98 });
+  fx.susp = new ParticlePool(scene, Math.round(SP * 0.34), { color0: 0xc08a52, color1: 0x8a5a2c, opacity: 0.30, gravity: -0.3, drag: 0.998, sizeGrow: 1.37, maxSize: 54, nearFade: 1.9, advect: 1.25, skid: 0.995 });
   fx.haze = new ParticlePool(scene, Math.round(SP * 0.16), { color0: 0xb27c48, color1: 0x8d6034, opacity: 0.10, gravity: -0.02, drag: 0.999, sizeGrow: 3.1, maxSize: 210, nearFade: 3.4, advect: 1.55 });
   Object.values(fx).forEach(p => p.setPixelRatio(1));
   return fx;

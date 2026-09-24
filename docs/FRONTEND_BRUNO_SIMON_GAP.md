@@ -303,11 +303,113 @@ dolly 距离从 11.1 m 一路退到 19.6 m 再回 16.2 m。全程 fps 60、`resc
 **判负标准**：hud 档 `panels.coveragePct ≤ 5` 且 `textCoveragePct ≤ 5`，且 `panels.top` 里
 不再有同时 `bg && border && blur` 的 > 3 % 盒子。
 
+**§7 已落地（2026-09-24）**：做法不是"把字变小"，是把**五条句子中的四条从常驻改成情境出现**：
+`src/ui.js` 只把当前目标留在 `#mission-list`，其余三条放进 `#mission-rest`，
+`#mission-panel:not(.open)` 用一条 CSS 把 `#mission-rest` 收起。展开有四条路，全部真实驱动过：
+指针悬停、键盘聚焦、点计数器、以及任务链**形状**改变时自动展开 6 秒（`renderMissions` 里 `mpSig`
+只折进 `text/done/active`，故意不含 `{n}` 计数器 —— `main.js` 每个网格计数 tick 都会重画同一批句子，
+把"数字动了"当成"新任务了"会盖掉玩家正在读的那一行）。收起的内容必须留一条回来的路，所以计数器
+`#mp-more` 不 `hidden`（除非真的没有别条），并且带 `aria-expanded`。
+密度读数（hud 档，同一版式框）见本节末尾的实跑记录。
+
+**真实点击抓到的第三件事：控件会在指针底下跑掉。** 上面那套收/放第一版把计数器放在
+`#mission-list` 之后，面板是 `top:18px` 顶锚、往下长的，于是展开时计数器从 `y=58` 滑到 `y=160`。
+`/tmp/mp-events.mjs`（一次性记录仪：capture 阶段把 `pointerover/enter/leave`、`pointerdown/up`、
+`mouse*`、`click`、`focus/blur/focusin/focusout` 全打在面板和按钮上）量到的序列是：
+CDP 的 `mouse()` 先发 `mouseMoved` → `pointerenter` 已经先把面板打开 → `mousePressed` 落在
+`#mission-list` 的一行 `li` 上（不可聚焦，焦点交给 `body`）→ `focusout` 把面板收起 →
+`mouseReleased` 时按钮早已不在指针下面，浏览器把 `click` 派给**最近的共同祖先** `#mission-panel`
+—— 那里没有监听器。结果：点「还有 3 条」什么都不发生。历次 `element.click()` 测试全绿，因为
+`.click()` 既不移动指针也不换焦点。
+**修法是把改动放在产品里而不是测试里**：DOM 拆成 `#mission-list`（当前目标，1 行）→ `#mp-more`
+（计数器）→ `#mission-rest`（其余），计数器于是坐在同一块地上；样式选择器从
+`#mission-list li…` 全部改成 `#mission-panel li…`，两截列表共用 `padding-right:4px` 那条溢出补位。
+被否掉的两版：计数器提到整块列表前面（读序变成"数字—句子"），`display:contents` + CSS `order`
+（DOM 序 ≠ 视觉序，读屏和 Tab 都会拿到错的顺序，而且会丢掉 `#mission-list` 那个承重盒）。
+走查里新增一条不变量把这件事钉住：`hud:mission-state` 要求七个手势步量到的 `#mp-more` **锚点
+（x, y）只有一个值**，并且"任一状态下指针所在的那个矩形中心，落进其余所有矩形之内"。锚点不含宽度
+是刻意的 ——「还有 3 条」和「收起任务」本来就是两个长度。这条不变量当天就抓到了**同一种病的第二个实例**：
+拆完列表后按钮仍然从 `y=58` 滑到 `y=85`，因为收起态还顺手 `display:none` 掉了 `.mp-title`，
+而标题在按钮**上面**（`btnBoxes ["35,85,51,18"]` 对 `["35,58,62,18"]`）。判据是"按钮上面所有东西的高度
+不能变"，于是标题成为待机 HUD 的一部分，密度全部由那三条句子省回来。
+`hud:mission-click-*` 两步断言的是**真实输入域的顺序**（悬停先开 → 点击收起 → 再点展开），
+不是"点击会展开"。RED 件：`/tmp/j6-mp2.txt` 的
+`hud:mission-click-collapse FAIL state: panel did not close (open=true)` /
+`hud:mission-click-open FAIL state: panel did not open (open=false)` /
+`hud:mission-labels` 报 `opened:["收起任务","还有 3 条"]` 与 `closed` 正好相反；
+第一轮修完（列表拆了、标题还收着）复跑是 `/tmp/j6-mp3.txt` 的 `STEPS 12 FAILED 5`，
+四个手势步全红、`hud:mission-state` 报出那一对 y 值。
+
+尺子自己也被这三条手势逼着补了三件东西：① `Input.dispatchKeyEvent` 合成 Enter 必须带
+`windowsVirtualKeyCode/nativeVirtualKeyCode=13` 与 `char:'\r'`，否则焦点在按钮上也不会触发默认动作，
+键盘那两步会假绿；② `window.__AUDHOLD` 把"操作者亲手放上去的层"声明给探针，探针只退役没被点名的
+瞬时层，并回 `pinned:` —— 所以展开态那次读数（文本 6.14 % / 盒子 7.73 %，`pinned:["mission-panel"]`）
+永远不会被误读成待机 HUD；③ 正对照必须能失败：`selfCheck` 的锚点改用普查自己的 `onScreen()` 判
+（`broken` vs `skipped:'faint'|'display:none'|'zero-box'|'offscreen'`）、`anchorMutation` 要求
+`dropped===1 && caught===true`、`hudMarkupParity` 去 `fetch('/index.html')` 用 DOMParser 比对 ——
+这也是 `qa_boot.html` 必须与 `index.html` 的 HUD 标记保持一致的原因，否则走查量的是一屏游戏里
+并不存在的 DOM。
+
+### 实跑记录（2026-09-24，最终字节）
+
+命令：`node tools/cdp-type-click.mjs "http://127.0.0.1:5173/qa_boot.html?v=<tag>" 9333`，认的是末行
+`STEPS … FAILED 0`。闸门在 `tools/hud-audit-probe.js` 的 `density` 块里：`bar {textPct:5, panelPct:5,
+cardedBoxPct:3}`，`judged` 只在判的确实是那一屏（`want==='hud'`）且没有一层是操作者亲手钉上去的
+（`pinned` 为空）时才为真，超线由 `cdp-type-click.mjs` 落成一行的 `!! … FAIL §7 density: …`。
+
+| 哪一屏 | 文本 | 盒子 | 最大整卡盒 | 进闸门？ |
+| --- | --- | --- | --- | --- |
+| 待机 HUD（`hud:mission-panel`） | 3.15 % | 3.81 % | `#mission-panel 2.93 %` | ✅ `control {bar:1, tripped:3}` |
+| 静音后 / 拍照退出后 | 3.15 % | 3.83 % | 2.93 % | ✅ |
+| 停在光台上（`hud:teleport-warp`） | 4.28 % | 4.85 % | 2.93 % | ✅ |
+| 从光台开走（`hud:pad-leave`） | 3.13 % | 3.81 % | 2.93 % | ✅ |
+| 排行榜弹出（`hud:race-board`） | 3.13 % | 3.81 % | 2.93 % | ✅（弹出层记在 `summonedUp`，外层读数 5.62 / 10.43） |
+| 关榜瞬间（`hud:board-close`） | 3.13 % | 3.81 % | 2.93 % | ✅（`#race-hud` 仍在淡出，外层读数 3.74 / 5.06） |
+| 任务日志展开（`hud:mission-hover-open` / `-click-open`） | 6.14 % | 7.57 % | 6.69 % | ❌ `pinned:["mission-panel"]`：这一屏是玩家亲手放上去的 |
+| 菜单档（`menu:lang-*`） | 0.17 % | 0 % | — | ❌ `judged:false`，`summonedUp:["#menu"]` |
+
+以上判绿的每一步同时保持 `min=12`、`h=0`、`v=0`、`collisions=0`、`below45=0`、hud 档
+`contrastMin 5.39`。
+
+**闸门先见过红，才有资格说绿。** 任务日志收成一行之后，**停在光台上**那一屏仍是盒子 **5.46 %**（同一次
+跑的 `hud:mute-fab` / `photo-exit` / `race-board` / `board-close` 全是 5.46–5.48 %），五条一起红：
+`/tmp/j7-gate-full.txt`。逐层归属（`ownerSplit`）指出多出来的不是任务面板，是同一帧上**两句同样的召唤**：
+`#tele-hint` 1.74 %（「按 G 跃迁（M 全区地图）」）＋ `#tele-fab` 0.61 %（「✦ 传送 · MAP」）。修法在
+产品里而不在尺子里：`src/main.js` 让传送胶囊在**这一条提示**在场时让位（键在条件上，不是"有任何提示"
+就藏——电网那条提示请玩家留在原地，那里胶囊是唯一的地图门），并且触屏不藏（`G` 是 `keydown` 监听，
+手机上胶囊是唯一的门，所以提示语按 `input.isTouch` 分叉成「点左下的『✦ 传送 · MAP』」）。没有改
+`BAR`，也没有加豁免。改后同一帧 **4.28 / 4.85**（`/tmp/j8-fab-full.txt`、`/tmp/j9-full.txt`）。
+
+整卡盒 3 % 那条线也不是一步到位的：五条句子常驻时 `#mission-panel` 是 **6.05 %**，收成一行 +
+把 `.mp-title` 留在待机态后是 **3.05 %**（仍超），最后把 `padding` 从 12 px 收到 10 px 才是 **2.93 %**
+——省的是内边距不是字号，理由写在 `src/styles.css:143`。
+
+**条件式控件必须两半都验**，所以走查多了一步 `hud:pad-leave`（24 步 → 25 步）：让车真的开下光台。
+提示是"藏起来"的，胶囊就必须"回来"，只断言前一半的话，一条写反的条件会永久吃掉传送门。车靠**按住**
+W 起来（`holdFrames:120`）：`inp` 逐帧采样按键状态，同一瞬间按下又松开等于给了一脚油门噪声，车不会动。
+读数 `{"hint":false,"fab":true,"pos":"-4,1,12"}` → `{"hint":true,"fab":false,"pos":"-11,1,5"}`。
+
+两件踩到的坑：① `opts.hold` 这个名字已经被探针占用了（`window.__AUDHOLD`＝"这一步钉住了哪些层"），
+复用它的走查死在 `['mission-panel'].toUpperCase()` 上（`/tmp/j9-pad-full.txt`），改名 `holdKey`；
+② 菜单档那一步的 `anchors:["plant did not reach: {\"skipped\":\"anchor not on screen: zero-box\"}"]`
+不是漏检——`#speed-val` 在菜单里就是零盒子，探针按 `onScreen()` 报了原因；hud 档 `anchors:[]` 才是
+"锚点变异闸门跑过了"的证据。
+
+**闸门自己也被变异过（极性验证）**：把 `#mission-panel` 的 `padding` 从 10 px 改成 40 px（锚点全仓唯一，
+`count != 1` 就中止），跑 `menu:quality-std|menu:start|hud:mission-panel$`，闸门如实判负：
+`!! hud:mission-panel FAIL §7 density: 盒子 5.67 % > 5; #mission-panel 是 4.79 % 的「底色+描边+模糊」盒 > 3`
+→ `MUTATION CAUGHT (gate goes red)`，随后从 `cp -a` 的备份还原，`sha256sum src/styles.css` 回到
+`b52efcac…`（干净那次 `STEPS … FAILED 0` 跑的就是这组字节）。这一次还原判定**自己先错过**：脚本写的是
+`[ "$(sha256sum < src/styles.css)" = "$BASE" ]`，而 `sha256sum < file` 输出的是 `hash  -`，永远不等于裸
+hash —— 于是字节完全一致的文件被判成 `RESTORE FAILED`。假红和假绿一样会骗人（这一次是往"更糟"的方向骗，
+下次就会往"更好"的方向骗），改成 `sha256sum file | cut -d' ' -f1` 之后两个极性都验过：当前文件
+→ `RESTORED`，一份故意做肥的副本 → `RESTORE FAILED`。
+
 ---
 
 ## 8 真实点击抓到的两件 DOM 读数看不见的事
 
-【F】1 要求"UI 变更必须真实点击走一遍交互"，于是有了 `tools/cdp-type-click.mjs`：14 步走一遍
+【F】1 要求"UI 变更必须真实点击走一遍交互"，于是有了 `tools/cdp-type-click.mjs`：24 步走一遍
 菜单 → 启动 → HUD → 传送面板 → 跃迁 → 静音 → 拍照 → 计时赛 → 排行榜 → 关闭，每一步都是
 CDP `Input.dispatchMouseEvent` 打在元素自己的矩形中心上，且先过 `document.elementFromPoint` 命中测试。
 它抓到两件前面七节所有尺子都看不见的事：
@@ -329,8 +431,14 @@ CDP `Input.dispatchMouseEvent` 打在元素自己的矩形中心上，且先过 
 或回一个没有 `type.min` 的对象时，那一步判红而不是判绿；`restoredAfterLocaleToggle` 原本硬比
 `=== 'EN'`，在故意停在 en 面的那一测里把"正确还原"报成 false，现在比的是本次运行开始前的那颗胶囊文本。
 
-**判负标准**：`node tools/cdp-type-click.mjs <qa_boot url> 9333` 末行 `STEPS 14 FAILED 0`，
+**判负标准**：`node tools/cdp-type-click.mjs <qa_boot url> 9333` 末行 `STEPS 24 FAILED 0`，
 且每个带 `measure` 的状态都是 `min=12 h=0 v=0 collisions=0`、三个 control 全绿。
+步数会随手势增加，所以认的是"末行 `FAILED` 后为 0 且这一步的读数在表里"，不是 24 这个字。
+
+**第三个坑（写在尺子的用法上，不是产品上）**：第三个位置参数是 `stepRegex`，用它只跑 HUD 那几步时，
+`menu:start` 会被一起滤掉 —— 于是游戏从未启动，`#mp-more` 的矩形是 `0,0,0,0`，七条手势全部红成
+"phase \"hud\" never arrived"。这看起来像产品回归，其实是走查被剥掉了入口。子集跑法要么带上
+`menu:start`，要么直接跑全程。
 
 ---
 

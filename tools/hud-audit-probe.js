@@ -41,7 +41,12 @@
 // findings, thresholds and the mutation run that filed them red are in
 // `docs/VERIFICATION.md`（「前端 bruno-simon 差距」那一行）:
 //   selfCheck      — DOM：五个已知在屏、已知字号的元素必须出现在普查结果里。少了就是尺子坏了，
-//                    不是 HUD 变稀了（run #1 就是这样把 52 px 的 `#speed-val` 量没了）。
+//                    不是 HUD 变稀了（run #1 就是这样把 52 px 的 `#speed-val` 量没了）。锚的"在屏"
+//                    用普查自己的判据现算（`broken` 只在在屏且缺席时为真），否则传送日志那种
+//                    opacity 0 的锚会把正确的跳过报成尺子故障。
+//   hudMarkupParity — DOM：这条尺子量的是 qa_boot.html，玩家在的是 index.html。两边 `#hud` 的 id
+//                    集合必须相等，否则读数描述的是一个玩家拿不到的界面（发生过：`#mp-more` 只进了
+//                    index.html，harness 仍是旧 `#mission-panel`，于是密度跑在一个不存在的产品上）。
 //   rulerControl   — 镜头：同一个 1.6 m 线段的屏幕占比，用投影矩阵算一遍、用相机自己的正交基做
 //                    点积再算一遍，两把尺子必须同意。
 //   opticsCheck    — 镜头：加速前后占比之比，必须等于 (d₀/d₁)·(tan(fov₀/2)/tan(fov₁/2))；这条
@@ -71,11 +76,26 @@
   const wantUp = () => want === 'loader' ? shown('loader')
     : want === 'menu' ? (shown('menu') && !R.state?.started)
     : !!R.state?.started;
+  // The census's own "is this on screen" test, hoisted here because the wait-for-transient below has
+  // to retire a layer by the same criterion that would otherwise count it — `classList` is not it:
+  // #toast leaves the class half a second before its 0.3 s opacity fade finishes, and a reading taken
+  // inside that tail still has the banner in the numbers.
+  const FAINT = 0.05;
+  const effOpacity = el => { let o = 1, n = el; while (n && n !== document.body) { o *= +getComputedStyle(n).opacity; n = n.parentElement; } return o; };
+  // §7's density bar is per *layer*: a line or a box is judged as part of whichever `#hud > div` (or
+  // body-level screen) owns it, so "the driving HUD is 3.9 %" and "the leaderboard is 12 %" can live in
+  // one reading without cancelling each other. The chain is walked in the DOM rather than looked up in
+  // a list of ids — a hand-kept list is exactly how an exemption grows silently.
+  const ownerOf = el => {
+    let n = el;
+    while (n.parentElement && n.parentElement !== document.body && n.parentElement.id !== 'hud') n = n.parentElement;
+    return '#' + (n.id || n.tagName.toLowerCase());
+  };
   const waitedAt = Date.now();
   while (!wantUp() && Date.now() - waitedAt < 60000) await new Promise(r => setTimeout(r, 250));
   const phase = { want, waitedMs: Date.now() - waitedAt, up: wantUp(),
     started: !!R.state?.started, loaderHidden: !!cls('loader')?.contains('hidden'), hudHidden: !!cls('hud')?.contains('hidden'),
-    missionItems: document.querySelectorAll('#mission-list li').length };
+    missionItems: document.querySelectorAll('#mission-panel li').length };
   if (!phase.up) return JSON.stringify({ fail: `phase "${want}" never arrived`, phase }, null, 1);
   // The chase camera flies in from the boot pose, so a lens reading taken on the first frame after
   // the HUD appears describes a camera no player ever drives with (run #1 reported `camY 0.0` with
@@ -99,6 +119,59 @@
     }
   }
   phase.settle = { frames: settleFrames, ms: Date.now() - stepAt };
+
+  // A transient is not a state. The toast that welcomes the player is on screen for the first seconds
+  // of the HUD and it alone is 2.4 % of the panel budget and 2.4 % of the text budget, so a density
+  // reading taken while it is up describes a moment, not the instrument the ride is spent looking at.
+  // `UI.toast` clears on a wall-clock timeout, so this waits on the same clock (bounded, reported).
+  //
+  // `window.__AUDHOLD` is the exception, set by the click walk: when the operator puts a layer on
+  // screen on purpose (an expanded log, an open teleport panel) the state under measurement *is* that
+  // layer, and waiting it out would retire the thing the step exists to measure — a click-opened panel
+  // has no timeout at all, so the wait would just burn 9 s of virtual frames and report a timeout.
+  // `pinned:` names which readings describe a hand-opened screen, so they can never be read as idle.
+  const PINNED = new Set(window.__AUDHOLD || []);
+  phase.pinned = [...PINNED];
+  phase.toast = { seen: false, waitedMs: 0 };
+  if (want !== 'drive') {
+    const tst = document.getElementById('toast');
+    if (tst) {
+      phase.toast.seen = effOpacity(tst) >= FAINT;
+      phase.toast.pinned = PINNED.has('toast');
+      while (!phase.toast.pinned && effOpacity(tst) >= FAINT && phase.toast.waitedMs < 9000) {
+        await new Promise(r => setTimeout(r, 200));
+        phase.toast.waitedMs += 200;
+        Q?.step?.(12, 1000 / 60);            // keep the world alive while the banner times itself out
+      }
+      // Report the value the census would use, so "we waited" is checkable rather than assumed: a
+      // non-zero opacity here means the density numbers below still include the transient.
+      phase.toast.opacityAfter = +effOpacity(tst).toFixed(3);
+      phase.toast.timedOut = phase.toast.waitedMs >= 9000;
+    }
+  }
+  // The mission log is the other transient with a state of its own: it expands for a few seconds
+  // after the chain changes, and an expanded log is 6 % of the frame against 1.6 % collapsed. The
+  // observer is installed before any waiting, so "did it pop during the run" is answered by what
+  // happened rather than by what the one frame at reading time looks like.
+  phase.missionPanel = { watched: false };
+  {
+    const mp = document.getElementById('mission-panel');
+    if (mp) {
+      const pops = [];
+      new MutationObserver(() => pops.push(mp.classList.contains('open')))
+        .observe(mp, { attributes: true, attributeFilter: ['class'] });
+      phase.missionPanel = { watched: true, openAtStart: mp.classList.contains('open'),
+        pinned: PINNED.has('mission-panel'), waitedMs: 0 };
+      while (!phase.missionPanel.pinned && mp.classList.contains('open') && phase.missionPanel.waitedMs < 9000) {
+        await new Promise(r => setTimeout(r, 200));
+        phase.missionPanel.waitedMs += 200;
+        Q?.step?.(12, 1000 / 60);
+      }
+      phase.missionPanel.popsDuringRun = pops.filter(Boolean).length;
+      phase.missionPanel.openAtReading = mp.classList.contains('open');
+      phase.missionPanel.timedOut = phase.missionPanel.waitedMs >= 9000;
+    }
+  }
 
   // ---- 4. 镜头构图：主体占比与地平线位置 -------------------------------------------------
   // Defined before the phase branches because both readings use it, and a reading that was taken by
@@ -380,7 +453,9 @@
   };
 
   // ---- 2. 可见文本普查 ---------------------------------------------------------------
-  const effOpacity = el => { let o = 1, n = el; while (n && n !== document.body) { o *= +getComputedStyle(n).opacity; n = n.parentElement; } return o; };
+  // `effOpacity` / `FAINT` are declared above with the phase gate: the wait for the welcome toast has
+  // to retire a layer by exactly the criterion used here, or the two disagree and the toast is either
+  // counted while faded out or ignored while still solid.
   // The frame is the box the document actually lays out in, NOT `innerWidth`. qa_boot.html
   // redefines `innerWidth`/`clientWidth` to 889×967 so the renderer allocates a known buffer, but
   // that lie only reaches JS — the browser still lays the document out in its real window (here
@@ -412,7 +487,7 @@
     const t = ownText(el); if (!t) { skip.noText++; continue; }
     const st = getComputedStyle(el);
     if (st.visibility === 'hidden' || st.display === 'none' || st.visibility === 'collapse') { skip.notRendered++; continue; }
-    const op = effOpacity(el); if (op < 0.05) { skip.faint++; continue; }
+    const op = effOpacity(el); if (op < FAINT) { skip.faint++; continue; }
     const r = el.getBoundingClientRect();
     if (r.width < 2 || r.height < 2) { skip.tooSmall++; continue; }
     if (!inView(r)) { skip.offscreen++; continue; }
@@ -420,7 +495,7 @@
     const ls = st.letterSpacing === 'normal' ? 0 : +parseFloat(st.letterSpacing).toFixed(2);
     const box = { id: el.id ? '#' + el.id : (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : el.tagName.toLowerCase()) };
     rows.push({
-      el: box.id, txt: t.slice(0, 14), fs: fs2, lsPx: ls,
+      el: box.id, own: ownerOf(el), txt: t.slice(0, 14), fs: fs2, lsPx: ls,
       lsEm: +(ls / fs2).toFixed(3), fam: st.fontFamily.split(',')[0].replace(/["']/g, ''),
       weight: st.fontWeight, col: st.color, op: +op.toFixed(2),
       // `background-clip:text` with `color:transparent` is the one case where the computed colour is
@@ -686,7 +761,7 @@
   let boxes = [], boxArea = 0;
   for (const el of document.querySelectorAll('body *')) {
     const st = getComputedStyle(el);
-    if (st.display === 'none' || effOpacity(el) < 0.05) continue;
+    if (st.display === 'none' || effOpacity(el) < FAINT) continue;
     const r = el.getBoundingClientRect(); if (r.width < 24 || r.height < 14 || !inView(r)) continue;
     const bgc = rgba(st.backgroundColor);
     const hasBg = !!(bgc && bgc.a > 0.03);
@@ -694,7 +769,7 @@
     const blur = st.backdropFilter && st.backdropFilter !== 'none';
     if (!hasBg && !hasBorder && !blur) continue;
     const a = r.width * r.height / (FRAME.w * FRAME.h) * 100;
-    if (a > 0.25) { boxArea += a; boxes.push({ el: el.id ? '#' + el.id : el.tagName.toLowerCase(), pct: +a.toFixed(2), bg: hasBg, border: hasBorder, blur, radius: st.borderRadius }); }
+    if (a > 0.25) { boxArea += a; boxes.push({ el: el.id ? '#' + el.id : el.tagName.toLowerCase(), own: ownerOf(el), pct: +a.toFixed(2), bg: hasBg, border: hasBorder, blur, radius: st.borderRadius }); }
   }
   boxes.sort((a, b) => b.pct - a.pct);
 
@@ -727,16 +802,119 @@
   // A positive control for the census itself: these elements are known to be on screen with known
   // sizes, so if any of them is missing from `rows` the ruler is broken, not the HUD sparse.
   const selfCheck = {};
+  // ... but "known to be on screen" is a claim about this frame, not a name. `#tel-met` sits inside the
+  // teleport log, which is opacity 0 unless the player opened it — so a bare `inRows: false` next to it
+  // reads as a broken ruler on a run where the census correctly skipped an invisible node. The verdict
+  // is therefore computed from the same test the census uses: `broken` is only true for an anchor that
+  // is on screen and still absent from `rows`; anything else carries the reason it was passed over.
+  const onScreen = (el, r) => {
+    if (effOpacity(el) < FAINT) return 'faint';
+    if (getComputedStyle(el).display === 'none' || getComputedStyle(el.parentElement).display === 'none') return 'display:none';
+    if (r.width < 1 || r.height < 1) return 'zero-box';
+    if (r.right < 0 || r.bottom < 0 || r.left > FRAME.w || r.top > FRAME.h) return 'offscreen';
+    return true;
+  };
   for (const id of ['speed-val', 'speed-unit', 'mission-panel', 'tel-met', 'battery-pct']) {
     const el = document.getElementById(id);
     if (!el) { selfCheck[id] = 'absent from DOM'; continue; }
     const st = getComputedStyle(el), r = el.getBoundingClientRect();
+    // "In the census" means the id itself or a named node inside it: the mission log's text lives in
+    // `#mp-more` and in the `li`s, not on the panel element, and an anchor that only accepts the
+    // container would read as "ruler broken" on the day the design moves the words one level down.
+    const inner = [...el.querySelectorAll('[id]')].map(n => '#' + n.id);
+    const inRows = rows.some(x => x.el === '#' + id || inner.includes(x.el));
+    const vis = onScreen(el, r);
     selfCheck[id] = {
-      inRows: rows.some(x => x.el === '#' + id), fs: st.fontSize, op: +effOpacity(el).toFixed(2),
+      inRows, broken: vis === true && !inRows,
+      ...(vis === true ? {} : { skipped: vis }),
+      fs: st.fontSize, op: +effOpacity(el).toFixed(2),
       rect: [Math.round(r.width), Math.round(r.height), Math.round(r.left), Math.round(r.top)],
       ownText: ownText(el).slice(0, 8), parentDisplay: getComputedStyle(el.parentElement).display,
     };
   }
+  // Mutation gate for the control itself: drop one on-screen anchor out of `rows` and re-run the same
+  // test on the shortened list. A positive control that cannot be made to fail is decoration — it would
+  // still print an all-clear if the census lost every node, which is run #1's bug wearing the opposite
+  // clothes. `dropped` has to be exactly 1 or the plant never reached anything and the verdict is a lie.
+  {
+    const id = 'speed-val', el = document.getElementById(id);
+    const r = el ? el.getBoundingClientRect() : null;
+    const vis = el ? onScreen(el, r) : 'absent from DOM';
+    if (vis !== true) {
+      selfCheck.anchorMutation = { skipped: 'anchor not on screen: ' + vis };
+    } else {
+      const inner = [...el.querySelectorAll('[id]')].map(n => '#' + n.id);
+      const hits = rows.filter(x => x.el === '#' + id || inner.includes(x.el));
+      const kept = rows.filter(x => !hits.includes(x));
+      selfCheck.anchorMutation = {
+        dropped: rows.length - kept.length,
+        caught: kept.some(x => x.el === '#' + id || inner.includes(x.el)) === false,
+      };
+    }
+  }
+  // The QA harness carries its own copy of the HUD markup, so the page this ruler measures can lag the
+  // page the player sees. It did: `#mp-more` shipped in index.html while qa_boot.html still had the old
+  // #mission-panel, so the collapse could not be wired where the ruler was looking, and the density run
+  // reported a HUD the player never gets. The comparison set is read out of the shipped file rather
+  // than kept as a list here — a hand-maintained list is the thing that goes stale.
+  let shippedMode = null;
+  try {
+    const doc = new DOMParser().parseFromString(
+      await (await fetch('/index.html', { cache: 'no-store' })).text(), 'text/html');
+    const ids = root => root ? [...root.querySelectorAll('[id]')].map(n => n.id).sort() : [];
+    const shipped = ids(doc.getElementById('hud')), live = ids(document.getElementById('hud'));
+    // Which layers are "the frame the ride is spent looking at" is the shipped markup's answer, not a
+    // list maintained here: a layer that ships with `hidden` is one the player summons (the race HUD,
+    // the leaderboard, the photo UI), one that ships visible is permanent. A new always-on panel is
+    // therefore inside the judged set on the day it lands, with nothing to remember to update.
+    shippedMode = [...doc.getElementById('hud').children, ...doc.body.children]
+      .filter(n => n.id && n.classList.contains('hidden')).map(n => '#' + n.id);
+    // Only `missing` carries the judgement: the shipped page is the promise, and an id the product
+    // ships that the measured page lacks means the ruler is looking at an older interface. `extra` is
+    // reported but expected to be non-zero — panels the game builds at runtime (`#tel-wrap` and its
+    // four children) exist in the live DOM and in no static markup, on either page.
+    selfCheck.hudMarkupParity = { shipped: shipped.length, live: live.length,
+      missing: shipped.filter(i => !live.includes(i)), extra: live.filter(i => !shipped.includes(i)) };
+  } catch (e) { selfCheck.hudMarkupParity = 'unavailable: ' + e.message; shippedMode = null; }
+
+  // ---- §7 density: the bar gets a reader that refuses, instead of a number someone eyeballs ------
+  // Until now `textCoveragePct`, `panels.coveragePct` and the carded-box ceiling were only reported, so
+  // the padding edit that moved #mission-panel from 3.05 % to 2.93 % cleared §7's 3 % clause by 0.12 %
+  // with nothing standing between that and a regression. `fail` is non-empty only for a resting frame
+  // (the driving HUD, with no layer held open by hand): a screen the player summoned is allowed to be
+  // denser, and `summonedUp` names which one, so the exemption can never be claimed silently.
+  const BAR = { textPct: 5, panelPct: 5, cardedBoxPct: 3 };
+  const MODE = new Set(shippedMode || []);
+  const driving = x => !MODE.has(x.own);
+  const dRows = rows.filter(driving), dBoxes = boxes.filter(driving);
+  const dText = dRows.reduce((s, x) => s + x.areaPct, 0);
+  const dBox = dBoxes.reduce((s, x) => s + x.pct, 0);
+  const carded = dBoxes.filter(x => x.bg && x.border && x.blur);
+  const biggestCarded = carded[0] || null;
+  const byOwner = {};
+  for (const x of dRows) (byOwner[x.own] ??= { text: 0, box: 0 }).text += x.areaPct;
+  for (const x of dBoxes) (byOwner[x.own] ??= { text: 0, box: 0 }).box += x.pct;
+  const judged = want === 'hud' && !phase.pinned.length;
+  const trip = b => {
+    const out = [];
+    if (dText > b.textPct) out.push(`文本 ${dText.toFixed(2)} % > ${b.textPct}`);
+    if (dBox > b.panelPct) out.push(`盒子 ${dBox.toFixed(2)} % > ${b.panelPct}`);
+    if (biggestCarded && biggestCarded.pct > b.cardedBoxPct)
+      out.push(`${biggestCarded.own} 是 ${biggestCarded.pct} % 的「底色+描边+模糊」盒 > ${b.cardedBoxPct}`);
+    return out;
+  };
+  const density = {
+    bar: BAR, judged, textPct: +dText.toFixed(2), panelPct: +dBox.toFixed(2),
+    cardedBox: biggestCarded ? `${biggestCarded.own} ${biggestCarded.pct} %` : 'none',
+    summonedUp: [...new Set(boxes.filter(x => MODE.has(x.own)).map(x => x.own))],
+    // Three clauses that can all go red, proven against the live numbers: the same computation at a 1 %
+    // bar must trip all three. If it does not, one clause is decoration and this run says so.
+    control: judged ? { bar: 1, tripped: trip({ textPct: 1, panelPct: 1, cardedBoxPct: 1 }).length } : null,
+    ownerSplit: Object.entries(byOwner)
+      .map(([k, v]) => [k, +v.text.toFixed(2), +v.box.toFixed(2)])
+      .sort((a, b) => b[2] - a[2]).slice(0, 6),
+    fail: judged ? trip(BAR) : [],
+  };
 
   return JSON.stringify({
     frame: { laid: [FRAME.w, FRAME.h], innerWidth: [innerWidth, innerHeight],
@@ -764,11 +942,16 @@
         // whoever reads it next, and the explanation is the thing that needs checking.
         list: wide.map(x => `${x.el}:${x.txt}=${x.fs}px/${x.lsEm}em`) },
       textCoveragePct: +textArea.toFixed(2),
+      // §7 needs the names too: a coverage number invites "it is not that much", and the only answer
+      // is the list of what is actually eating the frame, largest first.
+      textTop: rows.slice().sort((x, y) => y.areaPct - x.areaPct).slice(0, 10)
+        .map(x => `${x.el}:${x.txt}=${x.areaPct}%`),
       contrast: { below45: lowC.length, scored: scored.length, unscored: rows.length - scored.length,
         min: scored.length ? Math.min(...scored.map(x => x.cr)) : null,
         worst: scored.slice().sort((a, b) => a.cr - b.cr).slice(0, 5).map(x => `${x.el}:${x.txt}=${x.cr}`) },
     },
     panels: { count: boxes.length, coveragePct: +boxArea.toFixed(2), top: boxes.slice(0, 8) },
+    density,
     fit,
     authoredScale: {
       fontSize: Object.entries(authored.fontSize).map(([v, sel]) => ({ v, n: sel.length, e: sel.slice(0, 2) }))

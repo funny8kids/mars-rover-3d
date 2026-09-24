@@ -101,7 +101,7 @@ const steps = [
   // re-warps each iteration until nothing is left untaken: "集齐触发奖励" is only proven when
   // samples hits 6 AND the mission chain advances (launchArmed => the reward is the launch window).
   ['m2-samples-all', `'collecting remaining beacons'`, 0, null, `(()=>{const s=${S}.sampleList().find(x=>!x[2]); if(s) ${S}.warp(s[0], s[1], false, 0); return ${S}.state.samples >= 6})()`, 150000],
-  ['m2-samples-state', `JSON.stringify({samples: ${S}.state.samples, mission: ${S}.state.mission, remaining: ${S}.sampleList().filter(x=>!x[2]).length, toast: document.getElementById('toast').textContent, missionRow: document.getElementById('mission-list').textContent.includes('6/6')})`, 1500, 'c2_samples_complete'],
+  ['m2-samples-state', `JSON.stringify({samples: ${S}.state.samples, mission: ${S}.state.mission, remaining: ${S}.sampleList().filter(x=>!x[2]).length, toast: document.getElementById('toast').textContent, missionRow: document.getElementById('mission-panel').textContent.includes('6/6')})`, 1500, 'c2_samples_complete'],
   // Poll the actual easter-egg card: `textContent.length > 0` is true for whatever card was
   // up before the warp, so it passed on a stale sample card and hid the real check.
   ['egg-roadster', `${S}.warp(470, 411, [470, 420], 0); 'ok'`, 0, null, `document.getElementById('info-name').textContent.includes('午夜公路') && document.getElementById('info-card').className.includes('show')`, 30000],

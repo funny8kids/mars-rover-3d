@@ -5,17 +5,74 @@ const mmss = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2
 
 export const UI = {
   missions: [],
+  // §7: the log is one line while you drive. The chain of five missions is not something anyone
+  // reads at 40 km/h — the next objective is — so the rest of it appears on hover, on keyboard
+  // focus, on click, and for a few seconds after the chain actually changes. The panel keeps its
+  // own affordance (the counter below the line) rather than hiding content with no way back.
+  mpOpen: false, mpTimer: 0, mpWired: false, mpSig: '', mpHead: null,
   renderMissions(missions) {
     this.missions = missions;
-    const ul = $('mission-list');
-    ul.innerHTML = '';
-    for (const m of missions) {
+    this.paintMissionList();
+    this.wireMissionPanel();
+    // The look is earned by the chain *changing shape*, not by the list being repainted. main.js
+    // repaints on every grid counter tick, on a language switch and at the hand-over from the boot
+    // screen; those are the same five lines with one number updated, and popping the whole log open
+    // over them hides the objective the player was reading. Counters are deliberately out of the
+    // signature — a new active or done mission is what deserves the extra two seconds of screen.
+    const sig = missions.map(m => `${m.text}${m.done ? 1 : 0}${m.active ? 1 : 0}`).join('|');
+    const changed = !!this.mpSig && this.mpSig !== sig;
+    this.mpSig = sig;
+    if (changed && !this.mpOpen) this.setMissionsOpen(true, 6000);
+    this.paintMissionToggle();
+  },
+  paintMissionList() {
+    const head = $('mission-list'), rest = $('mission-rest');
+    head.innerHTML = ''; rest.innerHTML = '';
+    // The one visible row is the objective you are on; the counter comes next and the rest of the
+    // chain last. The order is a reachability fact, not taste: with the counter *below* the rows it
+    // reveals, opening the panel slid the button ~100 px down out of the pointer that had just hovered
+    // it, so a real click pressed on a mission row instead, `focusout` collapsed the panel back, and
+    // the browser dispatched `click` on the common ancestor (`#mission-panel`) — where nothing listens.
+    const list = this.missions;
+    this.mpHead = list.find(m => m.active) || list.find(m => !m.done) || list[list.length - 1] || null;
+    const at = list.indexOf(this.mpHead);
+    list.forEach((m, i) => {
       const li = document.createElement('li');
       // the counter is a hole in the sentence, so the whole line can be translated as one unit
       li.textContent = tx(m.text).replace('{n}', m.n).replace('{total}', m.total);
       li.className = m.done ? 'done' : m.active ? 'active' : '';
-      ul.appendChild(li);
-    }
+      (i === at ? head : rest).appendChild(li);
+    });
+  },
+  wireMissionPanel() {
+    if (this.mpWired) return;
+    const p = $('mission-panel'), b = $('mp-more');
+    if (!p || !b) return;
+    this.mpWired = true;
+    b.addEventListener('click', () => this.setMissionsOpen(!this.mpOpen));
+    p.addEventListener('pointerenter', () => this.setMissionsOpen(true));
+    p.addEventListener('pointerleave', () => { if (!b.matches(':focus-visible')) this.setMissionsOpen(false); });
+    p.addEventListener('focusin', () => this.setMissionsOpen(true));
+    p.addEventListener('focusout', () => this.setMissionsOpen(false));
+  },
+  setMissionsOpen(on, holdMs = 0) {
+    const p = $('mission-panel');
+    if (!p) return;
+    this.mpOpen = on;
+    p.classList.toggle('open', on);
+    clearTimeout(this.mpTimer);
+    if (on && holdMs) this.mpTimer = setTimeout(() => this.setMissionsOpen(false), holdMs);
+    this.paintMissionToggle();
+  },
+  paintMissionToggle() {
+    const b = $('mp-more');
+    if (!b) return;
+    // the number has to be the rows the reveal actually holds, so it is counted off the same head pick
+    // `paintMissionList` used — not off `!active`, which would lie when no row is active
+    const rest = this.missions.length - (this.mpHead ? 1 : 0);
+    b.textContent = this.mpOpen ? tx('收起任务') : tx('还有 {n} 条').replace('{n}', rest);
+    b.setAttribute('aria-expanded', String(this.mpOpen));
+    b.hidden = !rest;
   },
   showInfo(zone) {
     const card = $('info-card');
@@ -37,6 +94,9 @@ export const UI = {
     $('info-card').dataset.key = '';
     if (this.zone) this.showInfo(this.zone);
     for (const z of this.pipZones || []) this.pips[z.key].title = tx(z.name);
+    // the log lines and the toggle are authored in Chinese too — repaint them, but do not treat a
+    // language switch as a mission change (that would pop the list open)
+    if (this.missions.length) { this.paintMissionList(); this.paintMissionToggle(); }
   },
   setSpeed(kmh) { $('speed-val').textContent = Math.round(kmh); },
   gridInit(zones) {

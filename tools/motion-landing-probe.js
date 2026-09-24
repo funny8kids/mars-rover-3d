@@ -42,7 +42,7 @@
   const want = [
     { sel: '#toast', prop: 'transform' },
     { sel: '#info-card', prop: 'transform' },
-    { sel: '#mission-list li', prop: 'transform', add: ['active'] },
+    { sel: '#mission-panel li', prop: 'transform', add: ['active'] },
     { sel: '#tele-fab', prop: 'transform' },
     { sel: '#mute-fab', prop: 'transform' },
     { sel: '.start-btn', prop: 'transform' },

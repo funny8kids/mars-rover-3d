@@ -140,23 +140,42 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 /* ---------- HUD ---------- */
 #hud{position:fixed;inset:0;pointer-events:none;z-index:30;font-size:13px}
 #hud>div{pointer-events:auto}
+/* 10 px, not 12: keeping `.mp-title` in the resting panel (the counter's anchor, see below) put this
+   fully-carded box at 3.05 % of the frame, over §7's 3 % ceiling for a bg+border+blur box. The padding
+   is where the room comes from, not the type — the heading and the row rhythm are what gets read. */
 #mission-panel{position:absolute;top:18px;left:18px;background:var(--panel);backdrop-filter:blur(8px);
-  border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:230px}
+  border:1px solid var(--line);border-radius:10px;padding:10px 16px;min-width:230px}
 .mp-title{font-size:13px;letter-spacing:.06em;color:var(--amber);margin-bottom:8px;font-weight:600}
 /* The active row leans 3 px out of the list (§4's overshoot), so the list itself reserves the room.
    This has to be the list's own padding: on a shrink-to-fit panel, padding on the *outside* grows the
    border box but leaves the inner content width alone, so the first attempt here (padding on
    #mission-panel) measured exactly the same `#mission-list 326>323` as before it. */
-#mission-list{list-style:none;padding-right:4px}
-#mission-list li{padding:3px 0;color:#9a9184;font-size:13px;
+/* §7: the mission log is one line while you drive. Five sentences at 13 px measured 3.5 % of the
+   frame on their own and the panel around them 6.05 % — together with the toast that was 8.5 % of
+   the picture that is not a HUD, it is a form. The active objective stays; the rest of the chain
+   appears on hover, on keyboard focus, on click, and for six seconds whenever the chain changes
+   (src/ui.js), and the counter under the line says so — content that collapses must leave a way back.
+   What collapses is *only* `#mission-rest`, and it sits below the counter, because a control must not
+   move out from under the pointer that is about to press it (see paintMissionList): the panel is
+   top-anchored and grows downward, so anything above `#mp-more` whose height changes slides it. The
+   first version here also hid `.mp-title` in the collapsed state, and the walk measured the button
+   moving y 58 → 85 — the same defect, now caused by the heading instead of by the rows. So the
+   heading is part of the resting HUD, and the density comes from the three sentences, not from the
+   label; the invariant that caught it lives in tools/cdp-type-click.mjs (`hud:mission-state`). */
+#mission-panel:not(.open) #mission-rest{display:none}
+#mp-more{display:block;margin-top:2px;padding:0;background:none;border:0;color:#8a8478;
+  font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-align:left;cursor:pointer}
+#mp-more:hover,#mp-more:focus-visible{color:var(--amber)}
+#mission-list,#mission-rest{list-style:none;padding-right:4px}
+#mission-panel li{padding:3px 0;color:#9a9184;font-size:13px;
   transition:color .28s var(--ease-glide),transform .34s var(--ease-pop)}
-#mission-list li::before{content:"○ ";color:#5a5348}
+#mission-panel li::before{content:"○ ";color:#5a5348}
 /* the active row leans out of the list, and says so with weight + the top of the colour ramp —
    §5: no glow, because a lit label is a light source and this is a checklist */
-#mission-list li.active{color:#fff3df;font-weight:600;transform:translateX(3px)}
-#mission-list li.active::before{content:"▶ ";color:var(--amber)}
-#mission-list li.done{color:#6f8f6a;text-decoration:line-through}
-#mission-list li.done::before{content:"● ";color:#79b36f}
+#mission-panel li.active{color:#fff3df;font-weight:600;transform:translateX(3px)}
+#mission-panel li.active::before{content:"▶ ";color:var(--amber)}
+#mission-panel li.done{color:#6f8f6a;text-decoration:line-through}
+#mission-panel li.done::before{content:"● ";color:#79b36f}
 #info-card{position:absolute;left:18px;bottom:20px;max-width:340px;background:var(--panel);backdrop-filter:blur(10px);
   border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:8px;padding:14px 18px;
   opacity:0;transform:translateY(8px);

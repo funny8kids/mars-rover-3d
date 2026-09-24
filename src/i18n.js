@@ -210,6 +210,7 @@ const EN = {
   '「交互」': 'interact', 交互: 'Act', 加速: 'Gas', 刹车: 'Brake', 漂移: 'Drift',
   '密封中…': 'Sealing…',
   '光台已就绪 — 按': 'pad is ready — press',
+  '光台已就绪 — 点左下的': 'pad is ready — tap',
   跃迁: 'to jump', 全区地图: 'the full map',
   '光台无电 — 复电后才能成像跃迁': 'pad is dark — it cannot image a jump until power returns',
   并网中: 'Linking', 保持停车直到反应桩亮起: 'stay stopped until the tap lights up',
@@ -248,6 +249,8 @@ const EN = {
   计时赛: 'time trial',
   菜单: 'menu',
   任务日志: 'Mission log', 电力: 'Power', 排行榜: 'Leaderboard',
+  // the collapsed log's way back (§7) — the count is a hole in the sentence, like the mission lines
+  '还有 {n} 条': '{n} more', 收起任务: 'collapse',
   '环基地计时赛 · 排行榜': 'Base lap · leaderboard', 关闭: 'Close',
   '检查点': 'Checkpoints',
   '暂无记录 · 完成一次环基地计时赛': 'No times yet · finish one lap of the base',

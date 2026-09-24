@@ -2238,7 +2238,9 @@ function update(dt) {
   teleHint.classList.toggle('hidden', !padHint);
   if (padHint) {
     teleHint.innerHTML = padHere.online
-      ? `◈ ${t(padHere.name)} ${t('光台已就绪 — 按')} <kbd>G</kbd> ${t('跃迁')}（<kbd>M</kbd> ${t('全区地图')}）`
+      ? input.isTouch
+        ? `◈ ${t(padHere.name)} ${t('光台已就绪 — 点左下的')}「${t('✦ 传送 · MAP')}」`
+        : `◈ ${t(padHere.name)} ${t('光台已就绪 — 按')} <kbd>G</kbd> ${t('跃迁')}（<kbd>M</kbd> ${t('全区地图')}）`
       : `⛔ ${t(padHere.name)} ${t('光台无电 — 复电后才能成像跃迁')}`;
   } else if (grid.target && phys.speed < 1.6 && !teleOpen) {
     teleHint.classList.remove('hidden');
@@ -2247,7 +2249,13 @@ function update(dt) {
       ? `◈ ${t('并网中')} · ${t(grid.target.name)} <b>${pct}%</b> — ${t('保持停车直到反应桩亮起')}`
       : `⚡ ${t('电量不足')}（${Math.round(grid.battery * 100)}%）— ${t('无法并网，先回光台补电')}`;
   }
-  teleHint._fab.classList.toggle('hidden', teleOpen || photo.on);
+  // One call to action per frame: the pad hint already names the way in (`按 G 跃迁（M 全区地图）`), so
+  // the teleport pill — which says 「✦ 传送 · MAP」 and does the same thing — steps back. It is keyed on
+  // *this* hint, not on "any hint": the grid-link hint below asks the player to stay parked, and there
+  // the pill is the map door rather than a duplicate. Touch keeps the pill either way — G is a keydown
+  // listener (`addEventListener` above), so on a phone it is the *only* door, and the hint is worded to
+  // point at it instead.
+  teleHint._fab.classList.toggle('hidden', teleOpen || photo.on || (padHint && !input.isTouch));
   teleHint._mute.classList.toggle('hidden', photo.on);
   if (teleOpen) drawTeleMap();
 

@@ -1594,10 +1594,17 @@ function updateRace(dt) {
 // push-out normals cancel between substeps. The player must never be left holding keys against
 // static geometry — that is the exact report this replaces ("WASD 失效") — so `update` watches for
 // the state and drives the rover out of it itself:
-//   back-out  real throttle, away from the deepest contact, aimed at whichever heading has the
-//             daylight. Same grip, same slope, same collision response: it is a drive, not a rescue.
-//   jack      if 1.8 s of throttle moved nothing, raise the chassis on its recovery rams and glide
-//             to the nearest legal surface. The collider discs are 2D, so lifting alone frees
+//   detect    a pedal buried and the hull going nowhere for 2.2 s — see the measurements behind
+//             `STALL_V`. Net ground alone is not the state: a brake-and-reverse shuffle ends where it
+//             started with 7 m/s on the speedometer, and taking the wheel from a rover that is
+//             driving is the same lost-control report in a different costume.
+//   back-out  real throttle, away from the deepest contact. Same grip, same slope, same collision
+//             response: it is a drive, not a rescue. Which heading, in what order, is decided by what
+//             a wedged hull can actually execute — see `rescuePlans`. It is done when the faces that
+//             held it have let go, not when the odometer has ticked over — see `outOfPocket`.
+//   jack      once the ranked headings have each had their 1.8 s and none of them released the
+//             pocket, raise the chassis on its recovery rams and glide to the nearest legal surface.
+//             The collider discs are 2D, so lifting alone frees
 //             nothing — the horizontal glide is the escape and the lift is what stops the wheels
 //             dragging through the ground on the way.
 // Nothing teleports and nothing clips: `jack` interpolates over 1.15 s with a smoothstep, so
@@ -1607,9 +1614,14 @@ function updateRace(dt) {
 // from the synthesised pedals, so tapping S or Space hands the rover straight back.
 const BODY_R = 1.6;                 // physics.js pads every collider disc by this for the body ring
 const rescue = {
-  phase: '', t0: 0, cool: 0, tries: 0, markT: 0, markX: 0, markZ: 0,
+  phase: '', t0: 0, cool: 0, tries: 0, markT: 0, markX: 0, markZ: 0, markV: 0,
+  stillT: 0, stillX: 0, stillZ: 0,
   ax: 0, az: 0, heading: 0, reverse: false, from: null, to: null, near: [], maxStep: 0,
   heldBrake: false, heldDrift: false, events: [],
+  // The back-out is aimed at one entry from `rescue.plans` at a time. A heading that has already
+  // had its 1.8 s and bought nothing is not retried — the next one is — so a pocket with three
+  // plausible corridors gets three drives before anything is lifted.
+  plans: [], plan: 0, planX: 0, planZ: 0, straight: false, wedged: null,
 };
 const wrapPi = a => Math.atan2(Math.sin(a), Math.cos(a));
 
@@ -1624,6 +1636,14 @@ function gapFrom(list, x, z, ignore) {
     if (d < gap) gap = d;
   }
   return gap;
+}
+
+// The discs holding the hull right now: the body ring overlaps them, with the same 0.35 m of slack
+// the ring search in `nearestLegalSurface` has always used. One rule, three readers — the glide
+// path may cross these, the escape test is measured against these, and the back-out is aimed
+// relative to these.
+function wedgedFaces(list) {
+  return new Set(list.filter(c => Math.hypot(phys.x - c.x, phys.z - c.z) < c.r + BODY_R + 0.35));
 }
 
 // Every half metre of the line must sit outside the body ring of every prop not already touched.
@@ -1650,7 +1670,7 @@ function glideClear(list, x0, z0, x1, z1, ignore) {
 // rover past the wall the player can see.
 const PLAYFIELD_R = RIM.face;
 function nearestLegalSurface(list, maxR = 13) {
-  const wedged = new Set(list.filter(c => Math.hypot(phys.x - c.x, phys.z - c.z) < c.r + BODY_R + 0.35));
+  const wedged = wedgedFaces(list);
   for (let r = 2.5; r <= maxR; r += 1.25) {
     let best = null;
     for (let k = 0; k < 24; k++) {
@@ -1668,54 +1688,150 @@ function nearestLegalSurface(list, maxR = 13) {
   return null;
 }
 
+// The headings a back-out can try, best first.
+//
+// Ranking by straight-line daylight alone was the bug. At the chopstick-tower/cargo-booster joint the
+// widest corridor (10 m of daylight) runs 90° off the hull; the rescue steered toward it, and a hull
+// already jammed between two discs cannot pivot — physics.js's turn authority is scaled by speed,
+// and the speed is zero — so the drive scraped 1.1 m and called it done. Reversing with no steering
+// from the identical stance walked 41.6 m out and never tripped the detector at all. So an
+// along-the-hull heading (fore or aft, either executes as a straight line) beats any amount of
+// daylight off the axis, and daylight only breaks ties among equals.
+function rescuePlans() {
+  const list = [];
+  for (let k = 0; k < 16; k++) {
+    const a = phys.yaw + (k / 16) * Math.PI * 2;
+    let d = 0;
+    while (d < 10 && gapFrom(rescue.near, phys.x + Math.sin(a) * (d + 0.5), phys.z + Math.cos(a) * (d + 0.5)) >= 0) d += 0.5;
+    const off = Math.abs(wrapPi(a - phys.yaw));
+    list.push({ a, d, straight: Math.min(off, Math.PI - off) < 0.25 });
+  }
+  // zero daylight is never executable, whatever the alignment — an entry that cannot leave the spot
+  // it stands on ranks below one that can, so `!pick.d` below means "no heading works", not
+  // "the best-aligned heading happens to be a wall".
+  const rank = p => (p.d > 0 ? 2 : 0) + (p.straight ? 1 : 0);
+  return list.sort((x, y) => (rank(y) - rank(x)) || (y.d - x.d));
+}
+
+// The solids that could be holding the hull: every non-floor disc within one survey sweep. Both the
+// detector's contact test and `startRescue`'s back-out survey read this, so the two cannot disagree
+// about what is around the rover.
+const nearSolids = () => base.colliders.filter(c => c.floor === undefined &&
+  Math.hypot(phys.x - c.x, phys.z - c.z) < c.r + BODY_R + 26);
+
+// Out of the pocket, which is not the same as out in the open. The old exit test was "1.9 m of
+// movement", and a rover nose-down on one wall clears that by lurching sideways off it — the rescue
+// then stood down, the player pressed W again, and the wedge caught it again. That loop, repeated at
+// 2.2 s intervals, is what reads as "WASD 失效". The escape is measured against the specific faces
+// that were holding the hull: every one of them must be released.
+function outOfPocket() {
+  if (!rescue.wedged) return true;
+  for (const c of rescue.wedged)
+    if (Math.hypot(phys.x - c.x, phys.z - c.z) - c.r - BODY_R < 0.25) return false;
+  return true;
+}
+
+// "Stuck" is the report's own sentence, measured in one window: the hull sits still for over two
+// seconds while a pedal is buried. Anything looser has been falsified by measurement.
+//
+// Net ground alone filed brake-and-reverse shuffles as deadlocks (three spots, hull touching
+// nothing, every heading with 10 m of daylight, 1.6-7.2 m/s at the instant the rescue took the
+// wheel; re-driven from the same pose they covered 18-40 m). Requiring contact instead let a
+// driving rover arm the rescue the moment one disc entered the body ring: (-8.6, 10.4) in a 420 s
+// soak, a 6.5 s window that wandered at up to 14.7 m/s and came back inside a metre of its own
+// anchor, armed with one bearing face at 3.5 m/s and released itself after 1.9 m of a loop. A wall
+// brush is not a wedge. What separates the two is not what the hull touches but what it does — a
+// real wedge is a hull the throttle cannot move, so the detector now measures exactly that, and
+// `held`/`pocket` stay in the record as diagnosis rather than gate.
+//
+// The anchor slides: any excursion to `STALL_V`, or a metre of ground covered, restarts the count
+// (`rescueWatch`). That is what keeps a rover grinding up a steep slope (0.5 m/s, and climbing) out
+// of it, and why no separate speed maximum over a wider window is needed — a terrain pin with no
+// discs in reach arms on the same rule as a prop wedge, which was the only case the old contact test
+// could not see at all.
+const STALL_V = 1.0;   // m/s — the speedometer's own rounding floor: below this the hull reads 0
+const STALL_T = 2.2;   // s   — "持续 >2s", the same bar the audit files a stall with
+const PIN_NET = 0.9;   // m   — the same "less than a metre of ground" the audit measures a window by
+
+// One line in the audit trail. `out: ''` marks a still-running attempt, which is how `escalate` and
+// `returnToPlateau` know which record their phase change belongs to.
+function rescueRec(cause) {
+  const vf = phys.vx * Math.sin(phys.yaw) + phys.vz * Math.cos(phys.yaw);
+  const rec = { t: +elapsed.toFixed(1), cause, pos: [+phys.x.toFixed(1), +phys.z.toFixed(1)],
+    yaw: +phys.yaw.toFixed(2), vf: +vf.toFixed(2), slope: +surfaceSlope(phys.x, phys.z).toFixed(2),
+    grounded: phys.grounded, onFloor: phys.onFloor, discs: rescue.near.length,
+    winV: rescue.markT ? +rescue.markV.toFixed(2) : null, held: wedgedFaces(nearSolids()).size,
+    // what the gate actually saw: how long the hull has been neither moving nor covering ground
+    still: rescue.stillT ? +(elapsed - rescue.stillT).toFixed(2) : null,
+    stillNet: rescue.stillT ? +Math.hypot(phys.x - rescue.stillX, phys.z - rescue.stillZ).toFixed(2) : null,
+    out: '' };
+  rescue.events.push(rec);
+  if (rescue.events.length > 24) rescue.events.shift();
+  return rec;
+}
+
+// How many of the ranked headings get driven before the chassis is lifted. Each costs 1.8 s, so three
+// is already 5.4 s of the player's time; a pocket that will not release down any of them is not a
+// survey problem but a real wedge, and `escalate`'s ring search is wider than the heading set.
+const PLAN_TRIES = 3;
+
+// Arm the back-out on `rescue.plans[rescue.plan]` — the heading, whether it runs along the hull, and
+// the faces the body ring has to release before the attempt counts as an escape.
+function usePlan(rec) {
+  const p = rescue.plans[Math.min(rescue.plan, rescue.plans.length - 1)];
+  rescue.phase = 'back-out';
+  rescue.t0 = elapsed;
+  rescue.ax = phys.x; rescue.az = phys.z;
+  rescue.heading = p.a;
+  rescue.straight = p.straight;
+  rescue.reverse = Math.abs(wrapPi(p.a - phys.yaw)) > Math.PI / 2;
+  rescue.wedged = wedgedFaces(rescue.near);
+  rescue.maxStep = 0;
+  Object.assign(rec, { open: +p.d.toFixed(1), plan: rescue.plan, straight: p.straight,
+    reverse: rescue.reverse, heading: +p.a.toFixed(2),
+    pocket: [...rescue.wedged].map(c => c.prop || c.name).slice(0, 4) });
+  return p;
+}
+
 function startRescue(cause, inp) {
-  rescue.near = base.colliders.filter(c => c.floor === undefined &&
-    Math.hypot(phys.x - c.x, phys.z - c.z) < c.r + BODY_R + 26);
+  rescue.near = nearSolids();
   // a pedal already down when the rescue fires is the player's own attempt, not a takeover
   rescue.heldBrake = inp.brake > 0.5;
   rescue.heldDrift = inp.drift > 0.5;
   rescue.tries++;
-  const vf = phys.vx * Math.sin(phys.yaw) + phys.vz * Math.cos(phys.yaw);
-  const rec = { t: +elapsed.toFixed(1), cause, pos: [+phys.x.toFixed(1), +phys.z.toFixed(1)],
-    yaw: +phys.yaw.toFixed(2), vf: +vf.toFixed(2), slope: +surfaceSlope(phys.x, phys.z).toFixed(2),
-    grounded: phys.grounded, onFloor: phys.onFloor, discs: rescue.near.length, out: '' };
   // Outside the playfield there is nothing to back out of, and the back-out cannot even fail: it
   // calls itself done after 1.9 m of movement, which a rover leaning on the rampart gets for free
   // every time it is nudged off the wall. Measured — seven rescues in 60 s at r=118.4, each recorded
   // as "drove out" with 10 m of daylight behind it, and the carry never once being asked for. The
   // only exit from out there is the one a ring search can't answer, so go straight to it.
   if (Math.hypot(phys.x, phys.z) > PLAYFIELD_R) {
-    rec.open = null;
-    rescue.events.push(rec);
+    rescueRec(cause).open = null;
     return escalate('outside-playfield');
   }
   if (!rescue.near.length) {
     // no prop within 26 m: this is terrain holding the wheels, so skip the drive-out
-    rec.open = null;
-    rescue.events.push(rec);
+    rescueRec(cause).open = null;
     return escalate('terrain');
   }
-  let best = null;
-  for (let k = 0; k < 16; k++) {
-    const a = phys.yaw + (k / 16) * Math.PI * 2;
-    let d = 0;
-    while (d < 10 && gapFrom(rescue.near, phys.x + Math.sin(a) * (d + 0.5), phys.z + Math.cos(a) * (d + 0.5)) >= 0) d += 0.5;
-    if (!best || d > best.d) best = { a, d };
+  // Plan once, then walk the list. The detector can re-fire on the same pocket after a back-out that
+  // released the hull only to catch it on the next prop over, so the cache is keyed to where it was
+  // measured — more than 4 m on and the corridor it ranked is not the corridor in front of the nose.
+  if (!rescue.plans.length || Math.hypot(phys.x - rescue.planX, phys.z - rescue.planZ) > 4) {
+    rescue.plans = rescuePlans();
+    rescue.plan = 0;
+    rescue.planX = phys.x; rescue.planZ = phys.z;
   }
-  rescue.phase = 'back-out';
-  rescue.t0 = elapsed;
-  rescue.ax = phys.x; rescue.az = phys.z;
-  rescue.heading = best.a;
-  rescue.reverse = Math.abs(wrapPi(best.a - phys.yaw)) > Math.PI / 2;
-  rescue.maxStep = 0;
-  Object.assign(rec, { open: +best.d.toFixed(1), reverse: rescue.reverse, heading: +best.a.toFixed(2) });
-  rescue.events.push(rec);
-  if (rescue.events.length > 24) rescue.events.shift();
+  const pick = usePlan(rescueRec(cause));
   // No heading has half a metre of daylight: the body ring is inside overlapping props, so there is
   // nothing to drive toward and throttle only leans on the pile. A carry is the only exit — going
   // through the back-out first just lets the collision solver throw the rover out blind.
-  if (!best.d) return escalate('buried');
-  UI.toast('⟲ 探测到卡死 — 自动脱困程序介入，倒出夹缝');
+  if (!pick.d) return escalate('buried');
+  // Say what the rescue is about to do. "探测到卡死" alone is what made players report dead keys:
+  // the wedge has a direction it can leave in, and the one thing that does not work is pushing
+  // forward — so the correction is the message, not just the animation.
+  UI.toast(pick.straight && rescue.reverse
+    ? '⟲ 车头被顶死在夹缝里 — 自动倒车驶出，按 S 自己倒出来也行'
+    : '⟲ 探测到卡死 — 自动脱困程序介入，倒出夹缝');
   audio.radio('beep');
 }
 
@@ -1766,8 +1882,11 @@ function endRescue(out) {
   if (rec) Object.assign(rec, { out, gotOut: +Math.hypot(phys.x - rec.pos[0], phys.z - rec.pos[1]).toFixed(1),
     at: +elapsed.toFixed(1), maxStep: +rescue.maxStep.toFixed(2) });
   rescue.phase = ''; rescue.cool = 3;
+  // The survey belongs to the pocket, not to the run. Once the hull is free, the next wedge is a
+  // different geometry and gets its own ranking.
+  rescue.plans = []; rescue.plan = 0; rescue.wedged = null; rescue.straight = false;
   if (out === 'drove out' || out === 'carried') rescue.tries = 0;
-  rescue.markT = 0;
+  rescue.markT = 0; rescue.stillT = 0;
 }
 
 // The pedals the physics receives. Outside a rescue these are exactly the player's.
@@ -1779,8 +1898,12 @@ function rescuePedals(inp) {
   cmd.gas = rescue.reverse ? 0 : 0.8;
   cmd.brake = rescue.reverse ? 1 : 0;
   cmd.drift = 0;
-  // positive steer rotates yaw downwards, so closing a positive error takes a negative pedal
-  cmd.steer = Math.abs(inp.steer) > 0.25 ? inp.steer : -Math.sign(err) * Math.min(1, Math.abs(err) * 1.6);
+  // positive steer rotates yaw downwards, so closing a positive error takes a negative pedal.
+  // Except on an along-the-hull plan: steering there is the failure. A wedge pins the hull so hard
+  // that physics.js's speed-scaled turn authority cannot rotate it, so the steer pedal buys scrub
+  // instead of heading — the drive grinds sideways against the faces it is trying to leave.
+  cmd.steer = rescue.straight ? 0
+    : Math.abs(inp.steer) > 0.25 ? inp.steer : -Math.sign(err) * Math.min(1, Math.abs(err) * 1.6);
   return cmd;
 }
 
@@ -1803,36 +1926,54 @@ function rescueGlide(dt) {
   if (f >= 1) endRescue('carried');
 }
 
-// "Stuck" is the audit's own bar, so the game can never claim it recovered something the test
-// would still file as a deadlock: throttle held, and less than a metre of NET ground in 2.2 s.
+// The detector's bar is the report's own sentence — throttle buried, the hull going nowhere, for over
+// two seconds — so the game can never claim it recovered something the audit would not still file as
+// a deadlock, and never steal the wheel from a rover that is driving. See `STALL_V` for the
+// measurements that retired both the net-only rule and the contact rule.
 function rescueWatch(inp, dt) {
   if (rescue.cool > 0) rescue.cool = Math.max(0, rescue.cool - dt);
   const push = Math.max(inp.gas, inp.brake);
   if (rescue.phase === 'back-out') {
     const moved = Math.hypot(phys.x - rescue.ax, phys.z - rescue.az);
-    if (moved > 1.9 || (phys.speed > 1.6 && moved > 1.0)) return endRescue('drove out');
+    // An escape is the pocket letting go, not the odometer ticking over: see `outOfPocket`.
+    if (moved > 1.9 && outOfPocket()) return endRescue('drove out');
     // S / Space is the "I will get out myself" gesture, and the rescue never uses either pedal,
     // so a fresh press hands the rover back inside the same frame
     if ((inp.brake > 0.5 && !rescue.heldBrake) || (inp.drift > 0.5 && !rescue.heldDrift)) {
       return endRescue('player took over');
     }
-    if (elapsed - rescue.t0 > 1.8) return escalate('back-out failed');
+    if (elapsed - rescue.t0 > 1.8) {
+      // The hull did not move, so this heading is spent — but the survey found up to sixteen of
+      // them, and a wedge usually has one working exit the daylight ranking did not put first.
+      // Walk the list before anything is lifted; each entry is its own line in the audit trail.
+      if (rescue.plan + 1 < Math.min(PLAN_TRIES, rescue.plans.length)) {
+        rescue.plan++;
+        usePlan(rescueRec('next-heading'));
+        return;
+      }
+      return escalate('back-out failed');
+    }
     return;
   }
   if (rescue.phase || rescue.cool > 0 || teleOpen || demoPin || photo.on || grid.dead || paused) {
-    rescue.markT = 0;
+    rescue.markT = 0; rescue.stillT = 0;
     return;
   }
-  if (push < 0.15) { rescue.markT = 0; return; }
+  if (push < 0.15) { rescue.markT = 0; rescue.stillT = 0; return; }
   if (push < 0.35) return;
-  // the window only counts while the pedal is genuinely buried, so an anchor set at the moment
-  // the press began is what makes "no net ground in 2.2 s" mean the same thing here as in `drive`
-  if (!rescue.markT) { rescue.markT = elapsed; rescue.markX = phys.x; rescue.markZ = phys.z; return; }
-  if (elapsed - rescue.markT >= 2.2) {
-    const net = Math.hypot(phys.x - rescue.markX, phys.z - rescue.markZ);
-    if (net < 0.9 && phys.grounded) startRescue('no-net-progress', inp);
-    rescue.markT = elapsed; rescue.markX = phys.x; rescue.markZ = phys.z;
+  // the wider window is what the record reports (`winV`, `windowNet`): how long the pedal has been
+  // buried, how much ground it bought, and how fast the hull was going while it did
+  if (!rescue.markT) { rescue.markT = elapsed; rescue.markX = phys.x; rescue.markZ = phys.z; rescue.markV = 0; }
+  if (phys.speed > rescue.markV) rescue.markV = phys.speed;
+  if (elapsed - rescue.markT >= STALL_T) { rescue.markT = elapsed; rescue.markX = phys.x; rescue.markZ = phys.z; }
+  // The anchor is one sliding mark, not a tally: walking speed or a metre of ground restarts the
+  // count, so what survives to `STALL_T` is a hull a buried throttle cannot move — the wedge, the
+  // wall that has it nose-down, and the wheels in a hollow all read the same way, discs or no discs.
+  if (!rescue.stillT || phys.speed >= STALL_V ||
+      Math.hypot(phys.x - rescue.stillX, phys.z - rescue.stillZ) >= PIN_NET) {
+    rescue.stillT = elapsed; rescue.stillX = phys.x; rescue.stillZ = phys.z;
   }
+  if (elapsed - rescue.stillT >= STALL_T && phys.grounded) startRescue('no-net-progress', inp);
 }
 
 // ───────────────────────── main update ─────────────────────────
@@ -3067,6 +3208,25 @@ window.__RSB = {
       fog: +scene.fog.density.toFixed(5) };
   },
   warp: (x, z, face, search) => warpTo(x, z, face, search ?? 8),
+  // `warp` searches for a legal stance and de-penetrates, which is right for "stand me over there"
+  // and useless for reproducing a pose: the wedge filed at (6.1, -59) could not be re-entered, the
+  // warp landed the hull clear of the collider pair that pinned it (one attempt surfaced 80 m from
+  // the target). `place` writes the pose verbatim — no search, no push-out, no rescue of its own —
+  // so a reported stall can be re-driven from the frame it was filed, and the game's 2.2 s detector
+  // can be watched rather than inferred from the audit's counters.
+  place: (x, z, yaw = phys.yaw) => {
+    phys.x = x; phys.z = z; phys.yaw = yaw;
+    phys.groundY = surfaceAt(x, z); phys.y = phys.groundY + 0.46;   // RIDE, same reference as the sink metric
+    phys.vx = 0; phys.vz = 0; phys.vy = 0; phys.speed = 0; phys.lateral = 0; phys.wheelAngle = 0;
+    phys.pitch = 0; phys.roll = 0; phys.susp = 0; phys.suspV = 0;
+    phys.grounded = true; phys.onFloor = false;
+    rescue.markT = 0; rescue.stillT = 0;   // the detector's clock starts on this pose, not the last one's
+    const ring = (base?.colliders || []).filter(c => c.floor === undefined
+      && Math.hypot(c.x - x, c.z - z) < c.r + 1.6);
+    return { pos: [+phys.x.toFixed(2), +phys.z.toFixed(2)], yaw: +phys.yaw.toFixed(3), y: +phys.y.toFixed(2),
+      touching: ring.map(c => `${c.prop || c.name}@${c.x.toFixed(1)},${c.z.toFixed(1)}r${c.r.toFixed(1)}`),
+      rescuePhase: rescue.phase || null };
+  },
   pois: () => interactivePoints(),
   sampleList: () => (base?.samples || []).map(s => [Math.round(s.x), Math.round(s.z), !!s.taken]),
   taps: () => (base?.gridRigs || []).map(r => [r.key, +r.x.toFixed(1), +r.z.toFixed(1), +r.power.toFixed(2), !!r.online]),
@@ -3079,9 +3239,16 @@ window.__RSB = {
   // `forceUnstick` fires the state machine by hand so a verification can watch it work instead of
   // waiting 2.2 s for a wedge that may not exist.
   unstick: () => ({ phase: rescue.phase, tries: rescue.tries, cool: +rescue.cool.toFixed(2),
+    plan: rescue.plan, plans: rescue.plans.length, straight: rescue.straight,
+    pocket: rescue.wedged ? [...rescue.wedged].map(c => c.prop || c.name) : [],
     gap: +gapFrom(base.colliders.filter(c => c.floor === undefined), phys.x, phys.z).toFixed(2),
     window: rescue.markT ? +(elapsed - rescue.markT).toFixed(2) : null,
     windowNet: rescue.markT ? +Math.hypot(phys.x - rescue.markX, phys.z - rescue.markZ).toFixed(2) : null,
+    windowMaxV: rescue.markT ? +rescue.markV.toFixed(2) : null,
+    still: rescue.stillT ? +(elapsed - rescue.stillT).toFixed(2) : null,
+    stillNet: rescue.stillT ? +Math.hypot(phys.x - rescue.stillX, phys.z - rescue.stillZ).toFixed(2) : null,
+    stall: { v: STALL_V, t: STALL_T, net: PIN_NET },
+    held: wedgedFaces(nearSolids()).size,
     guards: { teleOpen, demo: !!demoPin, photo: !!photo.on, gridDead: grid.dead, paused,
       grounded: phys.grounded, gas: +input.inp.gas.toFixed(2) },
     events: rescue.events.slice(-8) }),
@@ -3132,7 +3299,8 @@ window.__RSB = {
       phys.wheelAngle = 0; phys.grounded = true; phys.onFloor = false;
 
       // the runtime unstick is part of what the audit measures, so its log starts with the run
-      rescue.events.length = 0; rescue.phase = ''; rescue.cool = 0; rescue.tries = 0; rescue.markT = 0;
+      rescue.events.length = 0; rescue.phase = ''; rescue.cool = 0; rescue.tries = 0;
+      rescue.markT = 0; rescue.stillT = 0;
       phys.pitch = 0; phys.roll = 0; phys.susp = 0; phys.suspV = 0;
 
       // every waypoint a player is ever asked to steer to, plus the carriageway itself walked end
@@ -3150,7 +3318,16 @@ window.__RSB = {
           }
         }
       }
-      for (const p of spots) { p.best = 1e9; p.bestAt = null; p.dwell = 0; p.retried = false; armLap(p); }
+      // `best` is the closest the hull ever came to this point while the audit drove anywhere;
+      // `aimBest` is the closest it came while this point was the one being steered at, and `aimed`
+      // says whether that ever happened at all. The pair is what separates the two ways a point can
+      // be missing from the map: a road that stops short of it (`aimed`, big `aimBest`) and a clock
+      // that ran out before the tour got there (`!aimed`). Collapsing them into one number made a
+      // five-minute run report 43/46 with no way to tell which of the three were walls.
+      for (const p of spots) {
+        p.best = 1e9; p.bestAt = null; p.aimBest = 1e9; p.aimed = false;
+        p.dwell = 0; p.retried = false; armLap(p);
+      }
       const route = [];
       let at = [phys.x, phys.z];
       const pending = spots.slice();
@@ -3159,6 +3336,29 @@ window.__RSB = {
         const nxt = pending.shift();
         route.push(nxt); at = [nxt.x, nxt.z];
       }
+      // Greedy nearest-neighbour leaves crossings in the walk, and on a fixed five-minute budget a
+      // crossing is not a rounding error — it is a waypoint the clock never reaches. The run this was
+      // written for drove 1677 m and covered 43 of 46 points; the three it did not are named by
+      // `coverage.*Missing` below, with `never aimed at` on each one that the tour never even steered
+      // for. Untangling the walk (2-opt over the open path, start pinned to the spawn) is the
+      // difference between the audit proving the map is covered and it running out of clock.
+      const seg = (p, q) => Math.hypot(p.x - q.x, p.z - q.z);
+      const spawn = { x: phys.x, z: phys.z };
+      const tourLen = list => list.reduce((m, p, i) => m + seg(i ? list[i - 1] : spawn, p), 0);
+      const nnMetres = tourLen(route);
+      for (let swept = true, pass = 0; swept && pass < 30; pass++) {
+        swept = false;
+        for (let i = -1; i + 2 < route.length; i++) {
+          for (let j = i + 2; j + 1 < route.length; j++) {
+            const a = i < 0 ? spawn : route[i], b = route[i + 1], c = route[j], d = route[j + 1];
+            if (seg(a, c) + seg(b, d) + 1e-6 >= seg(a, b) + seg(c, d)) continue;
+            const turn = route.slice(i + 1, j + 1).reverse();
+            route.splice(i + 1, turn.length, ...turn);
+            swept = true;
+          }
+        }
+      }
+      const tourMetres = tourLen(route);
 
       // clearance oracle over the solid discs, hashed so 18k frames of raycast stays cheap
       const cells = new Map();
@@ -3174,9 +3374,14 @@ window.__RSB = {
       }
       s = qaDrive = {
         route, spots, cells, budget: opts.seconds ?? 300, stallCells: new Map(), events: [], samples: [],
+        tourMetres, nnMetres,
         wp: 0, dist: 0, t: 0, gated: 0, peakSpeed: 0, retries: 0,
         prevPos: [phys.x, phys.z], prevDead: grid.dead,
         markT: 0, markX: phys.x, markZ: phys.z, recoverUntil: -9, holdUntil: -9, aim: phys.yaw, turnDir: 0,
+        // Is the *current* 4 s window still a window in which the throttle never lifted? See the
+        // stall bar below. `glimpses` counts the near-misses the bar refused to file, and
+        // `glimpseLog` names the lever that refused them — a count alone is a reading with no address.
+        windowClean: true, glimpses: 0, windowBreak: null, glimpseLog: [],
         runFrames: 0,
         // the acceptance bar wants "zero clipping" measured, not eyeballed: how deep the body ring
         // ever sat inside a solid, and how far the hull ever sank under its own surface
@@ -3276,6 +3481,12 @@ window.__RSB = {
     input.inp.keys.add('KeyW');
     const wall = performance.now();
     const frames = Math.round(Math.min(s.budget - s.t, opts.chunk ?? 100) / dt);
+    // The stall window is re-anchored at every chunk start. The real animation loop keeps driving
+    // between chunks — the harness needs seconds to think, and the pedals are released for exactly
+    // that reason — so a window that straddled a seam would be scored on ground the audit never
+    // watched. Losing up to 4 s of window per seam is cheap: a 100 s chunk holds twenty-four of them,
+    // and a genuine wedge files on the next one.
+    s.markT = s.t; s.markX = phys.x; s.markZ = phys.z; s.windowClean = true;
     let f = 0;
     for (; f < frames && (s.loop || s.wp < s.route.length); f++) {
       const tgt = s.route[s.wp];
@@ -3375,9 +3586,36 @@ window.__RSB = {
                         pos: [phys.x, phys.z].map(v => +v.toFixed(1)), battery: +grid.battery.toFixed(3) });
         s.prevDead = grid.dead;
       }
+      // A stall is a *continuous* condition, so the window that measures one has to be continuous
+      // too. The bar used to test the throttle on the filing frame alone, and every other lever the
+      // audit owns moves that frame: the whisker planner creeps a final approach at gas 0.35, the
+      // audit's own 1.4 s back-out (`recovering`) and its parks (`holding`) take the foot off the
+      // pedal, and the pedals are released outright between chunks. The detector the player actually
+      // depends on, `rescueWatch`, erases its clock whenever push < 0.15 — so a window threaded
+      // through a recovery files `stalls: 1, rescues: 0`, a reading that cannot tell a broken unstick
+      // from a test that measured its own brake lights. Now only an unbroken window files, and the
+      // near-misses it refuses are counted, so tightening the bar cannot hide anything.
+      const breakWhy = throttle <= 0.4 ? `gas ${throttle.toFixed(2)}`
+                     : recovering ? 'audit back-out' : holding ? 'audit park'
+                     : grid.dead ? 'battery dead' : null;
+      if (breakWhy) { s.windowClean = false; if (s.windowBreak === null) s.windowBreak = breakWhy; }
       if (s.t - s.markT >= 4) {
         const prog = Math.hypot(phys.x - s.markX, phys.z - s.markZ);
-        if (prog < 1.5 && throttle > 0.4 && !grid.dead) {
+        if (prog < 1.5) {
+          // A refused window is not evidence of nothing — it is a near-miss the bar could not
+          // adjudicate, so it stays in the report where a 0 would otherwise read as "never happened".
+          // And it names the lever that refused it: "the ground did not move for 4 s, but a park was
+          // inside the window" only answers the next question if the park has a name and a time.
+          if (!s.windowClean && throttle > 0.4 && !grid.dead) {
+            s.glimpses++;
+            if (s.glimpseLog.length < 6) s.glimpseLog.push({
+              t: +s.t.toFixed(1), broke: s.windowBreak, wp: tgt.name,
+              pos: [+phys.x.toFixed(1), +phys.z.toFixed(1)], metresIn4s: +prog.toFixed(2),
+              speed: +phys.speed.toFixed(2), gas: +throttle.toFixed(2), y: +phys.y.toFixed(2),
+              grounded: phys.grounded, battery: +grid.battery.toFixed(3), touching: touched() });
+          }
+        }
+        if (prog < 1.5 && s.windowClean) {
           // file by pocket, not by frame: one wedge visited 20 times is one defect, and a 5-minute
           // run has to fit its whole report in one tool result
           const ck = `${Math.round(phys.x / 6)},${Math.round(phys.z / 6)}`;
@@ -3394,10 +3632,26 @@ window.__RSB = {
                         enginePower: +phys.enginePower.toFixed(2),
                         pickRange: +rangeOf(phys.x, phys.z, phys.yaw).toFixed(1),
                         touching: touched(), battery: +grid.battery.toFixed(3),
-                        teleOpen, demoPin: !!demoPin });
+                        teleOpen, demoPin: !!demoPin,
+                        // The unstick's own reading at the instant the audit files. "Stuck" is one
+                        // condition and two implementations of it (the audit's 4 s net bar, the
+                        // rescue's 2.2 s net bar), and a stall the game leaves unrescued is only a
+                        // defect if the two disagree about the *same* frames. Without this the
+                        // report says `stalls: 1, rescues: 0` and the next question — did the rover
+                        // ever sit still with the throttle buried, or did the audit's own 1.4 s
+                        // brake-out cancel its net progress while the wheels were free? — has no
+                        // answer in the data.
+                        unstick: { win: rescue.markT ? +(elapsed - rescue.markT).toFixed(2) : null,
+                          net: rescue.markT ? +Math.hypot(phys.x - rescue.markX, phys.z - rescue.markZ).toFixed(2) : null,
+                          winV: rescue.markT ? +rescue.markV.toFixed(2) : null,
+                          push: +Math.max(input.inp.gas, input.inp.brake).toFixed(2),
+                          phase: rescue.phase, cool: +rescue.cool.toFixed(2) } });
           s.recoverUntil = s.t + 1.4;
         }
-        s.markT = s.t; s.markX = phys.x; s.markZ = phys.z;
+        s.markT = s.t; s.markX = phys.x; s.markZ = phys.z; s.windowClean = true;
+        // the new window starts on this very frame, so it inherits this frame's lever rather than
+        // getting a free clean second that the next frame would have to spend again
+        s.windowBreak = breakWhy;
       }
       if (s.runFrames++ % 120 === 0) s.samples.push([+s.t.toFixed(0), +phys.speed.toFixed(1), s.wp,
         Math.round(Math.hypot(phys.x - tgt.x, phys.z - tgt.z)),
@@ -3406,19 +3660,30 @@ window.__RSB = {
         Math.round(rangeOf(phys.x, phys.z, Math.atan2(tgt.x - phys.x, tgt.z - phys.z))),
         +input.inp.gas.toFixed(2), +input.inp.steer.toFixed(2)]);
       // "Reached" is the game's own trigger radius, not "came vaguely near": a light pad needs 3.9 m
-      // and a sample 4.2 m, so an audit that counts a 10 m fly-past as a visit would prove nothing.
+      // and a sample 4.2 m. A point inside that circle for one frame at 14 m/s is on the road but not
+      // worked, and the report says so itself — `dwell` is the seconds spent inside the circle below
+      // walking speed, which is the only speed at which the game offers the pad prompt or the lift.
       // A point the driver cannot line up is abandoned after GRACE seconds — it then shows in the
       // report as a miss with its closest approach, instead of stalling the rest of the route.
       const dT = Math.hypot(phys.x - tgt.x, phys.z - tgt.z);
-      if (dT < tgt.best) { tgt.best = dT; tgt.bestAt = [+phys.x.toFixed(1), +phys.z.toFixed(1)]; }
+      tgt.aimed = true;
+      if (dT < tgt.aimBest) tgt.aimBest = dT;
       if (dT < tgt.lapBest) tgt.lapBest = dT;
       if (tgt.since === null) tgt.since = s.t;
-      // Dwell is the second half of the proof. Touching a circle for one frame at 14 m/s is not a
-      // stop the player can act on — the game only offers the pad prompt and the link below walking
-      // speed — so every point gets its own seconds spent inside its radius while slow enough.
-      if (phys.speed < 2.5) for (const p of s.spots)
-        if (Math.hypot(phys.x - p.x, phys.z - p.z) <= p.r) p.dwell += dt;
-      if (tgt.best <= tgt.r) s.visited.add(tgt.name);
+      // Every point is measured on every frame, not only the one being steered at: the hull coming
+      // within a pad's own circle is the physical fact the acceptance bar is made of, and it happens
+      // whether or not the tour happened to name that point next. `aimed`/`aimBest` above hold the
+      // separate, stronger claim that the audit drove to it on purpose.
+      for (const p of s.spots) {
+        const d = Math.hypot(phys.x - p.x, phys.z - p.z);
+        if (d < p.best) { p.best = d; p.bestAt = [+phys.x.toFixed(1), +phys.z.toFixed(1)]; }
+        if (d > p.r) continue;
+        s.visited.add(p.name);
+        // Dwell is the second half of the proof. Touching a circle for one frame at 14 m/s is not a
+        // stop the player can act on — the game only offers the pad prompt and the link below walking
+        // speed — so every point gets its own seconds spent inside its radius while slow enough.
+        if (phys.speed < 2.5) p.dwell += dt;
+      }
       // A fly-through only proves the road exists. `pause` parks the rover inside the trigger circle
       // with the brake on — the state a player actually has to reach to work a pad or lift a sample —
       // and it turns the dwell column into measured standing time instead of one frame of a pass.
@@ -3453,26 +3718,51 @@ window.__RSB = {
     qaTrace = s.trace;
     if (done) qaDrive = null;
     const stalls = [...s.stallCells.values()].sort((a, b) => b.n - a.n);
-    // D1's acceptance bar reads this block: every interactive point, the closest the wheel ever got,
-    // against the radius that point actually needs. `never` means the budget ran out before the route
-    // reached it — not a wall, just a short clock. `laps` counts *driven* laps: the arrival state is
+    // D1's acceptance bar reads this block: every interactive point, the closest the hull ever came,
+    // against the radius that point actually needs. `laps` counts *driven* laps: the arrival state is
     // re-armed at every recycle, so a lap is 46 points steered to, not 46 indices skipped.
+    //
+    // A4's line is "covers all six districts and every street", and a bare fraction cannot be signed
+    // off — the bar needs the names, and it needs the reason. A district counts as covered when the
+    // run stood on both its light pad and its grid tap. A missing point is labelled `aimed, closest
+    // X` when the tour really did steer at it and the road stopped short, and `never aimed` when the
+    // clock ran out first. Those two read the same in a count and are entirely different defects.
     const pois = s.spots.filter(p => p.kind !== 'street');
-    const hit = pois.filter(p => p.best <= p.r).length;
+    const streets = s.spots.filter(p => p.kind === 'street');
+    const inReach = p => p.best <= p.r;
+    const hit = pois.filter(inReach).length;
+    const why = p => `${p.name} ${p.best === 1e9 ? 'never-driven' : p.best.toFixed(1) + '/' + p.r + 'm'}` +
+                     (p.aimed ? ` aimed, closest-while-aimed ${p.aimBest === 1e9 ? '–' : p.aimBest.toFixed(1)}m`
+                              : ' never aimed at');
+    const zoneKeys = pois.filter(p => p.kind === 'pad').map(p => p.name.slice(4));
+    const zoneOff = zoneKeys.filter(k => !(s.visited.has(`pad:${k}`) && s.visited.has(`tap:${k}`)));
     return { done, simSeconds: +s.t.toFixed(1), metres: Math.round(s.dist), laps: s.laps,
              frames: s.runFrames, retries: s.retries,
+             coverage: {
+               zones: `${zoneKeys.length - zoneOff.length}/${zoneKeys.length}`, zonesMissing: zoneOff,
+               streets: `${streets.filter(inReach).length}/${streets.length}`,
+               streetsMissing: streets.filter(p => !inReach(p)).map(why),
+               points: `${hit}/${pois.length}`,
+               pointsMissing: pois.filter(p => !inReach(p)).map(why),
+               tourMetres: Math.round(s.tourMetres), greedyMetres: Math.round(s.nnMetres),
+               driven: s.wp, of: s.route.length },
              connectivity: { points: pois.length, touched: hit,
                trace: s.trace.length,
                detail: pois.map(p => `${p.name} ${p.best === 1e9 ? 'never' : p.best.toFixed(1)}/${p.r}m` +
                  ` dwell${(p.dwell || 0).toFixed(1)}s${p.retried ? ' retried' : ''} parkΔ` +
                  (p.park ? Math.hypot(p.park.x - p.x, p.park.z - p.z).toFixed(1) : 'none') +
-                 `${p.best <= p.r ? '' : ' ✕@' + (p.bestAt || []).join(',') + '→park' + Object.values(p.park || []).join(',')}`) },
+                 `${inReach(p) ? '' : ' ✕@' + (p.bestAt || []).join(',') + '→park' + Object.values(p.park || []).join(',')}`) },
              mps: s.t > 0 ? +(s.dist / s.t).toFixed(2) : 0, peakSpeed: +s.peakSpeed.toFixed(1),
              weather: { stormMax: +s.stormMax.toFixed(2), windMax: +s.windMax.toFixed(1),
                stormPct: Math.round(100 * s.stormFrames / Math.max(1, s.runFrames)) },
              reached: [...s.visited], of: s.route.length,
              stuckPockets: stalls.length,
              stuckFrames: stalls.reduce((a, b) => a + b.n, 0),
+             // Near-misses the continuous-window bar refused: the ground did not move for 4 s, but a
+             // crawl, a park or one of the audit's own brake-outs was inside the window, so it proves
+             // nothing about a wedge. Non-zero with zero pockets is the honest "look here next" flag.
+             stallGlimpses: s.glimpses,
+             glimpseDetail: s.glimpseLog,
              inputGatedFrames: s.gated,
              // zero clipping means both halves of it: never inside a wall, never under the ground.
              // `maxStepMetres` is the largest ground span the *wheels* covered in one frame — at
@@ -3536,6 +3826,13 @@ window.__RSB = {
 
     // ── pinch wedges: solid pairs whose slot admits the body but not a turn
     const SLOT = 2 * CLEAR + 2 * TURN;
+    // A seam is a joint between two *different* structures that is too narrow to drive through and
+    // too wide to read as a wall. The body's stances against such a pair touch both faces at once,
+    // so the only way out of the bay is a reverse along the mouth's axis — which a driver arriving
+    // crooked does not have. 2*CLEAR is where that stops existing (above it, the axis itself is a
+    // standable lane); the other bound is the same structure on itself, where a crease is a corner
+    // and not a trap — see the gate barrier's note in props.js.
+    const seamCand = new Map();
     const found = new Map();
     for (let i = 0; i < solids.length; i++) {
       const a = solids[i];
@@ -3544,19 +3841,66 @@ window.__RSB = {
         const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
         if (d > a.r + b.r + SLOT) continue;
         const gap = d - a.r - b.r;
-        if (gap < 2 * CLEAR || gap >= SLOT) continue;
+        if (gap >= SLOT) continue;
         const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
+        const ux = -dz / d, uz = dx / d;
+        // Whether a pair admits the hull is settled by geometry, not by the width measured along the
+        // line of centres. A gap under 2*CLEAR still leaves crescents *beside* the axis where a body
+        // touches both faces, and the acceptance soak used one at 03:21: 3.15 m between the spaceport
+        // gate and ring-315, nose in, reverse blocked because the arrival heading was 76° off the
+        // mouth's axis, and only the rescue's carry got it out. The old `gap < 2*CLEAR ⇒ the rover
+        // cannot get in, so it cannot be a pocket` inference missed exactly that stance — and the
+        // first fix for it, sampling probes along the perpendicular, over-reported, because a probe
+        // 3 m off the axis finds daylight in open ground that has nothing to do with the pinch. The
+        // exact statement: the hull's centre must clear each face by CLEAR, so it must lie outside
+        // both inflated circles (r + CLEAR each). Those cross iff |ra−rb| ≤ d ≤ ra+rb, and where
+        // they cross is precisely the stance that touches both faces.
+        const ra = a.r + CLEAR, rb = b.r + CLEAR;
+        let stance = null, pinch = 0;
+        if (gap > 2 * CLEAR) stance = [mx, mz];    // the axis itself stands free: an ordinary mouth
+        else if (d < Math.abs(ra - rb)) continue;  // one disc shadows the other: there is no pinch
+        else {
+          // The pair's cusp: where the hull touches both faces at once. It is where the pocket is,
+          // but a third solid can cover it — which is exactly why this joint resisted two rounds of
+          // analysis. So the stance kept is the nearest *standable* point that still has both faces
+          // binding, chosen by minimising the two slacks over a 1.5 m neighbourhood of the cusp.
+          const t = (d * d + ra * ra - rb * rb) / (2 * d);
+          const h = Math.sqrt(Math.max(0, ra * ra - t * t));
+          const cx = a.x + dx * (t / d), cz = a.z + dz * (t / d);
+          for (const sgn of [1, -1]) for (let rr = 0; rr <= 1.5; rr += 0.3) {
+            for (let k = 0; k < (rr ? 8 : 1); k++) {
+              const px = cx + (ux * h + Math.cos(k * Math.PI / 4) * rr) * sgn;
+              const pz = cz + (uz * h + Math.sin(k * Math.PI / 4) * rr) * sgn;
+              const fa = Math.hypot(px - a.x, pz - a.z) - a.r - CLEAR;
+              const fb = Math.hypot(px - b.x, pz - b.z) - b.r - CLEAR;
+              if (fa < 0 || fb < 0 || clearAt(px, pz) < 0) continue;
+              if (!stance || fa + fb < pinch) { stance = [px, pz]; pinch = fa + fb; }
+            }
+          }
+        }
+        if (!stance) continue;
+        // Two discs of ONE structure is a corner, not a joint — the `#n` suffix counts the footprint
+        // discs a sign board or a substation is laid out with. A seam is where two *structures* meet.
+        const root = c => cname(c).replace(/#\d+$/, '');
+        if (gap <= 2 * CLEAR && gap > 0 && root(a) !== root(b)) {
+          const key = root(a) + '|' + root(b) + '|' + Math.round(mx / 4) + ':' + Math.round(mz / 4);
+          const prev = seamCand.get(key);
+          const e = { a: cname(a), b: cname(b), gap: +gap.toFixed(2),
+            slack: +pinch.toFixed(2),
+            at: [Math.round(stance[0] * 10) / 10, Math.round(stance[1] * 10) / 10],
+            axis: [+ux.toFixed(3), +uz.toFixed(3)] };
+          if (!prev || e.gap < prev.gap) seamCand.set(key, e);
+        }
         const key = Math.round(mx / 4) + ':' + Math.round(mz / 4);
         const prev = found.get(key);
         if (prev && gap >= prev.gap) continue;
-        const ux = -dz / d, uz = dx / d;
         // naming what closes the end is the difference between re-siting one prop and guessing at three
         const capAt = (x, z) => { let best = 1e9, hit = null; scanDiscs(x, z, CLEAR + TURN, c => {
           const dd = Math.hypot(x - c.x, z - c.z) - c.r - CLEAR; if (dd < best) { best = dd; hit = c; } });
           return hit ? `${cname(hit)} r${hit.r.toFixed(1)}` : null; };
         const run = (sgn) => {
           for (let k = 1; k <= 40; k++) {
-            const px = mx + ux * sgn * k, pz = mz + uz * sgn * k;
+            const px = stance[0] + ux * sgn * k, pz = stance[1] + uz * sgn * k;
             const c = clearAt(px, pz);
             if (c < 0) return { len: k - 1, open: false, cap: capAt(px, pz) };   // dead-end slot
             if (c >= TURN) return { len: k, open: true };     // room to pivot: a lane, not a trap
@@ -3570,7 +3914,7 @@ window.__RSB = {
         if (dead < 3 || (fwd.open && back.open)) continue;
         found.set(key, { a: cname(a), b: cname(b), gap: +gap.toFixed(2),
           margin: +(gap / 2 - CLEAR).toFixed(2),
-          at: [Math.round(mx * 10) / 10, Math.round(mz * 10) / 10],
+          at: [Math.round(stance[0] * 10) / 10, Math.round(stance[1] * 10) / 10],
           axis: [+ux.toFixed(4), +uz.toFixed(4)],
           runs: [fwd.len, back.len], dead, caps: [fwd.cap, back.cap] });
       }
@@ -3673,13 +4017,17 @@ window.__RSB = {
     const bumpList = [...bumpSeen.values()].sort((a, b) => b.lift - a.lift);
 
     // A pocket is a defect by how far it makes you back out, not by how tight it is. Reverse gear
-    // works out of every wedge in this world — all 17 were driven into and out of with the real
-    // physics on 2026-09-21, and the tightest of them (0.28 m of side slack, both faces touching)
-    // still walked out under power at 9.6 m/s. The rule this replaced — "tight enough that both
-    // push-out normals cancel ⇒ throttle buys nothing" — was a guess that measurement falsified,
-    // so it is gone. What is left is the thing a player actually reports as stuck: a long blind
-    // alley. Measured reverse speed is 3–6 m/s, so under ALLEY metres of dead run the escape is a
-    // one-second tap on the brake pedal and not worth re-siting a landmark for.
+    // works out of every wedge in this world *that the rover is lined up with* — all 17 were driven
+    // into and out of with the real physics on 2026-09-21, and the tightest of them (0.28 m of side
+    // slack, both faces touching) still walked out under power at 9.6 m/s. The rule this replaced —
+    // "tight enough that both push-out normals cancel ⇒ throttle buys nothing" — was a guess that
+    // measurement falsified, so it is gone. What is left is the thing a player actually reports as
+    // stuck: a long blind alley. Measured reverse speed is 3–6 m/s, so under ALLEY metres of dead
+    // run the escape is a one-second tap on the brake pedal and not worth re-siting a landmark for.
+    // The same 2026-09-21 experiment is what the `seams` report below exists to catch, though: its
+    // premise ("reverse works out of every wedge") held for all 17 samples and did not hold for a
+    // seam entered 76° off its axis, where the back-out phase failed and only the rescue's carry
+    // cleared it. Length is the right bar for alleys; it is silently the wrong bar for seams.
     const ALLEY = 15;
     // And an alley has to be walked, not extrapolated. The axis probe above flies straight out of
     // the pinch, so on a bending aisle it wanders into a wall a driver never touches: three hub
@@ -3709,19 +4057,31 @@ window.__RSB = {
       }
       return worst;
     };
-    for (const w of wedges) {
-      const ci = Math.round((w.at[0] - x0) / CELL), cj = Math.round((w.at[1] - z0) / CELL);
-      let inReach = false;
-      for (let di = -2; di <= 2 && !inReach; di++) for (let dj = -2; dj <= 2; dj++) {
+    // A pocket you can never drive into is scenery, not a defect — so every candidate is tested
+    // against the configuration-space BFS before it may be reported. Five cells of slack either way,
+    // because the BFS quantises headings to 22.5° and positions to 2 m.
+    const nearReach = (x, z) => {
+      const ci = Math.round((x - x0) / CELL), cj = Math.round((z - z0) / CELL);
+      for (let di = -2; di <= 2; di++) for (let dj = -2; dj <= 2; dj++) {
         const i = ci + di, j = cj + dj;
         if (i < 0 || j < 0 || i >= W || j >= H) continue;
-        if (reached[i * H + j]) { inReach = true; break; }
+        if (reached[i * H + j]) return true;
       }
-      w.entered = inReach;
+      return false;
+    };
+    for (const w of wedges) {
+      w.entered = nearReach(w.at[0], w.at[1]);
       w.blind = w.dead >= ALLEY ? spineBlind(w) : w.dead;
       w.trap = w.entered && w.blind >= ALLEY;
     }
     const traps = wedges.filter(w => w.trap);
+    // Reachability here is the loose test on purpose. The BFS quantises positions to 2 m cells, and
+    // a seam's standable crescent is narrower than a cell — the gate↔ring-315 joint that pinned the
+    // soak's rover was invisible to `reached`, so a bar built on it filters out the defect class it
+    // is meant to catch. What the analytic list can promise is that ground this tight exists next to
+    // a drive-reached cell; whether a driver actually gets caught in it is the driven test's job.
+    const seamList = [...seamCand.values()].filter(s => nearReach(s.at[0], s.at[1]))
+      .sort((x, y) => y.gap - x.gap);
     const slivers = [];
     for (let c = 0; c < free.length; c++) if (free[c] && !reached[c]) {
       const i = (c / H) | 0, j = c % H;
@@ -3733,6 +4093,13 @@ window.__RSB = {
       freeCells: free.reduce((a, v) => a + v, 0),
       slotCount: wedges.length, trapCount: traps.length, traps,
       slots: wedges.filter(w => !w.trap && w.entered).slice(0, 12),
+      // The acceptance bar for seams is 0. Unlike traps these are not long blind alleys — the
+      // gate↔ring-315 joint that swallowed the soak's rover had under 3 m of dead run either way
+      // and would have passed the ALLEY bar comfortably. What made it a defect is that its only
+      // exit is a reverse along an axis the arriving driver did not choose to be on.
+      // Every seam is handed over, not a window of the widest ones: the driven test is the consumer
+      // now, and a census truncated at 12 silently excuses the 20 joints nobody got to check.
+      seamCount: seamList.length, seams: seamList,
       // "Too far to touch" is the only reachability defect a point of interest can have: the nearest
       // legal parking cell sits outside the radius the game itself needs. A marker whose centre is
       // buried in its own prop — every reactor tap IS a solid rig, and the pads carry a pedestal —

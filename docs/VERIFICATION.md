@@ -43,12 +43,33 @@ node tools/cdp-run.mjs <url|-> tools/storm-layer-probe.js          # 沙暴「�
 node tools/cdp-run.mjs "…qa_boot.html?auto=std&audstate=hud"   tools/hud-audit-probe.js   9333 90000 300000
                                                                    # 前端「bruno-simon 差距」DOM 侧：字号阶梯 / 字距 / 文本与面板覆盖率 /
                                                                    # 真实合成背景的 WCAG 对比度 + 怠速镜头构图；一次约 60 s
+                                                                   # §2c 是**字体落位普查**：对每个文本节点比 scrollWidth/clientWidth（浏览器自己对
+                                                                   # 「这串字放不放得下」的回答，overflow:visible 也成立），再用 Range.getClientRects
+                                                                   # 逐行字面盒查两两**压字**；zh 与点过 #lang-btn 的 en 各一遍，
+                                                                   # 配一条植入截断 + 一条同串双栈敏感性对照（详见文件内注释）
 node tools/cdp-run.mjs "…qa_boot.html?auto=std&audstate=drive" tools/hud-audit-probe.js   9333 90000 300000
                                                                    # 同一条探针的加速侧：沿真实油门过程逐档读 fov / 距离 / 主体占高比 /
                                                                    # 地平线行号，并给出归因；一次约 150 s
                                                                    # 两趟分开是因为一次 Runtime.evaluate 只有一个帧预算（≈500 档步进帧就让 CDP 回 -32603）
 node tools/ref-site-font-probe.mjs                                 # 规格侧对照尺：同一支函数跑 bruno-simon.com 线上 CSS 与 src/styles.css
                                                                    # （@font-face / 字体族 / 字号集 / 字号×字距配对 / 动效与过冲）；不需要浏览器
+python3 tools/build_fonts.py                                       # 锻造自托管子集：从 Google 的可变字体抽界面真正用到的字面/字重，
+                                                                   # 生成 src/fonts/*.woff2 + src/styles.css 的 FONTS 块 + LICENSES.md
+python3 tools/build_fonts.py --check                               # 同一支函数只读校验：产物在不在、CSS 引的文件与磁盘上的文件是否一一对应，
+                                                                   # 并且三条闸——缺文件 / 两份 @font-face 字节完全相同（= 同一串字节下载两次）/
+                                                                   # --display·--sans·--mono 的第一族根本没发货 —— 任一命中即 RC=1
+                                                                   # 清单口径：CSS 注释被剥掉（注释里的汉字永远不上屏；一条讲线盒的注释曾把
+                                                                   # 凑叠多抓溢盒逐 七个字算成「界面会退回系统字面」而判红），JS 注释保留（偏保守，
+                                                                   # 只会让子集多带几个字面，不可能假绿）。末尾还报**没被覆盖**的 63 个界面符号
+                                                                   # 注意：FONTS 块顶部那行「缺的符号 N 个」是被写进 CSS 的读数，改完清单口径
+                                                                   # 必须重跑不带 --check 的那条（--check 不落盘，读数会停在旧值：实测块里 64 / 实时 63）
+node tools/cdp-run.mjs "…qa_boot.html?auto=std&audstate=hud" tools/wght-probe.js 9333 60000 240000
+                                                                   # 「一个可变文件到底画不画得出多种字重」= 墨量，不是 CSS 声明：从 CSSOM 取族与
+                                                                   # 字重区间，逐档 lo/mid/hi 先 await document.fonts.load(文本) 再数被点亮的像素；
+                                                                   # 文本按族问加载器（拉丁串回 0 个人面才换汉字串），降级面只作诊断不作判据
+node tools/cdp-run.mjs "…qa_boot.html?auto=std&audstate=hud" tools/lh-sweep-probe.js 9333 45000 180000
+                                                                   # 改 line-height 之前先量它：同一档字号下逐档读 §2c 那把尺（scrollHeight − clientHeight），
+                                                                   # 用它自己的读数选值，而不是猜第二个值（猜出来的 1.18 只把 +8 px 压到 +4 px）
 ```
 
 > `cdp-run.mjs` 在 `Page.navigate` 之前会发 `Network.setCacheDisabled`。`http.server` 不发

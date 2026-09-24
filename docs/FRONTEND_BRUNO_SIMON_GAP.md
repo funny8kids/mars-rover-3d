@@ -47,6 +47,30 @@ node tools/ref-site-font-probe.mjs
 `sansResolves.hit` 里出现设计写的那个族名，而不是 `DejaVu Sans Mono` / `Noto Sans CJK SC`。
 只要 `loadedFaces === 0`，字体这一栏就不许写"已通过"。
 
+**落地（2026-09-24）**：4 条 `@font-face`、4 个族全部 `loaded`，三个角色的栈各自第一族都命中设计族
+（`--display → Big Shoulders Display`、`--sans → IBM Plex Sans`、`--mono → JetBrains Mono`），
+中文由 `Noto Sans SC` 接管（`fonts.sansResolves.cjk.hit = ["Noto Sans SC 【design】"]`，
+`differsFromOsOnly 6/6`）。判据从"≥3 个 face"改成了**按脚本 × 按角色**：一个族只在它真正被要求画的那种
+文字上算数——`Noto Sans SC` 对拉丁串 `facesMatched=0` 是**正确**的（子集里没有拉丁字面），而旧判据会把这
+读成"字体没落地"。同时保留一条假族名对照（`RSB Not A Shipped Face` 两种脚本都回 0）证明这盏灯不是恒绿。
+
+**体积**：`src/fonts/` 从 13 个文件 / 836 kB 压到 **4 个文件 / 276 kB**。原因不是"少发一个字重"，而是
+Google 的 css2 对这三个拉丁族**本来就回同一个可变 woff2**——按字重逐个落盘等于把同一份 45 kB 下载三次。
+中文侧同理：三个静态实例（500 kB / 3 次请求）换成一段被夹到 400–700 的子集（166 kB / 1 次请求，
+633 个字面）。一个可变文件能不能真画出三种字重，由 `tools/wght-probe.js` 在浏览器里用**墨量**回答：
+`Noto Sans SC 8823→11509→13328`、`Big Shoulders 6046→7447→8870`、`JetBrains Mono 6499→7892→8660`、
+`IBM Plex Sans 6211→8807→10519`，四族 `facesMatched` 每档都是 1。
+
+**仍然没解决（诚实记账）**：63 个界面符号（`°±²³·¹½×Øé÷ΔΣβζθλπρτφω–—’“”…⁻₂→↔⇒∈−√∫≈≤⊘`）不在任何子集里，
+继续由系统字面兜底——它们是数学/箭头/排版标点，Google 的 latin 子集不含这些码位。要么补一段符号子集，
+要么把这些字符换掉；现在它们由 `build_fonts.py --check` 每一跑报一次，不会悄悄烂掉。
+
+**顺带抓到的一条生成物纪律**：`src/styles.css` 的 FONTS 块顶部那行"缺的符号 N 个"是**写进 CSS 的读数**，
+所以它会随清单漂移。给 `inventory()` 加"剥掉 CSS 注释"这一步之后我只跑了 `--check`（它不落盘），
+块里就还留着旧值 64，而同一支函数的实时读数是 63 —— 一个只读校验**不会**让它变正确。重跑 `build_fonts.py`
+后字节跟着变（子集 647→633 个字面：少的正是我那句注释里的字，Google 重新切了 IBM Plex 那份文件），
+`wght-probe` 的三档墨量与 §2c census 的 h/v/collisions **逐位相同**，说明重切没有改到渲染。
+
 ---
 
 ## 2 层级不是太扁，是地板太低
@@ -202,6 +226,8 @@ dolly 距离从 11.1 m 一路退到 19.6 m 再回 16.2 m。全程 fps 60、`resc
 | "世界偏色 / 死黑" | 那是抓帧 + 亮度直方图那条链（`clip=0`），与本页的规格读数无关。 |
 | "静止 fov 60° 异常" | 60° 正常。问题不在静止值，在随速变化与 dolly，见第 6 节。 |
 | "字体没问题，CSS 里写了 Segoe UI / Consolas" | `getComputedStyle().fontFamily` 回的是你写的名字，不是被渲染的字面。推进宽度实测落到 DejaVu Sans Mono / Noto Sans CJK SC，见第 1 节。 |
+| "推进宽度可以判定中文字面" | 对拉丁成立，对中文不成立：每个汉字占同一个 em 框，`火星基地坪站` 在 400 和 700 下都是 **432.0 px**，而墨量是 8823 → 13328（`tools/wght-probe.js`）。宽度这把尺对字重全盲；判定字重只能数被点亮的像素。同理，`unicode-range` 的正则也不是脚本探测器——一条 `U\+(4E\|30\|FF0\|FF1)` 把四个族**全部**判成汉字，拉丁三行于是量的都是降级面（8908→8908→13070，与降级锚一模一样），探针自己造了假红；哪种文字由 `document.fonts.load()` 回不回人面来回答。 |
+| "整串像素哈希可以判定字体身份" | 哈希把每个字面的**推进宽度**一起折进数字，同一副轮廓经两条不同的栈会哈希分离；而且整串画在固定宽画布上会被切（168 px 画布在 32 px 下切掉 `火星基地坪站` 的尾巴，比较是在残缺的墨上做的）。现场症状：`sansResolves.cjk.hit` 为空、`designTookOver` 却说 webfont 已落地。改成**一字符一框、固定 alphabetic 基线**后，进入数字的只有那一个字的形状（`tools/hud-audit-probe.js:248-253`）。 |
 
 ## 顺带记录：出生点按 W 量到的是碰撞，不是镜头
 

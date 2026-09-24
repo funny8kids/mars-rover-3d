@@ -236,21 +236,125 @@
   }
 
   // ---- 1. 字体身份：设计的字体到底有没有落地 -------------------------------------------
+  // Wait for the faces the page itself pulled. Without this the very first run after a change reads
+  // `unloaded` for a font still in flight and reports the OS face — a stale answer, not a red one.
+  await document.fonts.ready;
   const faces = [];
   document.fonts.forEach(f => faces.push(`${f.family} ${f.weight} ${f.style} ${f.status}`));
-  const mc = document.createElement('canvas').getContext('2d');
-  const SAMPLE = 'RED STARBASE 火星 0123 · — →';
-  const widthOf = font => { mc.font = `40px ${font}`; return +mc.measureText(SAMPLE).width.toFixed(2); };
-  // 逐个本机候选比推进宽度；相等即"这串文本实际由该字体绘制"。
+  // One sample per script: a single mixed string ("RED STARBASE 火星") made the ruler blind, because
+  // the stack and the isolated family then fall back through *different* faces for the CJK half.
+  const SCRIPT = { latin: 'RED STARBASE 0123', cjk: '火星基地坪站' };
+  const mc = document.createElement('canvas');
+  // One GLYPH per box, not one string per canvas. Two defects in the whole-string version: the
+  // 168 px canvas clipped 火星基地坪站 at 32 px (6 x 32 = 192 px from x = 3), so the comparison was
+  // running on truncated ink; and a string hash folds every face's *advance* into the number, so
+  // the same outline painted through two different stacks hashes apart — which is what left
+  // `sansResolves.cjk.hit` empty while `designTookOver` said the webfont had landed. At a fixed
+  // alphabetic baseline only that one character's shape enters the number.
+  const PX = 32, BOX = { w: 56, h: 46 }, BASE_Y = 36, X0 = 3;
+  mc.width = BOX.w; mc.height = BOX.h;
+  const mg = mc.getContext('2d', { willReadFrequently: true });
+  const glyph = (font, ch) => {
+    mg.fillStyle = '#000'; mg.fillRect(0, 0, BOX.w, BOX.h);
+    mg.fillStyle = '#fff'; mg.font = `${PX}px ${font}`; mg.textBaseline = 'alphabetic';
+    mg.fillText(ch, X0, BASE_Y);
+    const d = mg.getImageData(0, 0, BOX.w, BOX.h).data;
+    let h = 2166136261 >>> 0, ink = 0, bleed = 0;
+    for (let y = 0; y < BOX.h; y++) for (let x = 0; x < BOX.w; x++) {
+      const v = d[(y * BOX.w + x) * 4];
+      ink += v; h = (h ^ v) * 16777619 >>> 0;
+      // Ink on the outermost row/column means the box is too small and the shape is being cut off.
+      if (v && (x === 0 || y === 0 || x === BOX.w - 1 || y === BOX.h - 1)) bleed++;
+    }
+    return { id: `${(h >>> 0).toString(16)}:${ink}`, ink, bleed };
+  };
+  // Two glyphs are the same paint only if they have ink: blank matches blank, and a face that
+  // silently failed to render must not be allowed to "match" another silent failure.
+  const same = (a, b) => a.ink > 0 && b.ink > 0 && a.id === b.id;
+  // A name the page never declares paints with whatever the browser falls back to. That is the
+  // reference for "this family has nothing of its own for this script": JetBrains Mono has no
+  // hanzi, so its CJK sample is the *fallback's* ink, and letting it claim `cjk.hit` would be a
+  // false green of the worst kind — the number would read "the design face is on screen" while the
+  // design face cannot paint the character at all.
+  const BOGUS = '"No Such Face XYZ"';
+  // How many of a sample's glyphs this CSS family paints with something of its own.
+  const ownChars = (font, sample) => [...sample].filter(c => c.trim())
+    .filter(c => !same(glyph(font, c), glyph(BOGUS, c))).length;
+  // 逐个候选比画面；像素相同即"这串文本确实由该字面绘制"。
   const LOCAL = ['"DejaVu Sans Mono"', '"Liberation Mono"', '"Noto Sans Mono"', '"Noto Sans CJK SC"',
     '"Liberation Sans"', '"DejaVu Sans"', '"Noto Sans"', '"Ubuntu"', 'serif', 'system-ui'];
+  const DESIGN = ['JetBrains Mono', 'IBM Plex Sans', 'Big Shoulders Display', 'Noto Sans SC'];
+  // Read the page-driven fetch state BEFORE forcing anything: after `fonts.load()` every face is
+  // loaded by construction, so `loaded` here is the only evidence of what the UI itself pulled.
+  const fetched = {};
+  DESIGN.forEach(f => fetched[f] = Object.fromEntries(
+    Object.entries(SCRIPT).map(([s, txt]) => [s, document.fonts.check(`40px "${f}"`, txt)])));
+  // Canvas text does not trigger a font fetch, and the display face is not on screen in this phase —
+  // without this the comparison would pit our face against an unloaded fallback and answer "no match"
+  // for a font that is fine. The identity claim is about the face; which screens happen to use it is
+  // the `facesLoaded` number above.
+  await Promise.all(DESIGN.map(f => document.fonts.load(`40px "${f}"`, Object.values(SCRIPT).join(''))))
+    .then(() => document.fonts.ready);
+  // The same stack with the design families taken out: what the OS alone would paint. If a script's
+  // ink is unchanged by that, no webfont is doing any work there — the red case, stated as a field
+  // instead of something the reader has to infer from "<none matches>".
+  const stripDesign = stack => stack.split(',').map(s => s.trim())
+    .filter(s => !DESIGN.some(d => s.replace(/^"|"$/g, '') === d)).join(', ');
+  const CANDIDATES = [
+    ...DESIGN.map(f => ({ label: `${f} 【design】`, font: `"${f}"`, design: true })),
+    ...LOCAL.map(f => ({ label: f.replace(/"/g, ''), font: f, design: false })),
+  ];
   const resolves = stack => {
-    const w = widthOf(stack);
-    const hit = LOCAL.filter(f => widthOf(f) === w);
-    return { w, hit: hit.length ? hit : ['<none of the candidate list — some other local face>'] };
+    const bare = stripDesign(stack);
+    const out = { stack, osOnlyStack: bare };
+    for (const [name, sample] of Object.entries(SCRIPT)) {
+      // Spaces carry no ink, so they can only ever be "blank"; the identity question is about glyphs.
+      const chars = [...sample].filter(c => c.trim());
+      const shots = chars.map(c => glyph(stack, c));
+      const osShots = bare ? chars.map(c => glyph(bare, c)) : null;
+      const named = [], partial = [];
+      for (const cand of CANDIDATES) {
+        const g = chars.map(c => glyph(cand.font, c));
+        // Only a family that paints this script *differently from the fallback* may be named for it.
+        if (!ownChars(cand.font, sample)) continue;
+        const matches = g.filter((x, i) => same(x, shots[i])).length;
+        if (matches === chars.length) named.push(cand.label);
+        else if (matches) partial.push(`${cand.label} ${matches}/${chars.length}`);
+      }
+      out[name] = {
+        chars: chars.length,
+        blank: shots.filter(s => !s.ink).length,
+        bleed: shots.reduce((n, s) => n + s.bleed, 0),
+        differsFromOsOnly: osShots ? shots.filter((s, i) => s.id !== osShots[i].id).length : null,
+        designTookOver: osShots ? shots.some((s, i) => s.id !== osShots[i].id) : null,
+        hit: named.filter(l => l.includes('【design】')),
+        osHit: named.filter(l => !l.includes('【design】')),
+        partial: partial.slice(0, 6),
+      };
+    }
+    return out;
   };
   const cs = s => getComputedStyle(document.documentElement).getPropertyValue(s).trim();
   const monoStack = cs('--mono'), sansStack = cs('--sans');
+  // Controls for the raster ruler itself — a comparison that cannot fail is not evidence.
+  const control = {
+    latinDiscriminates: [...SCRIPT.latin].some(c => !same(glyph('"DejaVu Sans"', c), glyph('"DejaVu Sans Mono"', c))),
+    cjkSeparatesOursFromSystem: [...SCRIPT.cjk].some(c => !same(glyph('"Noto Sans SC"', c), glyph('"Noto Sans CJK SC"', c))),
+    // Reported, not required: an undeclared name lands on Chrome's *standard* font, which is not the
+    // same face as the generic `serif` here — so this reads false and still says the fallback painted
+    // real ink (that part is `gateSeparates`'s job). Named for what it measures.
+    bogusEqualsSerif: [...SCRIPT.latin].every(c => same(glyph(BOGUS, c), glyph('serif', c))),
+    // The "own ink" gate above has to be able to shut a family out, or the naming is decoration.
+    // JetBrains Mono ships no hanzi, so it must be unable to claim the CJK sample; the SC subset must
+    // be able to. If both say the same thing, the gate cannot tell a CJK webfont from a latin one and
+    // `hit` would be readable only as "something matched".
+    gateSeparates: ownChars('"JetBrains Mono"', SCRIPT.cjk) === 0 && ownChars('"Noto Sans SC"', SCRIPT.cjk) > 0,
+    // 同一字体画两遍必须逐位相同，否则这个尺子不可复现。
+    repeatStable: [...SCRIPT.cjk].every(c => glyph('"Noto Sans SC"', c).id === glyph('"Noto Sans SC"', c).id),
+    // 尺子自己的框必须装得下所有样本的墨；装不下，比较的就是被切掉的像素。
+    boxHoldsAllInk: CANDIDATES.every(k => [...SCRIPT.latin + SCRIPT.cjk]
+      .every(c => glyph(k.font, c).bleed === 0)),
+  };
 
   // ---- 2. 可见文本普查 ---------------------------------------------------------------
   const effOpacity = el => { let o = 1, n = el; while (n && n !== document.body) { o *= +getComputedStyle(n).opacity; n = n.parentElement; } return o; };
@@ -314,6 +418,243 @@
   const scored = rows.filter(x => typeof x.cr === 'number');
   const lowC = scored.filter(x => x.cr < 4.5);
 
+  // ---- 2c. 文字放不下了：字体这一项特有的缺陷 ---------------------------------------------
+  // A font swap changes no font-size, no colour and no box — it changes how wide the ink is. The
+  // launch telemetry bar is the known casualty in this repo: `.tel-rows` gives its label column
+  // 42 px, sized because "TO PAD" measured 39 px in the fallback face (styles.css ~275), and a
+  // different family at the same 9.5 px does not measure 39 px. Nothing in the ladder, contrast or
+  // panel readings above can see that, because they never ask the browser how wide the string is.
+  // `scrollWidth > clientWidth` is the browser's own answer, and it holds for `overflow: visible`
+  // too (the escaped ink still counts into the scroll area), so it covers both failure shapes:
+  // truncated, and overrunning the neighbour.
+  // Three scope decisions, each because the first version of this block got it wrong:
+  // (1) Faded-out screens are censused as well. `.tel-rows` is laid out at x 709 with effective
+  //     opacity 0 in the hud phase, so the type census in §2 skips it and `hOverflow: 0` was about
+  //     the 16 nodes that happened to be showing — the 42 px column was never measured. A metric
+  //     defect on a screen the player reaches mid-launch is still a metric defect; those rows are
+  //     counted in their own field, never merged into the on-screen numbers.
+  // (2) "Escapes its box" is not yet a defect; "escapes into another string's ink" is. So each node
+  //     also gets its line boxes and pairs are tested for a real collision — per line fragment, not
+  //     per union. The first pass compared unions, and `#hud` — one container holding the mission
+  //     panel, the deck and six rows — "collided" with all three floating buttons purely because its
+  //     union spans the screen. Only fragment-vs-fragment is a claim about two strings touching.
+  // (3) The strings that must fit are not only the current locale's. `.r-lab` reads 「加速度」 in zh
+  //     (3 CJK ≈ 31 px) and "ACCEL" in en, and the column was authored against the en string, so a
+  //     zh-only pass cannot clear the risk — the census is repeated after clicking #lang-btn.
+  await document.fonts.ready;   // before the fallback resolves, every extent below is a lie
+  const inkRects = el => {
+    const rg = document.createRange(); rg.selectNodeContents(el);
+    return [...rg.getClientRects()]
+      .filter(r => r.width > 0.5 && r.height > 0.5)
+      .map(r => ({ x: r.left, y: r.top, x2: r.right, y2: r.bottom }));
+  };
+  const fitCensus = () => {
+    const h = [], v = [], nodes = [];
+    let laidOut = 0, faded = 0;
+    for (const el of document.querySelectorAll('body *')) {
+      const all = el.textContent.trim(); if (!all) continue;
+      const st = getComputedStyle(el);
+      if (st.display === 'none' || st.visibility === 'hidden') continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2 || !inView(r)) continue;   // never laid out: nothing to measure
+      laidOut++;
+      const op = effOpacity(el);
+      if (op < 0.05) faded++;
+      const own = ownText(el);
+      const tag = {
+        el: el.id ? '#' + el.id : (typeof el.className === 'string' && el.className
+          ? '.' + el.className.split(' ')[0] : el.tagName.toLowerCase()),
+        txt: (own || all).slice(0, 16), fs: +parseFloat(st.fontSize).toFixed(1),
+        fam: st.fontFamily.split(',')[0].replace(/["']/g, ''), onscreen: op >= 0.05,
+        owns: !!own, el2: el, ink: inkRects(el),
+      };
+      nodes.push(tag);
+      // An ancestor of a clipped leaf reports the same overflow, so the list is every depth, not one
+      // entry per defect.
+      if (el.scrollWidth - el.clientWidth > 1) h.push({ ...tag, need: el.scrollWidth, box: el.clientWidth,
+        overPx: +(el.scrollWidth - el.clientWidth).toFixed(1),
+        way: /^(hidden|clip|auto|scroll)$/.test(st.overflowX) ? 'clipped' : 'overruns',
+        ell: st.textOverflow === 'ellipsis' && /^(hidden|clip)$/.test(st.overflowX) });
+      if (el.scrollHeight - el.clientHeight > 1) v.push({ ...tag, need: el.scrollHeight, box: el.clientHeight,
+        overPx: +(el.scrollHeight - el.clientHeight).toFixed(1),
+        way: /^(hidden|clip|auto|scroll)$/.test(st.overflowY) ? 'clipped' : 'overruns' });
+    }
+    // One entry per node pair, carrying the worst fragment pair inside it: a multi-line string that
+    // grazes a neighbour on two lines is one defect, not two.
+    // Only a node that owns its text directly is a string the player reads. The ancestor filter is
+    // load-bearing, not tidiness: with the union bug fixed, `#hud` — one container holding the
+    // mission panel, the deck and six rows — still "collided" with all three floating buttons, at
+    // exactly the FAB's own width, because its widest line box spans the whole column. Both
+    // denominators are reported so the filter's cost is visible instead of silent.
+    const hits = [];
+    let leafPairs = 0, ancestorPairs = 0;
+    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j];
+      if (!a.onscreen || !b.onscreen || !a.ink.length || !b.ink.length) continue;
+      if (a.el2.contains(b.el2) || b.el2.contains(a.el2)) continue;  // a block holds its own line boxes
+      if (!a.owns || !b.owns) { ancestorPairs++; continue; }
+      leafPairs++;
+      let best = 0, bw = 0, bh = 0;
+      for (const ra of a.ink) for (const rb of b.ink) {
+        const ow = Math.min(ra.x2, rb.x2) - Math.max(ra.x, rb.x);
+        const oh = Math.min(ra.y2, rb.y2) - Math.max(ra.y, rb.y);
+        if (ow > 1 && oh > 1 && ow * oh > best) { best = ow * oh; bw = ow; bh = oh; }
+      }
+      if (best) hits.push({ area: best,
+        s: `${a.el} "${a.txt}" × ${b.el} "${b.txt}" ${bw.toFixed(1)}×${bh.toFixed(1)}px` });
+    }
+    hits.sort((x, y) => y.area - x.area);
+    const hitList = hits.map(x => x.s);
+    h.sort((a, b) => b.overPx - a.overPx); v.sort((a, b) => b.overPx - a.overPx);
+    return { laidOut, faded, h, v, hits: hitList, pairs: { leafPairs, ancestorPairs },
+      // Two indexes: `keys` for the human-readable row, `byEl` for the A/B pass. Pairing the A/B
+      // passes by string is what made this control lie — see the sensitivity note below.
+      keys: new Map([...h, ...v].map(x => [`${x.el}|${x.txt}|${x.fs}`, x])),
+      byEl: new Map([...h, ...v].map(x => [x.el2, x])) };
+  };
+  // The node reference is only there for the DOM-containment test; drop it before anything is
+  // serialised, or the whole probe output dies on a circular structure.
+  const line = x => `${x.el} "${x.txt}" ${x.need}>${x.box} +${x.overPx}px ${x.way}${x.ell ? ' …' : ''}`;
+  const split = (a, on) => a.filter(x => x.onscreen === on);
+  const group = a => ({ n: a.length, worst: a.slice(0, 8).map(line) });
+  const fitA = fitCensus();
+  // A census that cannot report a planted defect is decoration. The plant is a throwaway node — the
+  // real HUD is never touched — carrying the actual string from the 42 px column in the actual UI
+  // font, in a box far too small for it. It has to come back flagged.
+  const plant = document.createElement('span');
+  plant.style.cssText = 'position:absolute;left:0;top:0;width:14px;height:10px;overflow:hidden;'
+    + 'white-space:nowrap;font:700 9.5px ' + cs('--sans') + ';letter-spacing:.1em';
+  plant.textContent = 'TO PAD 012345';
+  document.body.appendChild(plant);
+  const planted = { need: plant.scrollWidth, box: plant.clientWidth };
+  const fitPlanted = fitCensus();
+  plant.remove();
+  const caught = fitPlanted.h.some(x => x.txt === 'TO PAD 012345' && x.need === planted.need
+    && Math.abs(x.overPx - (planted.need - planted.box)) < 1.5);
+  // Sensitivity, on a pair the game state cannot move: the same fixed string measured in the design
+  // stack and in that stack with the design families stripped out. If the two widths are equal the
+  // ruler cannot see font metrics at all.
+  // The first version of this control had no plant in it at all — it re-ran the whole census with the
+  // CSS variables swapped and paired the two passes by `#id|text|size`. The HUD rewrites its own
+  // strings between the passes (fps, MET, speed), so the keys stopped matching, the delta list came
+  // back empty, and an empty list read as "insensitive ruler" on a build where the webfonts were in
+  // fact loaded and applied. A control that can match nothing is not a control.
+  const probeStr = 'TO PAD 012345 · 加速度 0/5';
+  const measure = (stack, bold) => {
+    const s = document.createElement('span');
+    s.style.cssText = 'position:absolute;left:-9999px;top:0;white-space:nowrap;font:'
+      + (bold ? '700 9.5px ' : '12.5px ') + stack + ';letter-spacing:.1em';
+    s.textContent = probeStr;
+    document.body.appendChild(s);
+    const w = s.scrollWidth; s.remove(); return w;
+  };
+  const sens = { sans: [measure(cs('--sans'), true), measure(stripDesign(cs('--sans')), true)],
+    mono: [measure(cs('--mono'), false), measure(stripDesign(cs('--mono')), false)] };
+  // The real-UI pass is kept, because the plant only proves the ruler can see a swap in *one* string;
+  // pairing is now by element identity, and rows whose text moved between the passes are counted and
+  // reported rather than dropped silently.
+  const STACKS = ['--display', '--sans', '--mono'];
+  const keep = STACKS.map(s => document.documentElement.style.getPropertyValue(s));
+  STACKS.forEach(s => document.documentElement.style.setProperty(s, stripDesign(cs(s))));
+  document.body.offsetHeight;
+  const fitB = fitCensus();
+  STACKS.forEach((s, i) => { if (keep[i]) document.documentElement.style.setProperty(s, keep[i]);
+    else document.documentElement.style.removeProperty(s); });
+  document.body.offsetHeight;
+  let moved = 0;
+  const deltas = [...fitA.h, ...fitA.v].map(x => {
+    const o = fitB.byEl.get(x.el2);
+    if (!o) return null;
+    if (o.txt !== x.txt) { moved++; return null; }
+    return o.need !== x.need ? `${x.el} "${x.txt}" ${x.need}px(设计面) vs ${o.need}px(降级面)` : null;
+  }).filter(Boolean);
+  // The other locale, through the game's own button.
+  const lb = document.getElementById('lang-btn');
+  let fitEn = null, enNote = 'no #lang-btn found';
+  if (lb) {
+    lb.click(); document.body.offsetHeight;
+    enNote = 'button now reads "' + document.getElementById('lang-btn').textContent + '"';
+    fitEn = fitCensus();
+    document.getElementById('lang-btn').click(); document.body.offsetHeight;
+  }
+  // The census only means something with the webfonts resolved: measured against the fallback it
+  // reports the widths of a face the player never sees.
+  //
+  // The first version of this control was hard-coded to three family names and asked
+  // `document.fonts.check()` about them. It could not fail, twice over: the list was wrong ('IBM Plex
+  // Mono' is a family this project never shipped — the mono is JetBrains Mono), and `check()` answers
+  // true for *any* name because the OS fallback always "succeeds". So: enumerate the families the
+  // page actually declares, and prove them with `load()`, which returns the faces matching the text's
+  // codepoints — a Latin subset asked for hanzi answers 0 instead of borrowing the fallback.
+  const FACE_TEXTS = { latin: 'RED STARBASE 0123', cjk: '火星基地坪站 加速度' };
+  const shipped = new Map();                       // family -> { weights:Set, status:Set }
+  document.fonts.forEach(f => {
+    const e = shipped.get(f.family) || { weights: new Set(), status: new Set() };
+    e.weights.add(f.weight); e.status.add(f.status); shipped.set(f.family, e);
+  });
+  // Declare the range as CSS wrote it ("400 700"), but *ask* at a weight inside it: `load('400 700px
+  // "X"')` is not valid font shorthand, and asking the display face for weight 400 would match
+  // nothing and read as a missing font.
+  const endsOf = ws => {
+    const n = [...ws].flatMap(r => String(r).split(/\s+/).map(Number)).filter(Number.isFinite);
+    return [Math.min(...n), Math.max(...n)];
+  };
+  const perFamily = [];
+  for (const [fam, e] of shipped) {
+    const [lo, hi] = endsOf(e.weights);
+    const m = {};
+    for (const [s, txt] of Object.entries(FACE_TEXTS)) {
+      m[s] = [(await document.fonts.load(`${lo} 16px "${fam}"`, txt)).length,
+        (await document.fonts.load(`${hi} 16px "${fam}"`, txt)).length];
+    }
+    perFamily.push({ fam, declared: [...e.weights].join(' '), status: [...e.status].join(','), ...m });
+  }
+  // Negative arm: a family nobody ships has to match 0 on both scripts, or `facesMatched` is as blind
+  // as `check()` was and this whole block is decoration.
+  const phantom = {};
+  for (const [s, txt] of Object.entries(FACE_TEXTS)) {
+    phantom[s] = (await document.fonts.load('400 16px "RSB Not A Shipped Face"', txt)).length;
+  }
+  const fontsControl = {
+    status: document.fonts.status, declaredFaces: document.fonts.size, families: perFamily,
+    // A design stack whose first family is not among the shipped @font-face families silently paints
+    // in the OS face — the exact failure this work item is about.
+    stacks: STACKS.map(s => {
+      const first = (cs(s).match(/"([^"]+)"/) || [])[1] || '(none quoted)';
+      return `${s} → "${first}" ${shipped.has(first) ? 'shipped' : 'NOT SHIPPED'}`;
+    }),
+    everyFamilyUsable: perFamily.every(x => x.latin[0] > 0 || x.cjk[0] > 0),
+    cjkFace: perFamily.filter(x => x.cjk[0] > 0).map(x => x.fam).join(' ') || 'NONE — 中文在降级面里',
+    // The old claim, now measurable: the byte-dedup rebuild moves the Latin files to one face per
+    // family with a range, so a family with more declared weight ranges than shipped files is fine
+    // while a family that matches no text at all is not.
+    facesPerFamily: [...shipped].map(([f, e]) => `${f}:${e.weights.size}`).join(' '),
+    phantom, discriminates: phantom.latin === 0 && phantom.cjk === 0,
+  };
+  const fit = {
+    hiddenScreen: {
+      n: fitA.laidOut, fadedButLaidOut: fitA.faded,
+      onScreen: { h: group(split(fitA.h, true)), v: group(split(fitA.v, true)) },
+      faded: { h: group(split(fitA.h, false)), v: group(split(fitA.v, false)) },
+      collisions: { n: fitA.hits.length, pairsTested: fitA.pairs, kind: 'line-box overlap, not ink',
+        list: fitA.hits.slice(0, 8) },
+    },
+    en: fitEn ? {
+      texts: fitEn.laidOut, h: group(fitEn.h),
+      v: group(fitEn.v), collisions: { n: fitEn.hits.length, pairsTested: fitEn.pairs,
+        kind: 'line-box overlap, not ink', list: fitEn.hits.slice(0, 8) }, enNote,
+    } : enNote,
+    control: {
+      plantedClipCaught: caught, planted,
+      fonts: fontsControl,
+      sensitivity: { string: probeStr,
+        sans: `${sens.sans[0]}px(设计) vs ${sens.sans[1]}px(降级)`,
+        mono: `${sens.mono[0]}px(设计) vs ${sens.mono[1]}px(降级)`,
+        seesMetrics: sens.sans[0] !== sens.sans[1] || sens.mono[0] !== sens.mono[1] },
+      realUiExtentDeltas: deltas, rowsDroppedBecauseTextMoved: moved,
+      restoredAfterLocaleToggle: lb ? document.getElementById('lang-btn').textContent === 'EN' : 'n/a',
+    },
+  };
   // ---- 3. 面板盒子：有多少画面被"容器"占住，而不是被世界占住 ------------------------------
   let boxes = [], boxArea = 0;
   for (const el of document.querySelectorAll('body *')) {
@@ -378,9 +719,12 @@
     census: { scanned: skip.noText + skip.notRendered + skip.faint + skip.tooSmall + skip.offscreen + rows.length, skip },
     selfCheck,
     fonts: {
-      loadedFaces: faces.length, faces: faces.slice(0, 8),
+      loadedFaces: faces.length, faces: faces.slice(0, 12),
+      facesLoaded: faces.filter(f => f.endsWith(' loaded')).length,
+      designFetched: fetched, control,
       monoStack, monoResolves: resolves(monoStack),
       sansStack, sansResolves: resolves(sansStack),
+      displayStack: cs('--display'), displayResolves: resolves(cs('--display')),
       titleResolves: resolves(getComputedStyle(document.querySelector('.title') || document.body).fontFamily),
     },
     type: {
@@ -395,6 +739,7 @@
         worst: scored.slice().sort((a, b) => a.cr - b.cr).slice(0, 5).map(x => `${x.el}:${x.txt}=${x.cr}`) },
     },
     panels: { count: boxes.length, coveragePct: +boxArea.toFixed(2), top: boxes.slice(0, 8) },
+    fit,
     authoredScale: {
       fontSize: Object.entries(authored.fontSize).map(([v, sel]) => ({ v, n: sel.length, e: sel.slice(0, 2) }))
         .sort((a, b) => parseFloat(b.v) - parseFloat(a.v)),

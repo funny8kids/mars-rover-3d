@@ -1,8 +1,48 @@
+/* ===== FONTS:START ===== 由 tools/build_fonts.py 生成，不要手改这一段 ===== */
+/* 清单 = 仓库里真的出现的字符；unicode-range 只声明子集真有的码位，缺字按 CSS 规则退回系统字体
+   （缺的符号 63 个，见 tools/build_fonts.py 的 coverage 行）。字体许可见 src/fonts/LICENSES.md。 */
+@font-face{
+  font-family:'JetBrains Mono';
+  font-style:normal;
+  font-weight:400 700;
+  src:url(fonts/jetbrains-mono-400-700.woff2) format("woff2");
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face{
+  font-family:'IBM Plex Sans';
+  font-style:normal;
+  font-weight:400 700;
+  src:url(fonts/ibm-plex-sans-400-700.woff2) format("woff2");
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face{
+  font-family:'Big Shoulders Display';
+  font-style:normal;
+  font-weight:600 800;
+  src:url(fonts/big-shoulders-600-800.woff2) format("woff2");
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face{
+  font-family:'Noto Sans SC';
+  font-style:normal;
+  font-weight:400 700;
+  src:url(fonts/noto-sans-sc-400-700.woff2) format("woff2");
+  unicode-range:U+3001-3002, U+300C-300D, U+4E00, U+4E09-4E0B, U+4E0D-4E0E, U+4E18, U+4E1A, U+4E24, U+4E2A, U+4E2D, U+4E3A-4E3B, U+4E4B, U+4E58, U+4E5F, U+4E66, U+4E86, U+4E8B-4E8C, U+4E8E, U+4E91-4E92, U+4E9B, U+4EA4, U+4EA7, U+4EAB, U+4EAE, U+4EBA, U+4EBF, U+4ECB, U+4ECE, U+4ED6, U+4EE3-4EE5, U+4EF6, U+4EFB, U+4F1A, U+4F20, U+4F24, U+4F4D-4F4F, U+4F53, U+4F5C, U+4F60, U+4F8B, U+4F9D, U+4FDD, U+4FE1, U+4FEE, U+5012, U+5019, U+503E, U+504F, U+505C, U+50A8, U+50CF, U+5148-5149, U+5165, U+5168, U+516C-516D, U+5173, U+5176, U+518D, U+5199, U+51B3, U+51C0, U+51C6, U+51E0, U+51FA-51FB, U+5206-5207, U+5217, U+522B, U+522E, U+5230, U+5236, U+5239, U+5242, U+524D, U+5256, U+529B, U+52A0-52A1, U+52A8-52A9, U+5316, U+533A, U+5341, U+5347-5348, U+534A, U+5355, U+5361, U+5371, U+5373, U+5382, U+538B, U+53C2, U+53CD, U+53D1, U+53D6, U+53D8, U+53E3, U+53E6, U+53EA-53EB, U+53EF-53F0, U+53F7, U+5404, U+5408, U+540C-540E, U+5411, U+542F, U+5439, U+547C, U+548C, U+552F, U+55B7, U+5668, U+56DB, U+56DE, U+56F0, U+56FE, U+5706, U+5708, U+571F, U+5728, U+5730, U+573A, U+574F, U+5751, U+5757, U+576A, U+5782, U+578B, U+57A3, U+57CB, U+57FA, U+5835, U+5854, U+5883, U+58C1, U+5904, U+5907, U+590D, U+5916, U+591C, U+5927, U+5929-592A, U+592E, U+5931, U+5934, U+5939, U+5947, U+5957, U+597D, U+5982, U+59CB, U+5B50, U+5B57-5B58, U+5B64, U+5B66, U+5B83, U+5B89, U+5B8C, U+5B9A, U+5B9E, U+5BA2, U+5BA4, U+5BB6, U+5BC6, U+5BFC, U+5C01, U+5C04, U+5C06, U+5C14, U+5C18, U+5C31, U+5C3D, U+5C42, U+5C4F, U+5C71, U+5C9B, U+5CA9, U+5DE1, U+5DE5, U+5DEE, U+5DF1-5DF2, U+5DF4, U+5E08, U+5E27, U+5E38, U+5E45, U+5E72-5E74, U+5E76, U+5E7F, U+5E8F, U+5E93-5E94, U+5EA6-5EA7, U+5ECA, U+5EF6, U+5EFA, U+5F00, U+5F0F, U+5F39, U+5F52-5F53, U+5F55, U+5F62, U+5F69, U+5F71, U+5F85, U+5F97, U+5FC3, U+5FD7, U+5FEB, U+6001, U+6027, U+603B, U+6062, U+611F, U+613F, U+6210-6211, U+6216, U+622A, U+623F-6240, U+624B, U+624D, U+6253, U+626B, U+627E, U+628A, U+62A5, U+62AC, U+62B5, U+62C9, U+62CD, U+62D6, U+62DF, U+62E9, U+6301, U+6307, U+6309, U+6362, U+636E, U+6389, U+6392, U+63A2, U+63A5, U+63A8, U+6478, U+649E, U+652F, U+6536, U+6539, U+6548, U+6563, U+6570, U+6574, U+6587, U+6599, U+65AD, U+65B0, U+65B9, U+65C1, U+65CB, U+65E0, U+65E5, U+65E7, U+65E9, U+65F6, U+660E, U+661F, U+662F, U+663E, U+6655, U+665A, U+666F, U+6674, U+6676, U+6682, U+6696, U+66B4, U+66FF-6700, U+6708-6709, U+6717, U+672A, U+672C, U+672F, U+673A, U+6761, U+6765, U+677F, U+679A, U+67B6, U+67D3, U+67E5, U+6807, U+6821, U+6837, U+6839, U+683C, U+6846, U+684C, U+6863, U+6869, U+68C0, U+6905, U+690D, U+692D, U+6984, U+699C, U+69FD, U+6A21, U+6A2A, U+6A44, U+6B21-6B22, U+6B63-6B64, U+6B7B, U+6B8B, U+6BB5, U+6BCF, U+6C14, U+6C47, U+6C61, U+6C89, U+6C99, U+6CA1, U+6CB3, U+6CBF, U+6CC4, U+6CD5, U+6CE2, U+6CE8, U+6D3B, U+6D41, U+6D4B, U+6D4F, U+6D6E, U+6D88, U+6DF1, U+6E29, U+6E2F, U+6E32, U+6E38, U+6ED1, U+6EDA, U+6EE1, U+6F02, U+6F0F, U+6F2B, U+704C, U+706B, U+706F, U+70B9, U+70F7, U+710A, U+7126, U+7136, U+7167, U+71C3, U+71E5, U+722C, U+7247-7248, U+7269, U+7279, U+72B6, U+72EC, U+7387, U+73AF, U+73BB, U+7403, U+7483, U+751F, U+7528, U+7532, U+7535, U+753B, U+7545, U+7559, U+75A4, U+767D, U+7684, U+76D0, U+76D6, U+76D8, U+76EE, U+76F4, U+770B, U+771F, U+7740, U+77F3, U+77FF, U+7814, U+7845, U+789F, U+78B0, U+793C, U+7968, U+7981, U+79BB, U+79C0, U+79D1-79D2, U+79EF, U+79FB, U+7A0B, U+7A20, U+7A33, U+7A79-7A7A, U+7A7F, U+7A97, U+7ACB, U+7AD9, U+7AEF, U+7B14, U+7B3C, U+7B49, U+7B52, U+7B77, U+7BA1, U+7BAD, U+7C92, U+7D27, U+7EA2, U+7EA6-7EA7, U+7EBF, U+7EC4, U+7EC8, U+7ED5, U+7EDC, U+7EE7, U+7EEA, U+7EED, U+7EFF, U+7F18, U+7F1D, U+7F50-7F51, U+7FA4, U+7FFB, U+800C, U+8017, U+8054, U+80FD, U+810F, U+8131, U+81EA, U+81F3, U+822A, U+8230-8231, U+8237, U+8239, U+8272, U+827A, U+8350, U+83DC, U+8428, U+843D, U+8482, U+8499, U+85CF, U+86CB, U+884C, U+8865, U+88AB, U+88AD, U+88C5, U+8981, U+8986, U+89C1-89C2, U+89C6, U+89C8, U+89D2, U+89E3, U+89E6, U+8A00, U+8B66, U+8BA1, U+8BAF-8BB0, U+8BBE, U+8BC1, U+8BDD, U+8BE5, U+8BED, U+8BF4, U+8BF7, U+8BFB, U+8C61, U+8D25-8D28, U+8D2F, U+8D44, U+8D4F, U+8D5B, U+8D6B, U+8D70, U+8D77, U+8D85, U+8D8A, U+8DB3, U+8DC3, U+8DD1, U+8DDD, U+8DDF, U+8DEF, U+8EAB, U+8F66, U+8F68, U+8F6C, U+8F6E, U+8F7B, U+8F7D, U+8F86, U+8FB9, U+8FBE, U+8FC1, U+8FC7, U+8FCE, U+8FD0-8FD1, U+8FD4, U+8FD9, U+8FDB-8FDC, U+8FDE, U+8FEB, U+9000-9002, U+9009, U+900F, U+901A, U+901F, U+903C, U+9047, U+9053, U+90A3, U+90E8, U+90FD, U+914D, U+9178, U+91C7, U+91CC-91CF, U+949F, U+94A2, U+94F6, U+94FA, U+94FE, U+9501, U+9508, U+952E, U+957F, U+95E8, U+95ED-95EE, U+95F4, U+95F8, U+9600, U+9633-9635, U+964D, U+9668-9669, U+9690, U+96C6, U+96F6, U+96FE, U+9700, U+9732, U+9759, U+9760, U+9762, U+97F3, U+9875-9876, U+9884, U+9897-9898, U+98CE, U+98DE, U+9A6C, U+9A76, U+9A7B, U+9A7E, U+9A8C, U+9AB8, U+9AD8, U+9ECE, U+9F13, U+FF08-FF09, U+FF0B-FF0C, U+FF1A;
+}
+/* ===== FONTS:END ===== */
 :root{
   --amber:#ffb347; --amber2:#ff7a1a; --cyan:#7fd4ff; --red:#ff4436;
   --panel:rgba(8,10,16,.62); --line:rgba(255,150,60,.28);
-  --mono:"Consolas","JetBrains Mono",ui-monospace,monospace;
-  --sans:"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  /* Three shipped faces, one per role: JetBrains Mono is the instrument readout, IBM Plex Sans +
+     Noto Sans SC are the voice, Big Shoulders Display is the pad signage. The OS names stay at the
+     tail of each stack only as a fallback if a file fails to load — before this, those names were
+     the *head* of the stack, and on a Linux box every one of them resolved to DejaVu / system Noto,
+     so the interface had no typeface of its own (docs/FRONTEND_BRUNO_SIMON_GAP.md §1).
+     CJK order matters: the SC subset's unicode-range lists only the hanzi it actually contains, so a
+     character outside the subset skips Noto and lands on PingFang/YaHei instead of turning into tofu. */
+  --mono:"JetBrains Mono","Consolas",ui-monospace,monospace;
+  --sans:"IBM Plex Sans","Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --display:"Big Shoulders Display","IBM Plex Sans","Noto Sans SC",sans-serif;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{width:100%;height:100%;overflow:hidden;background:#05040a;font-family:var(--sans);color:#e8e2d6}
@@ -16,7 +56,7 @@ button{font-family:var(--sans);cursor:pointer}
 .loader-inner{text-align:center;animation:fadeUp 1.2s ease both}
 .logo-glyph{font-size:64px;color:var(--amber);text-shadow:0 0 40px rgba(255,120,26,.8);animation:spinSlow 9s linear infinite}
 @keyframes spinSlow{to{transform:rotateZ(360deg)}}
-.title{font-size:clamp(34px,6vw,64px);letter-spacing:.42em;margin:14px 0 4px;font-weight:800;
+.title{font-family:var(--display);font-size:clamp(34px,6vw,64px);letter-spacing:.42em;margin:14px 0 4px;font-weight:800;
   background:linear-gradient(180deg,#fff3e0,#ff9a3c);-webkit-background-clip:text;background-clip:text;color:transparent}
 .subtitle{letter-spacing:.35em;font-size:12px;color:#c98d5a;margin-bottom:38px}
 .load-track{width:min(420px,72vw);height:2px;background:rgba(255,255,255,.12);margin:0 auto}
@@ -27,7 +67,7 @@ button{font-family:var(--sans);cursor:pointer}
 
 /* ---------- menu ---------- */
 .menu-inner{text-align:center;padding:24px}
-.menu-title{font-size:20px;letter-spacing:.5em;color:var(--amber);margin-bottom:26px;font-weight:600}
+.menu-title{font-family:var(--display);font-size:20px;letter-spacing:.5em;color:var(--amber);margin-bottom:26px;font-weight:600}
 .quality-grid{display:grid;grid-template-columns:repeat(2,minmax(150px,200px));gap:14px;justify-content:center}
 @media(max-width:640px){.quality-grid{grid-template-columns:1fr}}
 .q-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 10px;color:#dcd4c4;
@@ -76,7 +116,11 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 #info-fact{font-size:12px;color:#b6ab99;margin-top:8px;line-height:1.6}
 #info-action{margin-top:10px;font-size:12px;color:var(--amber);letter-spacing:.1em}
 #speedo{position:absolute;right:22px;bottom:18px;text-align:right}
-#speed-val{font-family:var(--mono);font-size:52px;font-weight:700;color:#fff;text-shadow:0 0 22px rgba(255,140,40,.55);line-height:1}
+/* JetBrains Mono 700 的固有行盒是 1.327 em（tools/lh-sweep-probe.js 实测：52 px 字号下
+   scrollHeight 从 1 的 60 px 一路涨到 69 px 就饱和，box 要到 line-height 1.3 才追上它）。
+   所以 `line-height:1` 不是紧凑而是溢出：多出的墨量压到下面的 #speed-unit（§2c census 抓到
+   31.2×8.0 px 重叠）。取 1.35 = 固有行盒之上留余量，别再往回调。 */
+#speed-val{font-family:var(--mono);font-size:52px;font-weight:700;color:#fff;text-shadow:0 0 22px rgba(255,140,40,.55);line-height:1.35}
 #speed-unit{font-family:var(--mono);font-size:11px;letter-spacing:.35em;color:#a08b6e}
 /* rover battery + base grid restoration */
 #power-hud{position:absolute;right:22px;bottom:104px;width:216px;text-align:right}
@@ -101,7 +145,13 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 .film-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#7d5530,#d8a268);box-shadow:0 0 9px rgba(216,162,104,.5);transition:width .3s linear}
 #film-row.warn #film-array-fill{background:linear-gradient(90deg,#c9702a,#ffc17a);box-shadow:0 0 12px rgba(255,170,80,.8)}
 #film-row.lancing .film-bar i{background:linear-gradient(90deg,#2f9fb5,#8ff0ff);box-shadow:0 0 12px rgba(110,230,255,.7)}
-#topbar{position:absolute;top:14px;right:18px;display:flex;gap:14px;font-family:var(--mono);font-size:11px;color:#8a8478}
+/* The pill is fixed to the viewport corner (it has to show in the menu as well as the HUD), so the
+   status row can't just share a flex line with it — it has to stop where the pill starts. 74 px =
+   the pill's 12 px inset + its widest locale rendering ("中文" ≈ 49 px) + a 13 px gap. The constant
+   is not trusted: tools/hud-audit-probe.js §2c tests every pair of on-screen strings for a real
+   overlap, and this row was its first catch — before the offset the pill sat on "FPS" of
+   「画质 标准 · 已降档 · 26 FPS」 and ate it. */
+#topbar{position:absolute;top:14px;right:74px;display:flex;gap:14px;font-family:var(--mono);font-size:11px;color:#8a8478}
 #toast{position:absolute;top:64px;left:50%;transform:translateX(-50%);background:rgba(10,8,6,.8);border:1px solid var(--line);
   color:#ffd9a0;padding:10px 26px;border-radius:999px;letter-spacing:.15em;font-size:14px;opacity:0;transition:.4s;pointer-events:none!important;
   /* a nowrap pill for a long mission line grows wide enough to sit on top of the task log */
@@ -158,7 +208,7 @@ body.launching #objective-arrow{opacity:0!important}
 .tel-cell:last-child{border-right:0}
 .tel-cap{display:flex;justify-content:space-between;align-items:baseline;gap:10px;white-space:nowrap;
   font-family:var(--mono);font-size:8.5px;letter-spacing:.2em;color:#8a7a63;margin-bottom:6px}
-#tel-met{font-family:var(--mono);font-size:25px;font-weight:700;line-height:1;color:#fff;
+#tel-met{font-family:var(--mono);font-size:25px;font-weight:700;line-height:1.35;color:#fff;
   font-variant-numeric:tabular-nums;text-shadow:0 0 22px rgba(255,150,50,.55)}
 #tel-phase{font-size:11px;letter-spacing:.26em;color:var(--amber);margin-top:5px;white-space:nowrap}
 .tel-ramp{height:2px;width:100%;margin-top:8px;border-radius:2px;overflow:hidden;background:rgba(255,255,255,.09)}

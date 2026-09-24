@@ -35,6 +35,9 @@ node tools/cdp-drive-test.mjs <url> <outDir> [port] [deck|drift|crater|climb-out
                                                                    # pitch / roll / onFloor / grounded / trauma，并按状态条件退出而非按帧数
 node tools/cdp-audio-audit.mjs <url> [port]                        # 读**已渲染**的音频：ctx.currentTime 是否推进、AnalyserNode 电平、
                                                                    # 引擎增益随速、风暴主低通、发射轰鸣峰值（需 `--autoplay-policy=no-user-gesture-required`）
+# 页面内表达式类探针（不抓帧，只读代码真正写进去的数）也放 tools/，用 cdp-run 跑：
+node tools/cdp-run.mjs <url|-> tools/storm-aniso-probe.js          # 沙暴「随风能见度各向异性」：固定视点只转风向，读 scene.fog.density
+                                                                   # 第二个参数给 `-` 表示复用已开的页面；一次约 3 s（整条读数不需要渲染帧）
 ```
 
 > 抓帧脚本的两个坑（都踩过）：
@@ -128,6 +131,7 @@ node tools/cdp-audio-audit.mjs <url> [port]                        # 读**已渲
 | ↑ 补跑（排序 / 跨刷新持久化 / 关闭按钮） | audit17 用修正后的退出条件重跑同一段：`POLL race-gate-run => OK in 2.6s`，**2.2 s 完赛**，`rsb_board` 变成 **2 行**且新成绩排在前面（`00:02.2` 在 `00:05.0` 之上）——上一轮那行是**另一次进程、刷新之后**留下的，所以这同时证明了排序与 localStorage 持久化；点 `#board-close` 后弹层重新带上 `hidden`（`POLL leaderboard-close => OK`）。audit16 里没关弹层，导致它后续的发射帧被居中的弹层挡住，所以**发射高潮的构图以 audit15 的帧为准** |
 | 音频链路 | `ctx.state = running`，`audio-resume` 0.0 s 命中；静止时主低通 20000 Hz、电平 0.440、引擎增益 0.05 |
 | 沙尘暴闷音 | 进风暴区主低通 20000 → **10732 Hz**（电平反而升到 0.603，闷而不哑），驶出后回到 19105 Hz。此时画面 `stormF` 读数只有 0.11——那是**全局预报项**，而音频/粒子用的是 `max(全局预报, 局部风暴区项 × 0.85)`（`src/main.js`），所以车在风暴区里就已经闷了；`i_storm_muffled.png` 可见体积雾 + 屏幕脏污 |
+| 沙暴 · 随风能见度各向异性 | `tools/storm-aniso-probe.js`：**视点固定、只转风向**（0°/45°/90°/135°），读的是 `Environment.update()` 当帧真写进 `scene.fog.density` 的数（`src/world/environment.js` 里沿视线 40/110/220 m 采样的那一支），基线是同一次调用传 `viewDir=null`，也就是「没有这段代码」的世界。埋进沙暴里：顺风的轴线方向比横风方向清楚 **182 m vs 120 m**（半程可见距离 D50），最负的三行永远落在风的轴线上、随风一起转（旋转组 `corr` 0.984..0.992）；站在锋面前方：视线碰不到沙墙的那些行**恰好读到 0.0**（那里 coverage 结构为 0，不是噪声小），碰到的三行读到 +7..+10 → **350 m vs 595 m**。八组全绿。判据是 `proj<0`（尘柱在上风侧）＋`rangeRatio<0.8`＋旋转组相关＋前方组的结构零，**不再**用「信噪倍数」：埋在板内横风行本来就要读到 fingers 梯度，那个比值量的是噪声相位而不是条款（第一版就是这样，钉住相位后它在 buried/0 以 5.8× 变红，而同一次跑的 `corr` 是 0.992）。**闸门见过红**：文件头那条 sed 把视线采样删掉，8/8 判负、每一行 0.0 |
 | 发射链 | `idle → countdown → ignition → ascent → fly`，`launchY` 依次读到 100.5 → 1765.8 → **4902.6 m**，烟柱与箭体分别在 `k/g/h/j` 四帧入画 |
 | 移动端触屏 | 触摸窗口内 `touchUiVisible: true`、`interButton: true`，自动降到 `quality: low`，`bootMs 16667`；点「油门」车速到 6.5 m/s（fps 27.9），点「交互」10.9 s 修好泄漏，toast 换行为「▸ 新任务：采集 6 块火星样本」；`t0_touch_hud.png` 确认速度表已移到右上、不与 2×2 按钮网格重叠 |
 

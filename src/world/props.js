@@ -938,12 +938,19 @@ export async function buildBase(scene, quality) {
       // 5.9 m of arc apiece, narrower than any hangar in the pack, so no matter how each disc was
       // drawn they had to overlap. Eight slots on the building line get 13.4 m of arc, and each one
       // is turned long-side to the square so the shallow dimension is the one that runs out at the
-      // street. The gate channel stays open so the approach still leads in.
+      // street. Two slots stay empty on purpose: 225° is the watch deck's pad, and 270° is the arrival
+      // avenue, i.e. the bearing straight back to the spawn. The plaza's satellite dish used to stand
+      // there, and a per-pixel diff of the spawn frame rendered with the headlights on and off
+      // (measured 2026-09-24) put all 43 of that frame's blown pixels on that one reflector: its
+      // surface is at (0, 1.77, -22.1), 3.9 m in front of the spawn and 2.1 m from each lamp, so the
+      // game opened on a white blade standing in the gateway the Spaceport portal was built to frame.
+      // The lamp ring below has always excluded the south approach; its comment claims the exclusion
+      // is shared with the structures, and that half was false. The dish now stands with the rest of
+      // its function in the comms farm.
       const FRONT = 18.5;                       // the hub block's building line
       const RING = [
         { n: 'hangar_roundA', k: 0.5, a: 45 },  { n: 'hangar_largeA', k: 0.62, a: 90 },
         { n: 'machine_generatorLarge', k: 0.9, a: 135 }, { n: 'gantry_service', g: 1.0, a: 180, gate: true },
-        { n: 'satelliteDish', k: 0.9, a: 270 },
         { n: 'machine_wireless', k: 1.1, a: 315 }, { n: 'structure_detailed', k: 0.8, a: 0 },
       ];
       for (const slot of RING) {
@@ -1436,6 +1443,12 @@ export async function buildBase(scene, quality) {
     kSolid('satelliteDish_detailed', cx2 - 1, cz2 - 1, 0.15, 1.6, 'main-ear');
     kSolid('satelliteDish', cx2 + 10, cz2 - 9, 1.2, 0.85, 'dish-b');
     kSolid('satelliteDish', cx2 + 2, cz2 + 13, 2.9, 0.7, 'dish-c');
+    // The plaza's fourth ear, moved out of the arrival avenue (see the hub ring). It stands on the
+    // farm's west flank, still inside the pad — 15.8 m from the zone centre against its 20 m radius,
+    // so the graded footing under it covers the dish the way the other three are covered — and the
+    // collider table has its nearest neighbour, the array mast, 9.5 m away. It is turned to bear
+    // west-south-west, which is the one heading none of the other three ears holds.
+    kSolid('satelliteDish', cx2 - 15, cz2 - 5, 2.6, 0.9, 'dish-d');
     kSolid('machine_wireless', cx2 - 12, cz2 + 4, 0.5, 1.1, 'array-mast');
     portal('array-feed', cx2 + 17, cz2 - 3, 0.78, 0.9);   // array feed portal, clear of the dish rim
     kSolid('hangar_smallA', cx2 - 12, cz2 + 14, 2.4, 0.9, 'listening-post');

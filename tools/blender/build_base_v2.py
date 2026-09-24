@@ -3467,8 +3467,6 @@ def habitat_dome():
         return obase(name, tuple(c), su, sv, sd, Uv, Vv, m, par=par)
 
     DECK = 0.36                              # apron / equipment-pad top of cast
-    LAD_J = 1                                # walkway bay the caged ladder uses
-    lad_ang = math.pi / 30 + LAD_J / 10.0 * TAU
 
     # ------------------------------------------------------- cast ring footing
     # Both profile ends sit on the axis, so the lathe is a closed solid and the
@@ -3769,43 +3767,106 @@ def habitat_dome():
     A.append(ball("beacon", 0.085, (0, 0, 5.48), AMBER, par=root))
 
     # -------------------------------------------------- roof walkway + access
-    # The grating is carried on canted corbels bolted through the springing
-    # ring: a walkway hovering a metre above the footing would be a promise
-    # again. Bays at the porch throat and the ECLSS wall are left open, and
-    # the bay the ladder lands in gets a landing deck instead of a hole.
-    for j in range(10):
-        ang = math.pi / 30 + j / 10.0 * TAU
-        if min(abs((ang - a) % TAU) for a in (math.pi / 2, 3 * math.pi / 2)) \
-                < math.radians(20):
-            continue
-        u, t = tang(ang)
-        c = (3.90 * u[0], 3.90 * u[1], 1.445)
-        A.append(cpl("walk_pad%d" % j, c, 0.86, 0.62, 0.05, t, u, GRATE,
-                     par=root))
-        for q in (-1, 1):
-            for s2 in (-1, 1):
-                A.append(hexn("walk_tie%d_%d_%d" % (j, q, s2), 0.038, 0.06,
-                              (c[0] + q * 0.36 * t[0] + s2 * 0.26 * u[0],
-                               c[1] + q * 0.36 * t[1] + s2 * 0.26 * u[1], 1.455),
-                              MACH, rot=(0, 0, ang), par=root))
-        for s2 in (-1, 1):
-            A.append(cpl("walk_corbel%d_%d" % (j, s2 > 0),
-                         (c[0] + s2 * 0.32 * t[0], c[1] + s2 * 0.32 * t[1], 1.30),
-                         0.466, 0.10, 0.028,
-                         (0.858 * u[0], 0.858 * u[1], 0.514), t, ALU, par=root))
-            for q in (-1, 1):             # guard rail kinks at every bay
-                A.append(pbox("walk_post%d_%d" % (j, q > 0), 0.05, 0.05, 1.00,
-                              (4.10 * u[0] + q * 0.38 * t[0],
-                               4.10 * u[1] + q * 0.38 * t[1], 1.95), ALU,
+    # A guard rail that stops dead in mid-air is a promise again, so the
+    # walkway is authored as two continuous runs and the breaks are aimed at
+    # the two things actually in the way on this shell: the porch throat at
+    # 270 deg and the ECLSS louver wall at 0 deg. Every run end returns its
+    # rails into the drum on a stub, so the guard is never left open.
+    #
+    # The previous attempt failed twice over, and both failures were measured
+    # rather than seen. `abs((ang - a) % TAU) < radians(20)` is not an angular
+    # distance - the modulo turns -12 deg into 348 deg - so the skip never
+    # fired and all ten bays were built, including the ones that were supposed
+    # to clear the porch and the louver. And the bays were 0.86 m pads on a
+    # 2.45 m pitch: 1.59 m holes bridged by a 0.86 m rail stub that ended in
+    # thin air at both sides. What reads from the apron as "the walkway stops
+    # at the door" is that - ten stepping stones, not a walkway.
+    WALK_IN, WALK_OUT = 3.86, 4.58       # 0.72 m clear; springing ring outer 3.72
+    WALK_R = 0.5 * (WALK_IN + WALK_OUT)
+    RAIL_R = WALK_OUT - 0.06
+    DECK_TOP, DECK_T = 1.500, 0.055      # 150 mm above the shell's springing line
+    POST_H = 1.06                        # guard height, was 0.92
+    PITCH_ARC = 1.02                     # grating module, post to post
+    # Each run end is set by the thing it has to stand clear of, measured off
+    # the parts above - not by a symmetric gap that happens to miss them:
+    #   25 deg   - past wall_hatch (15 +/- 5.9 deg) and the louver plate (+/- 10)
+    #   346 deg  - 4 deg past the louver plate's other edge
+    #   249/291  - 1.4 deg past the porch roof's |x| 1.21 line and the tunnel
+    #              corner at 250.75/289.25, and past the struts at |x| 1.10
+    A_HATCH_OUT, A_PORCH0 = math.radians(25), math.radians(249)
+    A_PORCH1, A_HATCH_IN = math.radians(291), math.radians(346)
+    RUNS = [(A_HATCH_OUT, A_PORCH0), (A_PORCH1, A_HATCH_IN)]
+    LAD_K = 0                            # run 0's first panel is the ladder opening
+
+    def arc_pts(a0, a1, R, z, n):
+        return [(R * math.cos(a0 + (a1 - a0) * k / n),
+                 R * math.sin(a0 + (a1 - a0) * k / n), z) for k in range(n + 1)]
+
+    lad_ang = None
+    for ri, (a0, a1) in enumerate(RUNS):
+        # ceil, not round: a run wanting 16.3 modules gets 17 and lands under a
+        # metre per panel. Rounding down would stretch the pitch the posts stand on.
+        n = max(2, int(math.ceil((a1 - a0) * WALK_R / PITCH_ARC)))
+        step = (a1 - a0) / n
+        chord = 2 * WALK_R * math.sin(step / 2.0)
+        for k in range(n):
+            if ri == 0 and k == LAD_K:
+                lad_ang = a0 + (k + 0.5) * step   # the ship's ladder rises here
+                continue
+            ang = a0 + (k + 0.5) * step
+            u, t = tang(ang)
+            A.append(cpl("walk_pad%d_%d" % (ri, k),
+                         (WALK_R * u[0], WALK_R * u[1], DECK_TOP - DECK_T / 2),
+                         chord - 0.02, WALK_OUT - WALK_IN, DECK_T, t, u, GRATE,
+                         par=root))
+            A.append(cpl("walk_toe%d_%d" % (ri, k),
+                         ((WALK_OUT - 0.01) * u[0], (WALK_OUT - 0.01) * u[1],
+                          DECK_TOP + 0.06), chord - 0.02, 0.12, 0.02, t,
+                         (0, 0, 1), ALU, par=root))
+        for k in range(n + 1):
+            ang = a0 + k * step
+            u, t = tang(ang)
+            # Canted corbel: bolted through the drum at r 3.66 / z 0.96, hooked
+            # under the deck at r 4.50 / z 1.49. It passes below the springing
+            # ring (outer 3.72, z 1.375..1.545) rather than through it, which is
+            # the only place on this shell a bracket can be both grounded and
+            # clear of a pressure joint.
+            A.append(cpl("walk_corbel%d_%d" % (ri, k),
+                         (4.08 * u[0], 4.08 * u[1], 1.225), 0.99, 0.10, 0.028,
+                         (0.845 * u[0], 0.845 * u[1], 0.535), t, ALU, par=root))
+            A.append(hexn("walk_bolt%d_%d" % (ri, k), 0.040, 0.055,
+                          (3.690 * u[0], 3.690 * u[1], 0.978), MACH,
+                          rot=(math.pi / 2, 0, ang), par=root))
+            A.append(hexn("walk_nut%d_%d" % (ri, k), 0.042, 0.062,
+                          (4.430 * u[0], 4.430 * u[1], 1.442), MACH,
+                          rot=(0, 0, ang), par=root))
+            if 0 < k < n:
+                A.append(pbox("walk_post%d_%d" % (ri, k), 0.052, 0.052, POST_H,
+                              (RAIL_R * u[0], RAIL_R * u[1], DECK_TOP + POST_H / 2),
+                              ALU, rot=(0, 0, ang), par=root))
+            else:
+                # Run end: a newel instead of a spaced post, and both rails
+                # turned back into the shell. This is what the old version
+                # never had - the reason the walkway read as truncated.
+                A.append(pbox("walk_newel%d_%d" % (ri, k), 0.075, 0.075,
+                              POST_H + 0.08,
+                              (RAIL_R * u[0], RAIL_R * u[1],
+                               DECK_TOP + 0.5 * (POST_H + 0.08)), ALU,
                               rot=(0, 0, ang), par=root))
-        for zz, rr in ((2.42, 0.028), (1.95, 0.024)):
-            A.append(rod("walk_rail%d_%g" % (j, zz), rr, 0.86,
-                         (4.12 * u[0], 4.12 * u[1], zz), MACH,
-                         rot=(math.pi / 2, 0, ang), verts=8, br=0.0, par=root))
-        A.append(cpl("walk_toe%d" % j, (4.12 * u[0], 4.12 * u[1], 1.52), 0.86,
-                     0.12, 0.02, t, (0, 0, 1), ALU, par=root))
-    # the ship's ladder rises through the landing: its rails run past the deck
-    # as grab bars, and no rung falls inside the deck thickness.
+                for ti, (zz, rr) in enumerate(((DECK_TOP + POST_H, 0.028),
+                                               (DECK_TOP + 0.55, 0.022))):
+                    A.append(tube("walk_return%d_%d_%d" % (ri, k, ti),
+                                  [(RAIL_R * u[0], RAIL_R * u[1], zz),
+                                   (3.72 * u[0], 3.72 * u[1], zz)], rr, MACH,
+                                  res=1, par=root))
+        for ti, (zz, rr) in enumerate(((DECK_TOP + POST_H, 0.028),
+                                       (DECK_TOP + 0.55, 0.022))):
+            A.append(tube("walk_rail%d_%d" % (ri, ti),
+                          arc_pts(a0, a1, RAIL_R, zz, 2 * n), rr, MACH, res=1,
+                          par=root))
+    # The ladder rises through a panel that is genuinely not there, and its
+    # rails run 0.55 m past the deck line as grab bars; no rung falls inside
+    # the deck thickness.
     A += ring_ladder("shell_ladder", DR + 0.06, lad_ang, 0.30, 2.05, ALU, MACH,
                      standoff=0.14, ties=(0.60, 1.00, 1.35), par=root)
 

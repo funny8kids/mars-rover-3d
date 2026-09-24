@@ -4256,6 +4256,25 @@ window.__RSB = {
     if (at) camera.position.set(...at);
     if (look) camera.lookAt(...look);
     post.composer.render();
+    // Which key actually lit the frame, read off the light itself rather than from the argument list.
+    // This was missing, and it cost an afternoon: the plaza's night `bin0` was filed as a regression
+    // from 1 ‰ (recorded in `8d610a2`) to 23 ‰, and the two numbers are not the same sky. `shot()`
+    // parks a directional light at [-150, 120, 95] aimed at the origin unless handed null, so every
+    // reading taken through the default argument is a *sunlit* frame — and the vantage under test was
+    // chosen for night. Measured tonight at one vantage with one set of bytes: real moon 22 ‰, forced
+    // key 6 ‰, and the un-graded render underneath both 496 ‰. So the 1 ‰ baseline was never the
+    // night the player sees, and the "23 ‰ of dead black" it was being compared against is sand at
+    // luminance 28–31 with RGB [41.7, 28.4, 23.9] — dark and warm and lit by a gate flood 1.4 m away,
+    // not black. A histogram row that cannot say which lamp produced it will keep producing findings
+    // like that, so the ruler now ships its own lighting conditions with every frame.
+    let key = null;
+    scene.traverse(o => { if (!key && o.isDirectionalLight) key = o; });
+    const keyState = key ? {
+      forced: !!sunAt,
+      pos: [+key.position.x.toFixed(0), +key.position.y.toFixed(0), +key.position.z.toFixed(0)],
+      tgt: [+key.target.position.x.toFixed(0), +key.target.position.y.toFixed(0), +key.target.position.z.toFixed(0)],
+      i: +key.intensity.toFixed(2),
+    } : null;
     const cv = renderer.domElement;
     const c2 = document.createElement('canvas');
     c2.width = 160; c2.height = 100;
@@ -4348,7 +4367,7 @@ window.__RSB = {
     // strongest version of it (1.82). A capture that manufactures a weave cannot be used to clear a
     // shader of one, so the QA rig writes PNG and the check measures the render.
     const r = await fetch('http://127.0.0.1:8123/' + name, { method: 'POST', body: cv.toDataURL('image/png') });
-    return { name, status: r.status, bins: bins.map(b => Math.round(b / 1600 * 100)), clip, burn: +(burn / (q.length / 4) * 100).toFixed(1), burnPct, cast };
+    return { name, status: r.status, key: keyState, bins: bins.map(b => Math.round(b / 1600 * 100)), clip, burn: +(burn / (q.length / 4) * 100).toFixed(1), burnPct, cast };
   },
   // what is actually in front of the lens — finds blown-out emitters by screen position
   nearby: (r = 60) => {

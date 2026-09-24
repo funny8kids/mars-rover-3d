@@ -95,6 +95,18 @@ Google 的 css2 对这三个拉丁族**本来就回同一个可变 woff2**——
 **判负标准**：hud 档 `type.min ≥ 12` 且 `type.under11.pct === 0`；`ref-site-font-probe` 里我们这侧的
 `fontSizes[0] ≥ 12px`（现在 8.5px）。
 
+**落地（2026-09-24）**：8.5 / 9 / 9.5 / 10 / 11 px 那一批全部提到 ≥ 12 px，层级改由字重
+（600/700/800）与色阶承担。hud 档屏上 16 个节点的阶梯变成 `{12:8, 13:5, 15:2, 52:1}`，
+`type.min 12`、`under11.pct 0`；规格侧 `fontSizes[0] = 12px`，而 authored 档数顺手从 18 档收到
+**9 档**（`12/13/15/18/20/22/25/52/64`，参考站 13 档）—— 之前那 18 档里有 9 档是 8.5–11 px 的碎级。为了让**菜单那一屏**（display 层住的地方）
+也被同一把尺子量到，探针多了一个 phase：`window.__AUDSTATE='menu'`（`audstate=menu` 同义），
+菜单档 31 个节点 `{12:27, 18:1, 20:1, 22:2}`，同样 `min 12`。对比度没有因为字重上升而失手：八个状态
+（菜单 zh/en + hud 六态）全部 `contrast.below45 = 0`，最暗的一行是 `.q-card i` —— 菜单 en 面 `4.72`、
+zh 面 `4.92`，hud 档 `min 5.5`（红线 4.5）。
+
+**代价要说出来**：屏上跨度从 7.5× 缩到 4.3×（12 → 52），12 与 13 两档在屏幕上几乎没有差别 ——
+这正是 §5（用色阶代替发光）与 §7（补一个真正的正文层）要填的空位，而不是把字号再压回去的理由。
+
 ---
 
 ## 3 字距用在了错的那一端
@@ -115,6 +127,13 @@ Google 的 css2 对这三个拉丁族**本来就回同一个可变 woff2**——
 
 **判负标准**：hud 档 `tracked15.pct` 从 43.8 % 降到 ≤ 15 %，并且 `sizeAndTracking` 配对表里
 不再出现「字号 < 14 px 且字距 ≥ 0.15em」的组合。
+
+**落地（2026-09-24）**：≤14 px 的文本字距全部压回 ≤ .06em，`.15–.5em` 那一档只留在 ≥18 px 的标题与按钮上。
+hud 档 `tracked15.pct` 43.8 % → **0 %**（六个 HUD 状态各测一遍，全部 0）；规格侧配对表里
+「<14 px 且 ≥.15em」的组合为 0。菜单档 12.9 %（4/31），四条全部 ≥18 px：`.menu-title` 20/.5em、
+`.q-card b` 22/.2em ×2、`.start-btn` 18/.4em；排行榜打开时 hud 档出现唯一一条 `#board-pop h3`
+18 px/.2em（4.2 %），同样在 display 那一侧。为了让「谁在名单上」可核对，探针的 `tracked15` 现在带
+`list`（`元素:文本=字号/字距`）——一个只有计数的名单会被下一个读它的人随口解释掉。
 
 ---
 
@@ -212,6 +231,35 @@ dolly 距离从 11.1 m 一路退到 19.6 m 再回 16.2 m。全程 fps 60、`resc
 
 **判负标准**：hud 档 `panels.coveragePct ≤ 5` 且 `textCoveragePct ≤ 5`，且 `panels.top` 里
 不再有同时 `bg && border && blur` 的 > 3 % 盒子。
+
+---
+
+## 8 真实点击抓到的两件 DOM 读数看不见的事
+
+【F】1 要求"UI 变更必须真实点击走一遍交互"，于是有了 `tools/cdp-type-click.mjs`：14 步走一遍
+菜单 → 启动 → HUD → 传送面板 → 跃迁 → 静音 → 拍照 → 计时赛 → 排行榜 → 关闭，每一步都是
+CDP `Input.dispatchMouseEvent` 打在元素自己的矩形中心上，且先过 `document.elementFromPoint` 命中测试。
+它抓到两件前面七节所有尺子都看不见的事：
+
+1. **`#lang-btn` 在菜单那一屏根本点不动。** 它是 `position:fixed; z-index:40`，而 `.overlay`（`#menu`）
+   是 `z-index:50` —— 命中测试在按钮自己的中心拿到的是 `#menu`。之前每一次语言切换测试都是绿的，
+   因为它们调的是 `element.click()`，而 `.click()` 不关心谁压在它上面。于是一个不认得汉字的人
+   在他唯一会停留的那一屏上，够不到唯一能自救的控件。修：`z-index:55`（越过 overlay，低于
+   一闪而过的 `.tp-flash`），并补一条 `#loader:not(.hidden)~#lang-btn{display:none}` —— 加载条还在
+   走的时候没有东西可翻译。真实点击复测：菜单档点一次 → 「选择渲染画质」变 "Choose render quality"、
+   按钮自己从 39.84 px 变 49.45 px（"EN" ↔ "中文"），再点一次回到 zh。
+2. **`kbd` 提到 12 px 之后，`#controls-hint` 那一排键帽全部悬出本行 2 px。** 菜单 phase 一开就报
+   `v.n = 10`（十条，每条一个 `.controls-hint` 子项）。行盒由这一行的字号决定（12 px → 18 px），
+   而键帽加上 1 px 边框 + 2 px 下边框是 19–20 px —— 把字号抬到地板上而不把行抬起来，正是
+   §2c 在 `#speed-val` 上已经栽过一次的那个错。修：`.controls-hint{line-height:1.75}`，复测 `v.n = 0`。
+
+顺带记两条关于尺子自己的：驱动脚本原本在命中测试失败时只往最终 SUMMARY 里塞一条记录就 `return`，
+一次走完看起来像"14 步都做了"——现在每步失败立刻打 `!!` 行，且探针回 `{fail}`（phase 没等到）
+或回一个没有 `type.min` 的对象时，那一步判红而不是判绿；`restoredAfterLocaleToggle` 原本硬比
+`=== 'EN'`，在故意停在 en 面的那一测里把"正确还原"报成 false，现在比的是本次运行开始前的那颗胶囊文本。
+
+**判负标准**：`node tools/cdp-type-click.mjs <qa_boot url> 9333` 末行 `STEPS 14 FAILED 0`，
+且每个带 `measure` 的状态都是 `min=12 h=0 v=0 collisions=0`、三个 control 全绿。
 
 ---
 

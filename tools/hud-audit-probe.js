@@ -60,9 +60,17 @@
   // loading screen (5 nodes, ladder 11/12/60/64), the next the driving HUD (16 nodes, 10…52).
   // `?audstate=hud` (default) and `?audstate=loader` name the screen, and `phase.got` below reports
   // what was actually up, so a mismatch fails loudly instead of reading as a change in the design.
-  const want = (location.search.match(/audstate=(\w+)/) || [, 'hud'])[1];
+  const want = window.__AUDSTATE || (location.search.match(/audstate=(\w+)/) || [, 'hud'])[1];
   const cls = id => document.getElementById(id)?.classList;
-  const wantUp = () => want === 'loader' ? !cls('loader')?.contains('hidden') : !!R.state?.started;
+  const shown = id => !!cls(id) && !cls(id).contains('hidden');
+  // `menu` is the third screen worth naming: it carries the display layer (`.title`, `.subtitle`,
+  // `.q-card`, `.start-btn`) and it is where the language pill has to work, so a census that only
+  // ever runs on the driving HUD leaves the widest-tracked, largest-type half of the interface
+  // unmeasured. `window.__AUDSTATE` exists because one browser page walks loader → menu → hud in a
+  // single session; the gate below still *waits* for the named screen and still reports what was up.
+  const wantUp = () => want === 'loader' ? shown('loader')
+    : want === 'menu' ? (shown('menu') && !R.state?.started)
+    : !!R.state?.started;
   const waitedAt = Date.now();
   while (!wantUp() && Date.now() - waitedAt < 60000) await new Promise(r => setTimeout(r, 250));
   const phase = { want, waitedMs: Date.now() - waitedAt, up: wantUp(),
@@ -570,6 +578,10 @@
   }).filter(Boolean);
   // The other locale, through the game's own button.
   const lb = document.getElementById('lang-btn');
+  // "restored" has to mean *back to where this run started*, not "the UI is in Chinese": the click
+  // driver measures the en screen on purpose, and against a hardcoded 'EN' that honest reading of a
+  // correctly-restored pill looked like a failed control.
+  const pillBefore = lb ? lb.textContent : null;
   let fitEn = null, enNote = 'no #lang-btn found';
   if (lb) {
     lb.click(); document.body.offsetHeight;
@@ -652,7 +664,7 @@
         mono: `${sens.mono[0]}px(设计) vs ${sens.mono[1]}px(降级)`,
         seesMetrics: sens.sans[0] !== sens.sans[1] || sens.mono[0] !== sens.mono[1] },
       realUiExtentDeltas: deltas, rowsDroppedBecauseTextMoved: moved,
-      restoredAfterLocaleToggle: lb ? document.getElementById('lang-btn').textContent === 'EN' : 'n/a',
+      restoredAfterLocaleToggle: lb ? document.getElementById('lang-btn').textContent === pillBefore : 'n/a',
     },
   };
   // ---- 3. 面板盒子：有多少画面被"容器"占住，而不是被世界占住 ------------------------------
@@ -732,7 +744,10 @@
       ladder, min: fsList[0], max: fsList[fsList.length - 1],
       ratioMaxMin: fsList.length ? +(fsList[fsList.length - 1] / fsList[0]).toFixed(1) : null,
       under11: { n: tiny.length, pct: +(tiny.length / Math.max(1, rows.length) * 100).toFixed(1) },
-      tracked15: { n: wide.length, pct: +(wide.length / Math.max(1, rows.length) * 100).toFixed(1) },
+      tracked15: { n: wide.length, pct: +(wide.length / Math.max(1, rows.length) * 100).toFixed(1),
+        // who is on the list, not just how many: a count without names gets "explained away" by
+        // whoever reads it next, and the explanation is the thing that needs checking.
+        list: wide.map(x => `${x.el}:${x.txt}=${x.fs}px/${x.lsEm}em`) },
       textCoveragePct: +textArea.toFixed(2),
       contrast: { below45: lowC.length, scored: scored.length, unscored: rows.length - scored.length,
         min: scored.length ? Math.min(...scored.map(x => x.cr)) : null,

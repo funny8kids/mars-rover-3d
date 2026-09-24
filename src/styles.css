@@ -52,17 +52,28 @@ html,body{width:100%;height:100%;overflow:hidden;background:#05040a;font-family:
 .hidden{display:none!important}
 button{font-family:var(--sans);cursor:pointer}
 
+/* ---------- type scale ----------
+   Two hard rules, both judged by tools/hud-audit-probe.js (hud pass: `type.min`, `type.under11`,
+   `type.tracked15`) and by tools/ref-site-font-probe.mjs, so they are not taste:
+   1. Nothing is authored under 12 px. The old 8.5/9/9.5/10 px tier was a 4×4 px glyph on a 1080p
+      screen — unreadable at driving distance, and the dim colours made it worse rather than better.
+      Hierarchy now comes from weight (600/700/800) and from the colour ramp, never from shrinking.
+   2. Wide tracking belongs to the display layer. ≤14 px text stays at ≤.06em; the .15–.5em band is
+      only for ≥18 px titles and buttons, where the extra advance is what makes the word legible
+      as a sign. A 10 px label at .25em is the worst of both: small ink, and so spaced out that the
+      eye reads it as separate letters. */
+
 /* ---------- loader ---------- */
 .loader-inner{text-align:center;animation:fadeUp 1.2s ease both}
 .logo-glyph{font-size:64px;color:var(--amber);text-shadow:0 0 40px rgba(255,120,26,.8);animation:spinSlow 9s linear infinite}
 @keyframes spinSlow{to{transform:rotateZ(360deg)}}
 .title{font-family:var(--display);font-size:clamp(34px,6vw,64px);letter-spacing:.42em;margin:14px 0 4px;font-weight:800;
   background:linear-gradient(180deg,#fff3e0,#ff9a3c);-webkit-background-clip:text;background-clip:text;color:transparent}
-.subtitle{letter-spacing:.35em;font-size:12px;color:#c98d5a;margin-bottom:38px}
+.subtitle{letter-spacing:.35em;font-size:18px;color:#c98d5a;margin-bottom:38px}
 .load-track{width:min(420px,72vw);height:2px;background:rgba(255,255,255,.12);margin:0 auto}
 .load-bar{height:100%;width:0%;background:linear-gradient(90deg,var(--amber2),var(--amber));
   box-shadow:0 0 16px rgba(255,150,50,.9);transition:width .35s ease}
-.load-text{margin-top:16px;font-family:var(--mono);font-size:12px;color:#8a8478;letter-spacing:.15em}
+.load-text{margin-top:16px;font-family:var(--mono);font-size:12px;color:#8a8478;letter-spacing:.06em}
 @keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
 
 /* ---------- menu ---------- */
@@ -73,33 +84,46 @@ button{font-family:var(--sans);cursor:pointer}
 .q-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 10px;color:#dcd4c4;
   display:flex;flex-direction:column;gap:6px;transition:.25s}
 .q-card b{font-size:22px;letter-spacing:.2em;color:var(--amber)}
-.q-card span{font-size:12px}.q-card i{font-style:normal;font-size:11px;color:#8a8478;font-family:var(--mono)}
+.q-card span{font-size:12px}.q-card i{font-style:normal;font-size:12px;color:#8a8478;font-family:var(--mono)}
 .q-card:hover{transform:translateY(-3px);border-color:var(--amber)}
 .q-card.sel{border-color:var(--amber);background:rgba(255,120,26,.14);box-shadow:0 0 24px rgba(255,120,26,.25)}
-.q-card.rec::after{content:var(--rec-label,"推荐");position:absolute;margin:-30px 0 0 88px;font-size:10px;background:var(--cyan);color:#04222e;
+.q-card.rec::after{content:var(--rec-label,"推荐");position:absolute;margin:-32px 0 0 88px;font-size:12px;background:var(--cyan);color:#04222e;
   border-radius:4px;padding:1px 6px;font-weight:700}
 /* the language switch sits in the corner of both the menu and the HUD, so it is positioned
-   against the viewport rather than inside either overlay */
-#lang-btn{position:fixed;top:10px;right:12px;z-index:40;font-family:var(--mono);font-size:11px;
-  letter-spacing:.12em;padding:6px 11px;border-radius:999px;cursor:pointer;
+   against the viewport rather than inside either overlay.
+   z-index has to clear `.overlay` (50), not just the HUD (30): the click driver
+   (tools/cdp-type-click.mjs) hit-tests with document.elementFromPoint and got `#menu` back at the
+   pill's own centre, i.e. the control was un-clickable on the very first screen — the only screen
+   where a visitor who does not read Chinese can pick Latin letters. Every earlier locale check
+   passed because it called .click() on the node, which does not care what is on top of it. */
+#lang-btn{position:fixed;top:10px;right:12px;z-index:55;font-family:var(--mono);font-size:12px;
+  letter-spacing:.06em;padding:6px 11px;border-radius:999px;cursor:pointer;
   background:rgba(24,20,17,.62);border:1px solid var(--line);color:#d9d0be}
+/* nothing to translate while the asset bar is still moving, and the pill would sit on the loader */
+#loader:not(.hidden)~#lang-btn{display:none}
 #lang-btn:hover{border-color:var(--amber);color:var(--amber)}
 .auto-tip{margin-top:14px;font-size:12px;color:#8a8478;font-family:var(--mono)}
 .start-btn{margin-top:26px;font-size:18px;letter-spacing:.4em;padding:14px 46px;border-radius:999px;
   border:1px solid var(--amber);background:linear-gradient(180deg,rgba(255,120,26,.22),rgba(255,60,10,.12));color:#ffe1b8;transition:.25s}
 .start-btn:hover:not(:disabled){box-shadow:0 0 34px rgba(255,120,26,.5);transform:scale(1.04)}
 .start-btn:disabled{opacity:.35;cursor:not-allowed}
-.controls-hint{margin-top:30px;display:flex;flex-wrap:wrap;gap:10px 22px;justify-content:center;font-size:12px;color:#9a9184}
-kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;border-radius:4px;padding:0 6px;font-size:11px;color:#e6d9c8}
+/* The row is sized by its own line box (12 px × 1.5 = 18 px) while a `kbd` chip inside it is 19–20 px
+   tall once its 1 px border and 2 px bottom border are added, so every chip hung 2 px below the row.
+   That is `fit.hiddenScreen.onScreen.v` at the menu phase (10 hits, one per hint) and it appeared when
+   `kbd` moved from 11 px to the 12 px floor — raising the type without raising the row is the same
+   mistake §2c already caught once at #speed-val. Line-height carries the row to the chip's extent. */
+.controls-hint{margin-top:30px;display:flex;flex-wrap:wrap;gap:10px 22px;justify-content:center;
+  font-size:12px;line-height:1.75;color:#9a9184}
+kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;border-radius:4px;padding:0 6px;font-size:12px;color:#e6d9c8}
 
 /* ---------- HUD ---------- */
 #hud{position:fixed;inset:0;pointer-events:none;z-index:30;font-size:13px}
 #hud>div{pointer-events:auto}
 #mission-panel{position:absolute;top:18px;left:18px;background:var(--panel);backdrop-filter:blur(8px);
   border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:230px}
-.mp-title{font-size:11px;letter-spacing:.3em;color:var(--amber);margin-bottom:8px}
+.mp-title{font-size:13px;letter-spacing:.06em;color:var(--amber);margin-bottom:8px;font-weight:600}
 #mission-list{list-style:none}
-#mission-list li{padding:3px 0;color:#9a9184;font-size:12.5px;transition:.3s}
+#mission-list li{padding:3px 0;color:#9a9184;font-size:13px;transition:.3s}
 #mission-list li::before{content:"○ ";color:#5a5348}
 #mission-list li.active{color:#ffe9c9;text-shadow:0 0 12px rgba(255,150,50,.4)}
 #mission-list li.active::before{content:"▶ ";color:var(--amber)}
@@ -110,21 +134,21 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
   opacity:0;transform:translateY(8px);transition:.35s}
 #info-card.show{opacity:1;transform:none}
 #info-card.hidden{display:block;pointer-events:none}
-#info-tag{font-family:var(--mono);font-size:10px;letter-spacing:.25em;color:var(--cyan);margin-bottom:4px}
-#info-name{font-size:17px;font-weight:700;color:#ffdfb0;margin-bottom:6px}
-#info-params{font-family:var(--mono);font-size:11px;color:#98a8b8;line-height:1.7}
-#info-fact{font-size:12px;color:#b6ab99;margin-top:8px;line-height:1.6}
-#info-action{margin-top:10px;font-size:12px;color:var(--amber);letter-spacing:.1em}
+#info-tag{font-family:var(--mono);font-size:18px;letter-spacing:.25em;color:#79a9c4;margin-bottom:4px}
+#info-name{font-size:22px;font-weight:700;color:#ffdfb0;margin-bottom:6px;letter-spacing:.02em}
+#info-params{font-family:var(--mono);font-size:12px;color:#98a8b8;line-height:1.7}
+#info-fact{font-size:13px;color:#b6ab99;margin-top:8px;line-height:1.6}
+#info-action{margin-top:10px;font-size:13px;color:var(--amber);letter-spacing:.06em}
 #speedo{position:absolute;right:22px;bottom:18px;text-align:right}
 /* JetBrains Mono 700 的固有行盒是 1.327 em（tools/lh-sweep-probe.js 实测：52 px 字号下
    scrollHeight 从 1 的 60 px 一路涨到 69 px 就饱和，box 要到 line-height 1.3 才追上它）。
    所以 `line-height:1` 不是紧凑而是溢出：多出的墨量压到下面的 #speed-unit（§2c census 抓到
    31.2×8.0 px 重叠）。取 1.35 = 固有行盒之上留余量，别再往回调。 */
 #speed-val{font-family:var(--mono);font-size:52px;font-weight:700;color:#fff;text-shadow:0 0 22px rgba(255,140,40,.55);line-height:1.35}
-#speed-unit{font-family:var(--mono);font-size:11px;letter-spacing:.35em;color:#a08b6e}
+#speed-unit{font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:#a08b6e}
 /* rover battery + base grid restoration */
-#power-hud{position:absolute;right:22px;bottom:104px;width:216px;text-align:right}
-#battery-row{display:flex;align-items:center;gap:8px;justify-content:flex-end;font-family:var(--mono);font-size:10px;color:#a08b6e;letter-spacing:.18em}
+#power-hud{position:absolute;right:22px;bottom:104px;width:240px;text-align:right}
+#battery-row{display:flex;align-items:center;gap:8px;justify-content:flex-end;font-family:var(--mono);font-size:12px;color:#a08b6e;letter-spacing:.04em}
 #battery-bar{position:relative;flex:0 0 auto;width:112px;height:11px;border:1px solid var(--line);border-radius:3px;overflow:hidden;background:rgba(8,6,4,.6)}
 #battery-bar::after{content:'';position:absolute;right:-4px;top:3px;width:3px;height:5px;background:var(--line)}
 #battery-fill{display:block;height:100%;width:100%;background:linear-gradient(90deg,#3fd6c8,#8ff0b0);box-shadow:0 0 12px rgba(80,230,190,.6);transition:width .25s linear}
@@ -138,9 +162,9 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 /* A storm's bill, kept beside the thing it costs: dust settled on the solar arrays and on the
    rover's own panels. Ochre for the dirt, cyan for the moment the lance is blowing it off. */
 #film-row{margin-top:7px;display:flex;flex-direction:column;gap:4px;font-family:var(--mono)}
-#film-lance{display:none;font-size:9px;letter-spacing:.2em;color:var(--cyan);text-align:right}
+#film-lance{display:none;font-size:12px;letter-spacing:.06em;color:var(--cyan);text-align:right}
 #film-row.lancing #film-lance{display:block;animation:pulse-batt .5s ease-in-out infinite}
-.film-line{display:flex;align-items:center;gap:7px;justify-content:flex-end;font-size:9px;color:#8d7a63;letter-spacing:.14em}
+.film-line{display:flex;align-items:center;gap:7px;justify-content:flex-end;font-size:12px;color:#8d7a63;letter-spacing:.04em}
 .film-bar{position:relative;flex:0 0 92px;height:5px;border:1px solid rgba(255,255,255,.09);border-radius:3px;overflow:hidden;background:rgba(8,6,4,.6)}
 .film-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#7d5530,#d8a268);box-shadow:0 0 9px rgba(216,162,104,.5);transition:width .3s linear}
 #film-row.warn #film-array-fill{background:linear-gradient(90deg,#c9702a,#ffc17a);box-shadow:0 0 12px rgba(255,170,80,.8)}
@@ -151,9 +175,9 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
    is not trusted: tools/hud-audit-probe.js §2c tests every pair of on-screen strings for a real
    overlap, and this row was its first catch — before the offset the pill sat on "FPS" of
    「画质 标准 · 已降档 · 26 FPS」 and ate it. */
-#topbar{position:absolute;top:14px;right:74px;display:flex;gap:14px;font-family:var(--mono);font-size:11px;color:#8a8478}
+#topbar{position:absolute;top:14px;right:74px;display:flex;gap:14px;font-family:var(--mono);font-size:12px;color:#8a8478}
 #toast{position:absolute;top:64px;left:50%;transform:translateX(-50%);background:rgba(10,8,6,.8);border:1px solid var(--line);
-  color:#ffd9a0;padding:10px 26px;border-radius:999px;letter-spacing:.15em;font-size:14px;opacity:0;transition:.4s;pointer-events:none!important;
+  color:#ffd9a0;padding:10px 26px;border-radius:999px;letter-spacing:.06em;font-size:15px;opacity:0;transition:.4s;pointer-events:none!important;
   /* a nowrap pill for a long mission line grows wide enough to sit on top of the task log */
   max-width:min(560px,52vw);white-space:normal;text-align:center;line-height:1.5}
 #toast.show{opacity:1}
@@ -168,7 +192,7 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 #objective-arrow.unstable{transition:transform .05s;animation:nav-drift 2.4s ease-in-out infinite}
 @keyframes nav-drift{0%,100%{filter:none}46%{filter:blur(1.1px)}70%{filter:blur(.35px)}}
 #nav-chip{position:absolute;top:50%;left:50%;transform:translate(-50%,26px);display:none;align-items:center;gap:8px;
-  font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:#e8b06a;white-space:nowrap;pointer-events:none!important;
+  font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:#e8b06a;white-space:nowrap;pointer-events:none!important;
   background:rgba(10,8,6,.74);border:1px solid rgba(232,176,106,.34);border-radius:999px;padding:4px 11px;
   text-shadow:0 1px 6px rgba(0,0,0,.85)}
 #nav-chip.show{display:flex}
@@ -177,12 +201,12 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 #nav-chip.blind #nav-chip-val{color:#ffb58c}
 #race-hud{position:absolute;top:50px;right:18px;text-align:right;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 14px}
 #race-timer{font-family:var(--mono);font-size:22px;color:var(--amber)}
-#race-check{font-size:11px;color:#9a9184}
-#race-board-btn{margin-top:6px;font-size:11px;background:none;border:1px solid #57504a;border-radius:4px;color:#c9beac;padding:2px 8px}
+#race-check{font-size:12px;color:#9a9184}
+#race-board-btn{margin-top:6px;font-size:12px;background:none;border:1px solid #57504a;border-radius:4px;color:#c9beac;padding:2px 8px}
 #board-pop{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(8,10,16,.92);border:1px solid var(--line);
   border-radius:12px;padding:22px 30px;min-width:280px}
-#board-pop h3{color:var(--amber);font-size:15px;letter-spacing:.2em;margin-bottom:12px}
-#board-list{font-family:var(--mono);font-size:13px;color:#d8ccb6;margin-bottom:12px}
+#board-pop h3{color:var(--amber);font-size:18px;letter-spacing:.2em;margin-bottom:12px;font-weight:700}
+#board-list{font-family:var(--mono);font-size:13px;color:#d8ccb6;margin-bottom:12px;letter-spacing:.04em}
 #board-close{width:100%;background:none;border:1px solid var(--line);color:#c9beac;border-radius:6px;padding:6px}
 
 /* ─── the launch instrument panel ───
@@ -197,7 +221,7 @@ body.launching #objective-arrow{opacity:0!important}
   gap:7px;opacity:0;transform:translateY(10px);transition:opacity .5s ease,transform .5s ease;pointer-events:none!important}
 #tel-wrap.show{opacity:1;transform:none}
 #tel-log{display:flex;flex-direction:column;align-items:center;gap:1px}
-.tel-ev{display:flex;gap:9px;align-items:baseline;font-family:var(--mono);font-size:10px;letter-spacing:.09em;
+.tel-ev{display:flex;gap:9px;align-items:baseline;font-family:var(--mono);font-size:12px;letter-spacing:.05em;
   color:#c3a67d;opacity:.62;text-shadow:0 1px 7px rgba(0,0,0,.92)}
 .tel-ev b{color:var(--amber);font-weight:600;font-variant-numeric:tabular-nums}
 .tel-ev:last-child{opacity:1;color:#ffe4bd}
@@ -206,16 +230,16 @@ body.launching #objective-arrow{opacity:0!important}
 .tel-cell{display:flex;flex-direction:column;justify-content:center;padding:0 15px;
   border-right:1px solid rgba(255,150,60,.15)}
 .tel-cell:last-child{border-right:0}
-.tel-cap{display:flex;justify-content:space-between;align-items:baseline;gap:10px;white-space:nowrap;
-  font-family:var(--mono);font-size:8.5px;letter-spacing:.2em;color:#8a7a63;margin-bottom:6px}
+.tel-cap{display:flex;justify-content:space-between;align-items:baseline;gap:9px;white-space:nowrap;
+  font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.06em;color:#8a7a63;margin-bottom:6px}
 #tel-met{font-family:var(--mono);font-size:25px;font-weight:700;line-height:1.35;color:#fff;
   font-variant-numeric:tabular-nums;text-shadow:0 0 22px rgba(255,150,50,.55)}
-#tel-phase{font-size:11px;letter-spacing:.26em;color:var(--amber);margin-top:5px;white-space:nowrap}
+#tel-phase{font-size:13px;letter-spacing:.06em;color:var(--amber);margin-top:5px;white-space:nowrap;font-weight:600}
 .tel-ramp{height:2px;width:100%;margin-top:8px;border-radius:2px;overflow:hidden;background:rgba(255,255,255,.09)}
 .tel-ramp i{display:block;height:100%;width:0;background:linear-gradient(90deg,#ff7a1a,#ffd08a);
   box-shadow:0 0 9px rgba(255,140,40,.85);transition:width .12s linear}
 .tel-sub{display:flex;gap:6px;align-items:baseline;margin-top:7px;white-space:nowrap;
-  font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:#8a7a63}
+  font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:#8a7a63}
 .tel-sub b{color:#e6d6b6;font-weight:600;font-variant-numeric:tabular-nums}
 .tel-sub .p-sep{color:#565049}
 #tel-trace{display:block}
@@ -223,17 +247,18 @@ body.launching #objective-arrow{opacity:0!important}
 .eng-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.07);
   border:1px solid rgba(255,255,255,.1);transition:.18s}
 .eng-dot.on{background:var(--amber);border-color:var(--amber);box-shadow:0 0 8px rgba(255,170,60,.95)}
-.eng-tally{color:#7f7159;letter-spacing:.1em}
+.eng-tally{color:#7f7159;letter-spacing:.04em}
 .tel-gauge{width:146px}
-/* 42/1fr/26: the label column has to hold "TO PAD" and "ACCEL" without leaning on the number it
-   labels — measured, "TO PAD" is 39 px at 9.5 px/.1em, so 38 clipped its D. The number column is built
-   for four digits plus room to breathe. */
-.tel-rows{display:grid;grid-template-columns:42px 1fr 26px;gap:3px 6px;align-items:baseline}
-.tel-rows b.r-wide{grid-column:2/-1;font-size:11.5px;letter-spacing:.05em;text-align:right}
-.r-lab{font-size:9.5px;letter-spacing:.1em;color:#8a7a63;white-space:nowrap}
-.tel-rows b{font-family:var(--mono);font-size:12.5px;font-weight:700;text-align:right;color:#ffe4bd;
+/* max-content/1fr/auto: the label column is sized by the widest label rather than by a constant.
+   It used to be a hand-measured 42 px ("TO PAD" is 39 px at the old 9.5 px caps) — that number died
+   with the 12 px type floor, and a column that tracks its own content cannot clip again the next
+   time a size changes. */
+.tel-rows{display:grid;grid-template-columns:max-content 1fr auto;gap:3px 6px;align-items:baseline}
+.tel-rows b.r-wide{grid-column:2/-1;font-size:13px;letter-spacing:.04em;text-align:right}
+.r-lab{font-size:12px;letter-spacing:.04em;color:#8a7a63;white-space:nowrap}
+.tel-rows b{font-family:var(--mono);font-size:13px;font-weight:700;text-align:right;color:#ffe4bd;
   font-variant-numeric:tabular-nums}
-.tel-rows i{font-style:normal;font-family:var(--mono);font-size:9px;color:#8d7a63;letter-spacing:.02em}
+.tel-rows i{font-style:normal;font-family:var(--mono);font-size:12px;color:#8d7a63;letter-spacing:.02em}
 /* The bar is 692 px wide with the profile in it, so the profile only earns its place above ~880 px:
    at the breakpoint's own width the bar would reach edge to edge, and a panel that cannot be read
    without clipping is a worse instrument than one that drops a cell. Below it the plot goes, the cell
@@ -248,9 +273,9 @@ body.touch #tel-wrap{bottom:124px}
 /* photo */
 #photo-ui{position:fixed;inset:0;z-index:40;pointer-events:none}
 .photo-tip{position:absolute;top:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);padding:8px 22px;
-  border-radius:999px;font-size:12px;letter-spacing:.1em;color:#e8dcc8}
+  border-radius:999px;font-size:13px;letter-spacing:.06em;color:#e8dcc8}
 #photo-share{position:absolute;bottom:24px;right:24px;pointer-events:auto;background:var(--panel);border:1px solid var(--amber);
-  color:var(--amber);border-radius:999px;padding:10px 26px;letter-spacing:.2em}
+  font-size:18px;color:var(--amber);border-radius:999px;padding:10px 26px;letter-spacing:.2em}
 #photo-ui::before,#photo-ui::after{content:"";position:absolute;background:rgba(0,0,0,.85)}
 
 /* touch */
@@ -258,7 +283,7 @@ body.touch #tel-wrap{bottom:124px}
 #touch-ui>*{pointer-events:auto}
 .t-pad{width:110px;height:110px;border-radius:50%;border:1px solid var(--line);background:rgba(10,10,14,.4)}
 .t-btns{display:flex;flex-direction:column;gap:10px}
-.t-btns button{width:84px;height:52px;border-radius:12px;border:1px solid var(--line);background:rgba(10,10,14,.5);color:#ffd9a0;font-size:14px;letter-spacing:.2em}
+.t-btns button{width:84px;height:52px;border-radius:12px;border:1px solid var(--line);background:rgba(10,10,14,.5);color:#ffd9a0;font-size:18px;letter-spacing:.2em}
 .t-btns button:active{background:rgba(255,120,26,.3)}
 /* four buttons stacked would eat the whole height of a landscape phone, so the pad goes 2×2 there */
 @media (max-height:560px){.t-btns{display:grid;grid-template-columns:repeat(2,84px);gap:8px}.t-btns button{height:44px}}
@@ -269,13 +294,13 @@ body.no-ui #hud,body.no-ui #photo-ui .photo-tip{opacity:0}
 
 /* ─── teleport network ─── */
 #tele-fab{position:fixed;left:18px;bottom:18px;z-index:36;background:var(--panel);border:1px solid var(--cyan);
-  color:var(--cyan);border-radius:999px;padding:9px 18px;letter-spacing:.2em;font-size:12px;backdrop-filter:blur(6px)}
+  color:var(--cyan);border-radius:999px;padding:9px 18px;letter-spacing:.06em;font-size:15px;backdrop-filter:blur(6px)}
 #tele-fab:hover{background:rgba(60,200,225,.14)}
 #teleport-ui{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:45;width:min(760px,94vw);
   background:rgba(10,8,14,.92);border:1px solid var(--line);border-radius:14px;padding:0 0 14px;backdrop-filter:blur(10px)
   ;max-height:94vh;overflow:auto}
 .tp-head{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--line)}
-.tp-title{color:var(--cyan);font-size:13px;letter-spacing:.28em}
+.tp-title{color:var(--cyan);font-size:18px;letter-spacing:.28em;font-weight:700}
 .tp-close{background:none;border:1px solid var(--line);color:#c9beac;border-radius:6px;width:26px;height:26px}
 .tp-body{display:flex;gap:18px;padding:16px 20px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
 /* The chart is a drawn plate, so it is square, framed and metric — not a porthole. */
@@ -289,13 +314,13 @@ body.no-ui #hud,body.no-ui #photo-ui .photo-tip{opacity:0}
 .tp-item:disabled{opacity:.45;cursor:default}
 .tp-item kbd{flex:none}
 .tp-name{flex:1}
-.tp-dist{font-family:var(--mono);font-size:11px;color:#9a9184}
-.tp-tip{padding:0 20px;font-size:11px;color:#8a8478;letter-spacing:.08em}
+.tp-dist{font-family:var(--mono);font-size:12px;color:#9a9184}
+.tp-tip{padding:0 20px;font-size:12px;color:#8a8478;letter-spacing:.06em}
 #tele-hint{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:37;background:rgba(8,14,20,.8);
-  border:1px solid var(--cyan);border-radius:999px;padding:9px 22px;color:#bff2fb;font-size:13px;letter-spacing:.08em;
+  border:1px solid var(--cyan);border-radius:999px;padding:9px 22px;color:#bff2fb;font-size:13px;letter-spacing:.06em;
   box-shadow:0 0 24px rgba(60,200,225,.25)}
 .tp-flash{position:fixed;inset:0;z-index:60;pointer-events:none;background:radial-gradient(circle,rgba(150,240,255,.95),rgba(120,200,255,.4) 60%,transparent);animation:tpflash .6s ease-out forwards}
 @keyframes tpflash{0%{opacity:0}12%{opacity:1}100%{opacity:0}}
 #mute-fab{position:fixed;left:18px;bottom:60px;z-index:36;background:var(--panel);border:1px solid var(--line);
-  color:#c9beac;border-radius:999px;padding:7px 16px;letter-spacing:.15em;font-size:11px}
+  color:#c9beac;border-radius:999px;padding:7px 16px;letter-spacing:.06em;font-size:12px}
 #mute-fab:hover{border-color:var(--amber);color:var(--amber)}

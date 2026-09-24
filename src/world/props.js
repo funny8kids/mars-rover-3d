@@ -772,9 +772,10 @@ export async function buildBase(scene, quality) {
           p.castShadow = false; p.receiveShadow = true; G.add(p);
         }
       }
-      const beaconBulb = new THREE.Mesh(new THREE.SphereGeometry(0.21, 12, 10), M.beacon);
-      beaconBulb.position.set(gx + 9.6, beamY + 6.4, gz);
-      G.add(beaconBulb); beacons.push(beaconBulb);
+      // s=1.3 keeps the optic where the old red ball was (lens ⌀0.39 vs the ball's ⌀0.42) and just
+      // adds the mount, sink and shade around it. `beaconAt` hands back the lens, so the light show
+      // keeps blinking the optic only — not the metalwork behind it.
+      beaconAt(gx + 9.6, beamY + 6.4, gz, 1.3);
     }
     endProp({ legs: [[hx - 8.1, hz - 13.5, 4.3, 3.6], [hx + 8.1, hz - 13.5, 4.3, 3.6]] });
     // The pack's `rail` is a flat painted panel: edge-on to a moving camera it vanished, face-on it
@@ -1168,9 +1169,13 @@ export async function buildBase(scene, quality) {
     // The tower is a 40 m chopstick whose six arms reach out over the vehicle. Its measured box
     // would therefore wall off the whole pad, so the lot is the two rails it actually stands on.
     lot('chopstick-tower', px - 12.5, pz, 6.5, 6.5);
-    const towerBeacon = new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 8), M.beacon);
-    towerBeacon.position.set(px - 11, py + 29.4, pz);
-    G.add(towerBeacon); beacons.push(towerBeacon);
+    // Sited by triangle probe, not by eye. The tower's crown is a 2.58 x 2.37 m deck whose top face
+    // measures y = py + 28.49, ringed by a handrail at py + 30.9. The ball this fitting replaces sat
+    // on the tower's own placement axis, 1.6 m east of the deck's edge, where the highest material is
+    // py + 27.45 — its plate hung 1.14 m in the air. A glowing sphere reads as a distant lamp there;
+    // a mount plate reads as a bug. Now bolted to the deck, 0.6 m off the rail line so the two do not
+    // interpenetrate, with s=1.6 (optic ⌀0.48, base 0.68 m) well inside the 2.37 m of standing room.
+    beaconAt(px - 13.44, py + 28.49 + 0.31 * 1.6, pz - 0.85, 1.6);
 
     // ── Kenney booster on a service stand, the base's cargo rocket ──
     {

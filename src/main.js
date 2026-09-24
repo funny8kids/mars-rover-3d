@@ -2199,7 +2199,17 @@ function update(dt) {
   const blink = 0.5 + 0.5 * Math.sin(elapsed * 5);
   for (const b of base.beacons) b.material.emissiveIntensity = 0.06 + bnight * (0.22 + 1.55 * blink);
   const spots = rover.group.userData.spots;
-  if (spots) for (const sp of spots) sp.intensity = st.nightF * 46 + st.stormF * 22;
+  // 46 → 90 is not a brightness change — with the decay fix in rover.js the beam got *dimmer*. The
+  // spots used to run at decay 1.05, which barely dims with distance, so a parked rover washed the
+  // whole plaza: measured 16 m down the beam at the gate channel, 3.4 % of the frame sat at 224–255
+  // with 100 % of it hueless, and the paving's seams, colour and texture were gone under a flat white
+  // sheet. Widening the cone made it worse (3.8 %, more area lit), softening the penumbra did nothing
+  // (3.2 %); only the falloff law moved it — at decay 1.05 this intensity blows 7.7 % of the channel
+  // and empties the bottom two histogram buckets entirely, at decay 2 the same frame is 0.4 %. The
+  // driving image is not what pays for it: from the chase camera the two decays are 0.8 % vs 1.0 %
+  // clip and 408 vs 465 per-mille mid-band. The constants are the old ones times 90/46, so the
+  // night/storm mix ratio is untouched.
+  if (spots) for (const sp of spots) sp.intensity = st.nightF * 90 + st.stormF * 43;
   // the lens quads must follow the beam: at full emissive in clear daylight they bloom the whole deck
   rover.lampMat.emissiveIntensity = 0.18 + Math.max(st.nightF, st.stormF * 0.7) * 1.6;
   const night = Math.max(st.nightF, st.stormF * 0.6);

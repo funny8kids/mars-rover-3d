@@ -71,7 +71,16 @@ export async function createRover(scene) {
   // headlights: warm throw downrange, emissive lens tied to the modeled lamp bar
   const beam = findMeshByMaterial(inner, 'light_amber');
   const lampMat = beam ? beam.material : new THREE.MeshStandardMaterial({ emissive: 0xffe0a0 });
-  const spotL = new THREE.SpotLight(0xfff1e0, 0, 115, 0.33, 0.7, 1.05);
+  // decay 2 (physical inverse-square), not 1.05. At 1.05 the beam barely dims with distance, so a
+  // parked rover lit the ground as hot 16 m out as 3 m out: measured at the gate channel its own
+  // throw runs into, 3.4 % of the frame sat at 224-255 with 100 % of it hueless -- paving seams,
+  // colour and texture gone under a flat white sheet with hard rectangular beam edges. Widening the
+  // cone was worse (3.8 %), softening the penumbra did nothing (3.2 %); only the falloff law moved
+  // it. With intensity held at one value, decay 1.05 → 2 takes that channel from 7.7 % blown (and
+  // the bottom two histogram buckets empty) to 0.4 %, while the chase-camera frame moves only
+  // 1.0 % → 0.8 % — the driving image pays nothing for it. The intensity constants in main.js's
+  // spots drive are calibrated against this decay; see the note there.
+  const spotL = new THREE.SpotLight(0xfff1e0, 0, 115, 0.33, 0.7, 2);
   spotL.position.set(-0.5, 1.2, 1.8); spotL.target.position.set(-0.5, -0.9, 34); g.add(spotL, spotL.target);
   const spotR = spotL.clone(); spotR.position.x = 0.5; spotR.target.position.x = 0.5; g.add(spotR, spotR.target);
   g.userData.spots = [spotL, spotR];

@@ -31,7 +31,7 @@ function desun(mt) {
 }
 
 // Blender's glTF exporter stamps `doubleSided: true` onto EVERY material it writes, whatever the
-// model is — all 36 hero GLBs and all 91 Kenney ones, with no exceptions and no art decision behind
+// model is — all 35 hero GLBs and all 91 Kenney ones, with no exceptions and no art decision behind
 // any of it. GLTFLoader turns that into THREE.DoubleSide, which switches off backface culling in the
 // beauty pass and, because three derives `shadowSide` from `side` when `shadowSide` is null, also
 // rasterises both faces of every one of them into the sun's depth map. Measured on the hub at
@@ -51,7 +51,7 @@ function desun(mt) {
 // classed as a solid. Culled, the skirt vanished when the rover drove under the ship, and the
 // overhead chopstick arm vanished from the pad — 2 739 and 17 546 changed pixels at those two
 // vantages. So the test is now the honest binary one: any boundary edge at all means the shell is
-// not closed. 243 924 of 718 020 library triangles are open, over the 48 material names below
+// not closed. 243 924 of 714 568 library triangles are open, over the 48 material names below
 // (386 476 triangles, 54%). The over-retention is forced by the runtime's granularity — the decision
 // is per material, so a material with one open primitive stays DoubleSide everywhere.
 //

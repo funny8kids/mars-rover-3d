@@ -69,6 +69,9 @@ SPAN = {"front": ((0, -1, 0.10), 0.0, 1.9, 60), "back": ((0, 1, 0.10), 0.0, 1.9,
         "threeq": ((-0.75, -0.9, 0.30), 0.0, 1.9, 60), "top": ((0, -0.2, 1.0), 0.0, 1.9, 60),
         "helm": ((0, -1, 0.30), 0.30, 1.35, 85), "boots": ((0, -1, -0.45), -0.42, 1.35, 85),
         "low34": ((-0.8, -1, -0.15), 0.0, 1.9, 60),
+        # A ground fitting's beam faces +Y, so `front` (camera on −Y) is its back. `lamp` is the
+        # viewpoint that matters for a flood bolted to a deck: standing on the pad, looking down.
+        "lamp": ((0.42, 0.74, 0.52), 0.0, 1.5, 60),
         "nose": ((-0.7, -0.75, 0.22), 0.44, 0.30, 70),
         "mid": ((-0.8, -0.6, 0.05), 0.02, 0.30, 70),
         "aft": ((-0.7, -0.75, -0.20), -0.44, 0.30, 70),

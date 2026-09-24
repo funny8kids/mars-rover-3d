@@ -26,7 +26,18 @@ const G = new THREE.Group();
 // blacked out its own crops, and the lamp globes and the cupola did the same on the decks below
 // them. assets.js leaves the verdict on the object itself, and that verdict survives cloneModel().
 const shade = (o) => {
-  if (o.isMesh) { o.castShadow = !o.userData.rsbPane; o.receiveShadow = true; }
+  if (o.isMesh) { o.castShadow = !(o.userData.rsbPane || isLightSurface(o)); o.receiveShadow = true; }
+};
+
+// The shadow pass reads depth and knows nothing about alpha, so a mesh that only *adds* light —
+// a searchlight cone, a crystal's ground ring, a lamp's pool, a painted wordmark — still stamps its
+// full silhouette at opacity 0. Five 56 m show-beams did exactly that across PAD ONE in every
+// daylight frame. Rather than re-marking every effect by hand at its call site, where the next one
+// would forget, the verdict is read off the material: anything that cannot write depth in the
+// colour pass has no body to take light away in the shadow pass either.
+const isLightSurface = (o) => {
+  const mats = Array.isArray(o.material) ? o.material : [o.material];
+  return mats.some(m => m && (m.blending === THREE.AdditiveBlending || m.depthWrite === false));
 };
 
 // A lamp's pool on the deck is a falloff, not a shape. The grid taps drew theirs as

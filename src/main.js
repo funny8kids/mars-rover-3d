@@ -4248,9 +4248,19 @@ window.__RSB = {
     const g2 = c2.getContext('2d');
     g2.drawImage(cv, 0, 0, 160, 100);
     const q = g2.getImageData(0, 0, 160, 100).data;
-    const bins = new Array(10).fill(0);
+    // Eight buckets of 32, not ten: `>> 5` on a 0–255 luminance tops out at index 7, so a ten-wide
+    // array shipped two permanent zeros and the old `clip` read exactly those. Length now says what the
+    // resolution is, and `bins[7]` is the blown band.
+    const bins = new Array(8).fill(0);
     for (let i = 0; i < q.length; i += 4)
-      bins[Math.min(9, (0.2126 * q[i] + 0.7152 * q[i + 1] + 0.0722 * q[i + 2]) >> 5)]++;
+      bins[(0.2126 * q[i] + 0.7152 * q[i + 1] + 0.0722 * q[i + 2]) >> 5]++;
+    // `clip` used to be `bins[8]/16 + bins[9]/16`, and that was dead on arrival: the histogram above
+    // buckets with `>> 5`, so the highest reachable index is 7 (224–255) and bins[8] and bins[9] are
+    // empty by construction. Every frame ever accepted on "clip=0" was accepted by a ruler that cannot
+    // read nonzero — including the gate close-up that this very change then measured at 3.4 % of pixels
+    // blown. Count the blown band directly against a stated threshold instead of against a slot in an
+    // array whose length lies about its resolution. Percent, one decimal, so it reads next to `burn`.
+    let blown = 0;
     // `bins` is a luminance histogram, so a uniformly violet frame and a neutral one can score
     // identically — the "no single-hue cast" half of the acceptance check had no ruler at all and was
     // being settled by taste. This is it: mean channel values per luminance band, each divided by the
@@ -4272,6 +4282,26 @@ window.__RSB = {
       return [+(r / n / m).toFixed(3), +(g / n / m).toFixed(3), +(b / n / m).toFixed(3), +(n / (q.length / 4)).toFixed(3)];
     };
     const cast = { shadow: band(40, 104), mid: band(104, 176), lamp: band(176, 256) };
+    // A lamp band can average neutral for two opposite reasons: the frame genuinely holds cyan *and*
+    // amber lights that cancel out, or every one of them has been bleached to white. `cast` cannot
+    // tell those apart, so this counts the second case directly — blown pixels that carry no hue at
+    // all. A fitting that still reads as a fitting contributes a chromatic core; one sitting far over
+    // the bloom gate contributes a white disc, and the lamp stops being the thing you navigate by at
+    // exactly the moment it is the only thing lit.
+    // The threshold has to be the blown band, not merely "bright". The first version of this cut at
+    // 200 and was proven to be measuring the wrong thing: zeroing every emissive material in the scene
+    // left the count unmoved (3.4 % of the gate frame in the top bin before and after) because at 200
+    // the population is the sky — a broad, dim, near-neutral surface that has no emissive in it at all.
+    // A ruler that answers to the sky is worse than none, because it looks like a reading.
+    let burn = 0;
+    for (let i = 0; i < q.length; i += 4) {
+      const r = q[i], g = q[i + 1], b = q[i + 2];
+      if (0.2126 * r + 0.7152 * g + 0.0722 * b < 224) continue;
+      blown++;
+      if (Math.max(r, g, b) - Math.min(r, g, b) <= 12) burn++;
+    }
+    const clip = +(blown / (q.length / 4) * 100).toFixed(1);
+    const burnPct = blown ? Math.round(burn / blown * 100) : null;
     // Lossless, deliberately. The old `toDataURL('image/jpeg', 0.85)` put an 8 px lattice in the
     // frames the acceptance check is supposed to read: measured 2026-09-24 with
     // tools/codec_control.py, the same sky straight off the canvas scores blockiness 1.00 in
@@ -4281,7 +4311,7 @@ window.__RSB = {
     // strongest version of it (1.82). A capture that manufactures a weave cannot be used to clear a
     // shader of one, so the QA rig writes PNG and the check measures the render.
     const r = await fetch('http://127.0.0.1:8123/' + name, { method: 'POST', body: cv.toDataURL('image/png') });
-    return { name, status: r.status, bins: bins.map(b => Math.round(b / 1600 * 100)), clip: +(bins[8] / 16 + bins[9] / 16).toFixed(1), cast };
+    return { name, status: r.status, bins: bins.map(b => Math.round(b / 1600 * 100)), clip, burn: +(burn / (q.length / 4) * 100).toFixed(1), burnPct, cast };
   },
   // what is actually in front of the lens — finds blown-out emitters by screen position
   nearby: (r = 60) => {

@@ -4282,18 +4282,41 @@ window.__RSB = {
     // past 1.15. Banding is the point, not polish — a night frame is *supposed* to hold saturated
     // colour in the lamps, and the defect lives in the shadow band, where every fill source in
     // `world/environment.js` was independently picking a near-identical blue-violet.
+    // The mean alone cannot tell two frames apart: one where every pixel in the band is a single
+    // hue, and one where two opposing populations cancel in the average. Measured 2026-09-24 on the
+    // dune vantage, split by rows and labelled by what the centre column raycasts there: the sky
+    // rows read [1.006, 0.901, 1.093] and the regolith rows [1.269 → 1.323, 0.89, 0.83 → 0.79] —
+    // cool above, warm below — and the whole-frame average came out [1.169, 0.896, 0.935], a number
+    // belonging to neither surface. Averaging them even *understates* both, so the frame-average
+    // goes softest exactly when a picture holds the most colour separation.
+    // So the band also reports how many of its pixels are warm-dominant and how many cool-dominant.
+    // A band with one hue has one share near 1; a band holding both has two, and its mean chroma
+    // must not be read as "neutral" — nor, on the other side, is a warm share a cast when the warm
+    // thing filling it is the ground. `8d610a2` named the defect as the base having no second hue;
+    // this is the half of that check the mean could not make.
+    //
+    // Two controls, so the shares are known to answer rather than to sit at a half: a night frame
+    // aimed straight up reads warm 0.005 / cool 0.995 (one surface, one hue, not flagged), and the
+    // settlement plaza reads 0.53 / 0.47. The dune reads 0.646 / 0.353 — and its chroma holds at
+    // 1.164–1.168 across a 2.4× change in the key-to-fill ratio, with the whole night fill zeroed
+    // moving the ground 2.5 of its 50 levels. So the dune's red is the regolith's own albedo, which
+    // no light setting can cancel, and the frame's 1.169 was the sky's cool and the sand's warm
+    // averaging each other out. That is the second hue the grade was asked for, not its absence.
     const band = (lo, hi) => {
-      let r = 0, g = 0, b = 0, n = 0;
+      let r = 0, g = 0, b = 0, n = 0, warm = 0, cool = 0;
       for (let i = 0; i < q.length; i += 4) {
         const y = 0.2126 * q[i] + 0.7152 * q[i + 1] + 0.0722 * q[i + 2];
         if (y < lo || y >= hi) continue;
         r += q[i]; g += q[i + 1]; b += q[i + 2]; n++;
+        if (q[i] >= q[i + 1] && q[i] >= q[i + 2]) warm++;
+        else if (q[i + 2] >= q[i + 1]) cool++;
       }
       // 2 % of the sample. A band thinner than that is a couple of lamp filaments, and averaging its
       // chromaticity says nothing about the frame — report the share so a reader sees what was measured.
       if (n < 160) return null;
       const m = (r + g + b) / (3 * n);
-      return [+(r / n / m).toFixed(3), +(g / n / m).toFixed(3), +(b / n / m).toFixed(3), +(n / (q.length / 4)).toFixed(3)];
+      return [+(r / n / m).toFixed(3), +(g / n / m).toFixed(3), +(b / n / m).toFixed(3),
+        +(n / (q.length / 4)).toFixed(3), +(warm / n).toFixed(3), +(cool / n).toFixed(3)];
     };
     const cast = { shadow: band(40, 104), mid: band(104, 176), lamp: band(176, 256) };
     // A lamp band can average neutral for two opposite reasons: the frame genuinely holds cyan *and*

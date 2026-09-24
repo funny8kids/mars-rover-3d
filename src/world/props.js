@@ -105,6 +105,18 @@ export async function buildBase(scene, quality) {
           // fitting reads as a solid block of saturated plastic by day and then has to fight its own
           // emissive term at night; the emissive alone carries the colour from here.
           if (mt.emissive && mt.emissive.r + mt.emissive.g + mt.emissive.b > 0.05) c.multiplyScalar(0.3);
+          // What reaches the eye from a fitting is its drive times its emitting area, and the shared
+          // night drive was set against the thin authored tubes in the packs. The gate's leg channels
+          // are 8.1 m of lit strip down each pylon rebate (measured by raycasting the strip's own
+          // top and bottom pixels) — the largest lit surface on the base — and at that shared drive
+          // they alone owned 150 of the 170 blown pixels in the gateway frame (raycast of the blown
+          // band, 2026-09-24), i.e. two flat white bars standing where the settlement's front door
+          // is. Sweeping the drive down, the frame's clip falls off a cliff — 1.05 % at 1.92,
+          // 0.93 % at 0.90, 0.21 % at 0.75 — and hits its 0.08 % floor at 0.72, while the strip's own
+          // peak holds at 224 across the whole move. So the luminaire stops being a hole in the
+          // picture without becoming an unlit groove in the pylon. A wide emitter declares its own
+          // night ceiling here, the same way a saturated accent declares its day floor below.
+          if (/^light_gate_channel$/.test(n)) mt.userData.nightCap = 0.72;
           heroLights.push(mt);
         }
         else if (n === 'plant' || n === 'crystal_mat') mt.emissiveIntensity = 0.7;

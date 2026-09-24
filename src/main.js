@@ -2219,10 +2219,14 @@ function update(dt) {
   // deck lamp in the noon frames — so the daytime drive comes down to a glow that reads as lit
   // glass without feeding the bloom; the night term rises to keep the after-dark levels identical.
   // A material may ask for a lower daytime floor via userData.dimDay (the saturated cyan studs);
-  // the night end stays at the same 1.92 either way.
+  // the night end stays at the same 1.92 either way — unless it declares a ceiling of its own.
+  // The shared 1.92 was tuned against the thin authored tubes in the asset packs; a wide emitter
+  // (the gate's leg channels) carries a far larger solid angle at the same drive and has to be
+  // capped by area, not by taste. See props.js for the measurement behind `nightCap`.
   for (const m of base.heroLights) {
     const d = m.userData?.dimDay ?? 0.26;
-    m.emissiveIntensity = d + night * (1.92 - d);
+    const e = m.userData?.nightCap ?? 1.92;
+    m.emissiveIntensity = d + night * (e - d);
   }
   // pad discs: a flat read-able ring by day, an armed portal at night. The whole base is dimmer
   // until the rover re-links the districts, so progress is legible from anywhere on the map.

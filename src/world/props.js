@@ -1218,18 +1218,26 @@ export async function buildBase(scene, quality) {
 
     // ── Chopstick tower, west of the ship: its six arms reach east to the hull
     // and the "RED STARBASE" board on its south face reads from the teleport pad.
-    // Blender asset is 20.7 x 6.9 x 54.4 m with the flame trench 2.5 m below datum.
-    put('launch_tower', px - 11, pz, 0.55, 0, 1.1);
+    // The asset measures 20.72 x 6.93 x 54.36 m, so at s 0.55 it puts an 11.40 x 3.81 m poured
+    // footing on the pad. Its origin is the underside of that footing; the flame duct below it
+    // (1.39 m deep, and the reason the export used to carry a baked +2.535 node lift that seated the
+    // *duct floor* on the ground and left the footing hanging — see tools/glb_set_node_y.py).
+    const TW = 11.40, TD = 3.81, tx = px - 11, tz = pz;
+    // So it is seated on its own lot: `claimLot` cuts the earthworks rectangle around the footing to
+    // the highest natural ground under the deck and batters the shoulder back at 1:3, and the tower
+    // is placed at that level rather than at a sampled point plus a constant.
+    put('launch_tower', tx, tz, 0.55, 0, 0, grade('chopstick-tower', tx, tz, TW, TD));
     // The tower is a 40 m chopstick whose six arms reach out over the vehicle. Its measured box
     // would therefore wall off the whole pad, so the lot is the two rails it actually stands on.
     lot('chopstick-tower', px - 12.5, pz, 6.5, 6.5);
     // Sited by triangle probe, not by eye. The tower's crown is a 2.58 x 2.37 m deck whose top face
-    // measures y = py + 28.49, ringed by a handrail at py + 30.9. The ball this fitting replaces sat
-    // on the tower's own placement axis, 1.6 m east of the deck's edge, where the highest material is
-    // py + 27.45 — its plate hung 1.14 m in the air. A glowing sphere reads as a distant lamp there;
-    // a mount plate reads as a bug. Now bolted to the deck, 0.6 m off the rail line so the two do not
-    // interpenetrate, with s=1.6 (optic ⌀0.48, base 0.68 m) well inside the 2.37 m of standing room.
-    beaconAt(px - 13.44, py + 28.49 + 0.31 * 1.6, pz - 0.85, 1.6);
+    // measures y 26.61 (py + 26.01), ringed by a handrail that tops out at 29.11. The ball this
+    // fitting replaces sat on the tower's own placement axis, 1.6 m east of the deck's edge, where the
+    // highest material there measures 25.54 (py + 24.94) — its plate hung 1.07 m in the air. A glowing
+    // sphere reads as a distant lamp there; a mount plate reads as a bug. Now bolted to the deck, 0.6 m
+    // off the rail line so the two do not interpenetrate, with s=1.6 (optic ⌀0.48, base 0.68 m) well
+    // inside the 2.37 m of standing room.
+    beaconAt(px - 13.44, py + 26.01 + 0.31 * 1.6, pz - 0.85, 1.6);
 
     // ── Kenney booster on a service stand, the base's cargo rocket ──
     {
@@ -1275,10 +1283,13 @@ export async function buildBase(scene, quality) {
       // the crate 1.83 m square, circumscribing to 1.296 m, so its centre has to clear the bund's
       // 1.732 m by both radii plus the 0.3 m `LAMP_CLEAR` that keeps two *different* props' discs from
       // touching — the crease between touching discs has no legal position in it, which is the "WASD
-      // stopped working" bug. Sited at 3.53 m out, which the audit reads as 0.5 m of daylight between
-      // the two drums. It stays west of the pipe run: the nearest trestle foot plate is 0.8 m clear,
-      // so none of the line's own footprints moved.
-      kSolid('barrels', sx - 2.95, sz + 1.95, 0.5, 1, 'lox-drums');
+      // stopped working" bug. Sited by that evaluator over every launch-district disc: at 3.53 m out the
+      // crate bit 0.364 m into the light ring and left only 0.228 m against the stand drum, so the site
+      // moved 0.67 m south-west to 3.61 m out, which reads 0.511 m clear of the ring and 0.584 m clear of
+      // the nearest other disc (the stand), with nothing else in the district closer. It stays west of
+      // the pipe run: the nearest trestle foot plate is still clear by the same margin, so none of the
+      // line's own footprints moved.
+      kSolid('barrels', sx - 3.5, sz + 0.9, 0.5, 1, 'lox-drums');
       // Colliders follow the line's height, not its extent — the same ruling that keeps `lamp.glb`'s
       // cross-arm wall-less (see LAMP_BASE). The band a drum has to cover is set by the vehicle, not
       // by a person standing in the apron: parked on this pad with the suspension settled, the rover

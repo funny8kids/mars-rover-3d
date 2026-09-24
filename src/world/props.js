@@ -1134,37 +1134,126 @@ export async function buildBase(scene, quality) {
         }
       });
     }
-    // the pad's glow ring
+    // ── The mount's perimeter marker: a channel cast into the deck, not a tube laid on it ──
     const py = zoneY(ZONES.launch);
-    // A fat neon donut floating 0.35 m over the deck was the most obviously synthetic object on the
-    // island, and it threw a hard shadow band across the pad. Real pad lighting is recessed
-    // perimeter furniture: a flush guide line and a ring of individual floods.
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(9.5, 0.07, 6, 72), M.cyanLight.clone());
-    ring.material.color.setHex(0x8fd8e8); ring.material.emissive.setHex(0x2f9fbf);
-    heroLights.push(ring.material);   // a clone escapes the deck-lamp registration; put it back
-    ring.rotation.x = Math.PI / 2; ring.position.set(px, py + 0.045, pz); G.add(ring);
-    lightStrips.push(ring.material);
+    // The strongback's footing is declared here, ahead of the deck furniture that has to dodge it,
+    // because the channel's termination and the flood ring are both solved from this rectangle.
+    // Repeating the four numbers at the tower is how the two would drift apart.
+    const TW = 11.40, TD = 3.81, tx = px - 11, tz = pz;
+    const RING_R = 9.5;
+    // What the old one was, measured rather than guessed: a ⌀0.14 torus at py + 0.045 spans y
+    // 0.575–0.715 over a deck `surfaceAt` reports level at exactly 0.6 for all 720 bearings. So it was
+    // not floating — it was 90 mm of round tube standing on top of a flat slab, drawing a hard shadow
+    // band across the pad, and running straight through the strongback's footing for 23.2° of arc.
+    // Pad edge lighting is poured in, not laid on: a cast frame set into the slab with a short diffuser
+    // face standing out of it, and it stops where a foundation stops it. Per span that is two meshes —
+    // the flat frame (the flush-decal case of the primitive rule) and the 60 mm emitter face above it.
+    // Neither has volume to float or interior to shadow, and nothing samples the terrain, because the pad
+    // deck they sit on is itself level by construction.
+    const ringClearArcs = () => {
+      const N = 2880;
+      const inside = i => {
+        const a = i / N * Math.PI * 2;
+        return Math.abs(px + Math.cos(a) * RING_R - tx) < TW / 2 &&
+               Math.abs(pz + Math.sin(a) * RING_R - tz) < TD / 2;
+      };
+      // Rotate the scan to start on a transition, so one footing straddling 0 rad still resolves as a
+      // single gap instead of two arcs that meet at the north bearing.
+      let from = -1;
+      for (let i = 0; i < N; i++) if (inside(i) !== inside(i - 1)) { from = i; break; }
+      if (from < 0) return inside(0) ? [] : [{ a0: 0, a1: Math.PI * 2 }];
+      const arcs = [];
+      let run = null;
+      for (let k = 0; k <= N; k++) {
+        const a = (from + k) / N * Math.PI * 2;
+        if (!inside((from + k) % N)) (run ||= { a0: a, a1: a }).a1 = a;
+        else if (run) { arcs.push(run); run = null; }
+      }
+      if (run) arcs.push(run);
+      return arcs;
+    };
+    // Inset each end by half the frame's own width. The solved arc stops where the circle *crosses*
+    // the footing's outline, so its last vertices sit on that line and a 0.2 m band left untrimmed
+    // would poke 30 mm into the concrete it is supposed to stop against.
+    const ARC_INSET = 0.10 / RING_R;
+    const arcs = ringClearArcs()
+      .map(({ a0, a1 }) => ({ a0: a0 + ARC_INSET, a1: a1 - ARC_INSET }))
+      .filter(({ a0, a1 }) => a1 - a0 > 0);
+    const channelMat = M.dark.clone();
+    const lensMat = M.cyanLight.clone();
+    // The tube's own colours were the tell: albedo 0x8fd8e8 is a brighter cool surface than anything
+    // on the deck by day, and emissive 0x2f9fbf has no red term at all, so the whole circuit drew as
+    // one hue. A recessed marker is dust-covered marking glass in a cast frame — desaturated, and it
+    // carries its colour in the emissive only. The clone keeps `cyanLight`'s userData.dimDay 0.10, so
+    // the day/night drive stays in the same place as the deck lamps'.
+    lensMat.color.setHex(0x8b938e); lensMat.emissive.setHex(0x4a8ba1);
+    // The mount interior is drivable too, and an open cylinder has no back face — without this the
+    // circuit would vanish the moment the rover stands inside it, which is where the pad is used.
+    lensMat.side = THREE.DoubleSide;
+    heroLights.push(lensMat);   // a clone escapes the deck-lamp registration; put it back
+    lightStrips.push(lensMat);  // and keep it in the ship's light show, which strobes the pad's strips
+    for (const { a0, a1 } of arcs) {
+      const span = a1 - a0;
+      // One segment per half metre of run, so a 28 m arc is as smooth as the full circle it replaced.
+      const segs = Math.max(6, Math.round(span * RING_R / 0.5));
+      // `RingGeometry` fans out from +x toward +y in its own plane; tipping it by π/2 about x makes the
+      // theta angle the world's atan2(z, x), which is the angle `a` is measured in throughout here.
+      const band = (width, y, mat) => {
+        const b = new THREE.Mesh(new THREE.RingGeometry(RING_R - width / 2, RING_R + width / 2, segs, 1, a0, span), mat);
+        b.rotation.x = Math.PI / 2; b.position.set(px, y, pz); G.add(b);
+      };
+      // 10 mm of cast frame proud of the slab, and the emitter standing 60 mm out of its middle.
+      // The emitter cannot be a second flat band: measured at the vantage a player actually has, the
+      // sight line from eye 1.55 m to the near point of the ring descends at 5.7°, so a ribbon lying
+      // in the deck projects width·sinθ·(px/rad)/distance — a 55 mm glass face 9.5 m out is 0.39 px
+      // on an 800 px column, and the night frame came back with the whole circuit invisible even at
+      // the full 1.92 drive. Vertical extent is the only thing a grazing view can catch, which is why
+      // this is a diffuser *face* and why the tube it replaces read so loudly at 140 mm of silhouette.
+      // 60 mm of it, on top of the frame, in the primitive case the rule allows: a ground-hugging
+      // fitting with no volume to sculpt, no interior to float, and nothing to sample the terrain.
+      band(0.20, py + 0.010, channelMat);
+      // `CylinderGeometry` walks its angle as (sin θ, cos θ) while every bearing here is (cos a, sin a),
+      // so the arc is handed over mirrored rather than by rotating the mesh — no constant `ry` fixes a
+      // change of handedness. θ = π/2 − a, so a runs a0…a1 as θ runs π/2 − a1…π/2 − a0.
+      const kerb = new THREE.Mesh(
+        new THREE.CylinderGeometry(RING_R, RING_R, 0.060, segs, 1, true, Math.PI / 2 - a1, span), lensMat);
+      kerb.position.set(px, py + 0.040, pz); G.add(kerb);
+    }
     // Every lens position is handed to `fx/beams.js` as the only honest anchor a pad shaft has: a
     // beam that starts at a lamp is lit by that lamp, and one that starts at a hand-typed coordinate
     // next to the pad is the two 44 m cones this replaced — which floated 11 m off the axis with
     // nothing under them.
     const floods = [];
-    for (let i = 0; i < 24; i++) {
-      const a = i / 24 * Math.PI * 2;
-      const rx = px + Math.sin(a) * 9.5, rz = pz + Math.cos(a) * 9.5;
-      // Two boxes used to be the lamp: a dark slab and a smaller one in the ring's own material
-      // above it. The fixture now has a housing with fins, a yoke it tilts on and a glass face —
-      // and the anchor the beam rig needs is read back out of the clone's `flood_lens` node, so it
-      // cannot drift from the housing the way the hand-typed +0.18 did.
-      const fl = kitAt('flood', rx, py, rz, a);
-      const lens = fl?.getObjectByName('flood_lens');
-      if (lens) {
-        lens.updateWorldMatrix(true, false);
-        const lv = new THREE.Vector3();
-        lens.getWorldPosition(lv);
-        floods.push([lv.x, lv.y, lv.z]);
-      } else {
-        floods.push([rx, py + 0.18, rz]);
+    // The pitch the 24-lamp circuit was laid out at (2πR/24 = 2.49 m), now walked along the clear arcs
+    // rather than the whole circle. Foundations displace luminaires; that is why the count follows the
+    // available arc instead of the lamp's own geometry being buried in one — one of the old twenty-four
+    // stood at the strongback's footing, and this circuit drops it and keeps the spacing.
+    const FLOOD_PITCH = 2 * Math.PI * RING_R / 24;
+    for (const { a0, a1 } of arcs) {
+      const span = a1 - a0;
+      const n = Math.max(1, Math.round(span * RING_R / FLOOD_PITCH));
+      // Inset by half a pitch at both ends, so no housing sits on a footing curb.
+      for (let i = 0; i < n; i++) {
+        const a = a0 + (i + 0.5) / n * span;
+        const rx = px + Math.cos(a) * RING_R, rz = pz + Math.sin(a) * RING_R;
+        // The kit's lens faces its own local +z, so aiming that at the pad axis takes π/2 − θ, not θ.
+        // Yaw and bearing are one conversion apart here, which is what keeps the shafts' `axisR` on the
+        // ring radius the beam rig checks them against.
+        const ry = Math.PI / 2 - a;
+        // Two boxes used to be the lamp: a dark slab and a smaller one in the ring's own material
+        // above it. The fixture now has a housing with fins, a yoke it tilts on and a glass face —
+        // and the anchor the beam rig needs is read back out of the clone's `flood_lens` node, so it
+        // cannot drift from the housing the way the hand-typed +0.18 did.
+        const fl = kitAt('flood', rx, py, rz, ry);
+        const lens = fl?.getObjectByName('flood_lens');
+        if (lens) {
+          lens.updateWorldMatrix(true, false);
+          const lv = new THREE.Vector3();
+          lens.getWorldPosition(lv);
+          floods.push([lv.x, lv.y, lv.z]);
+        } else {
+          floods.push([rx, py + 0.18, rz]);
+        }
       }
     }
 
@@ -1222,7 +1311,8 @@ export async function buildBase(scene, quality) {
     // footing on the pad. Its origin is the underside of that footing; the flame duct below it
     // (1.39 m deep, and the reason the export used to carry a baked +2.535 node lift that seated the
     // *duct floor* on the ground and left the footing hanging — see tools/glb_set_node_y.py).
-    const TW = 11.40, TD = 3.81, tx = px - 11, tz = pz;
+    // (TW, TD, tx, tz are declared with the perimeter channel above: the deck furniture has to dodge
+    // this footing, so the footing is stated once and the tower is what gets placed from it.)
     // So it is seated on its own lot: `claimLot` cuts the earthworks rectangle around the footing to
     // the highest natural ground under the deck and batters the shoulder back at 1:3, and the tower
     // is placed at that level rather than at a sampled point plus a constant.

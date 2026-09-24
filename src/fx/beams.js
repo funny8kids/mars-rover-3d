@@ -126,7 +126,7 @@ export function shaftMaterial(color, level = 0, wander = WANDER) {
   });
 }
 
-// Six of the ring's twenty-four lenses, evenly spaced. Every lamp throwing a shaft would be a solid
+// Six of the ring's twenty-two lenses, evenly spaced. Every lamp throwing a shaft would be a solid
 // drum of light across the whole pad; a vehicle is floodlit from a few towers, not from its own
 // perimeter studs.
 const LAMPS = 6;
@@ -135,13 +135,14 @@ const LAMPS = 6;
 // rather than one shared aim: with every lens set on the same point the six shafts cross at a single
 // knot on the axis, which is both the most obviously geometric thing in the frame and, being additive,
 // the brightest. The +124/255 was measured on the crossing pixels of the shared aim this replaced.
-// What the table leaves behind is checkable off `probe()` without an A/B: its six tips land at 30.4,
-// 37.8, 44.0, 34.2, 40.4 and 48.7 m, at axis distances of 5.0, 0.7, 3.0, 3.1, 1.2 and 7.0 m, so there
+// What the table leaves behind is checkable off `probe()` without an A/B: its six tips land at 30.5,
+// 37.8, 44.1, 34.3, 40.5 and 48.8 m, at axis distances of 5.0, 0.7, 3.0, 3.1, 1.1 and 6.9 m, so there
 // is no longer one point every shaft passes through. Of the two framings measured here the layer's
 // brightest pixel is +90/255 over the same frame with the shafts hidden (standing 22 m from the axis),
 // and neither frame clips.
 //
-// The lens ring is 9.5 m about the axis, so a lean of 9.5 puts a tip on the axis and the vehicle
+// The housings ride a 9.5 m circle about the axis and the glass is inset 40 mm of that, so `probe()`
+// reads every foot at 9.46 m. A lean of 9.5 therefore puts a tip on the axis and the vehicle
 // (4.5 m radius) swallows the shaft before then; `reach` 48 with a lean of 2.5 is the one lamp kept
 // nearly vertical so the group does not read as a single funnel.
 const AIM = [
@@ -161,7 +162,8 @@ export function createPadBeams(scene, rig) {
   const beams = [];
   const n = Math.min(LAMPS, rig.floods.length);
   for (let i = 0; i < n; i++) {
-    // One lens in every four, so the shafts stand where a lamp actually is rather than between them.
+    // Subsampled by index, not by a fixed stride, so the shafts stand where a lamp actually is
+    // whatever count the ring ended up with (22 lenses after the strongback footing punched its gap).
     const [fx, fy, fz] = rig.floods[Math.floor(i * rig.floods.length / n)];
     const [reach, lean] = AIM[i % AIM.length];
     const foot = new THREE.Vector3(fx, fy, fz);

@@ -2516,7 +2516,13 @@ function update(dt) {
   // The storm's own lift is small and deliberate: the key is down 68%, so the exposure opens up
   // for the midtones, but the wall and the sun aureole are already near clipping and a wide
   // exposure there reintroduces the flat orange field the layering was meant to replace.
-  renderer.toneMappingExposure = 1.02 - st.nightF * 0.20 + stormF * 0.11;
+  // The night term used to be −0.20, i.e. the grade got *darker* exactly when the scene's whole
+  // dynamic range had moved into the shadows. Measured 2026-09-24 at four night vantages: 40.6 % and
+  // 50.7 % of the plaza and street frames sat in the bottom histogram bin, and the lamp band of the
+  // `cast` ruler came back null at three of the four — there was nothing bright enough in frame to
+  // be the reason for the restraint. The lamps are already held by the bloom gate above, which is
+  // night-aware on its own, so the exposure now gives back most of that dip.
+  renderer.toneMappingExposure = 1.02 - st.nightF * 0.09 + stormF * 0.11;
 
   // HUD
   UI.setSpeed(phys.speed * 3.6);
@@ -4245,6 +4251,27 @@ window.__RSB = {
     const bins = new Array(10).fill(0);
     for (let i = 0; i < q.length; i += 4)
       bins[Math.min(9, (0.2126 * q[i] + 0.7152 * q[i + 1] + 0.0722 * q[i + 2]) >> 5)]++;
+    // `bins` is a luminance histogram, so a uniformly violet frame and a neutral one can score
+    // identically — the "no single-hue cast" half of the acceptance check had no ruler at all and was
+    // being settled by taste. This is it: mean channel values per luminance band, each divided by the
+    // mean of the three, so a neutral band reads [1,1,1] and a cast one pushes its dominant channel
+    // past 1.15. Banding is the point, not polish — a night frame is *supposed* to hold saturated
+    // colour in the lamps, and the defect lives in the shadow band, where every fill source in
+    // `world/environment.js` was independently picking a near-identical blue-violet.
+    const band = (lo, hi) => {
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < q.length; i += 4) {
+        const y = 0.2126 * q[i] + 0.7152 * q[i + 1] + 0.0722 * q[i + 2];
+        if (y < lo || y >= hi) continue;
+        r += q[i]; g += q[i + 1]; b += q[i + 2]; n++;
+      }
+      // 2 % of the sample. A band thinner than that is a couple of lamp filaments, and averaging its
+      // chromaticity says nothing about the frame — report the share so a reader sees what was measured.
+      if (n < 160) return null;
+      const m = (r + g + b) / (3 * n);
+      return [+(r / n / m).toFixed(3), +(g / n / m).toFixed(3), +(b / n / m).toFixed(3), +(n / (q.length / 4)).toFixed(3)];
+    };
+    const cast = { shadow: band(40, 104), mid: band(104, 176), lamp: band(176, 256) };
     // Lossless, deliberately. The old `toDataURL('image/jpeg', 0.85)` put an 8 px lattice in the
     // frames the acceptance check is supposed to read: measured 2026-09-24 with
     // tools/codec_control.py, the same sky straight off the canvas scores blockiness 1.00 in
@@ -4254,7 +4281,7 @@ window.__RSB = {
     // strongest version of it (1.82). A capture that manufactures a weave cannot be used to clear a
     // shader of one, so the QA rig writes PNG and the check measures the render.
     const r = await fetch('http://127.0.0.1:8123/' + name, { method: 'POST', body: cv.toDataURL('image/png') });
-    return { name, status: r.status, bins: bins.map(b => Math.round(b / 1600 * 100)), clip: +(bins[8] / 16 + bins[9] / 16).toFixed(1) };
+    return { name, status: r.status, bins: bins.map(b => Math.round(b / 1600 * 100)), clip: +(bins[8] / 16 + bins[9] / 16).toFixed(1), cast };
   },
   // what is actually in front of the lens — finds blown-out emitters by screen position
   nearby: (r = 60) => {

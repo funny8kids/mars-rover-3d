@@ -71,15 +71,30 @@ void main(){
     }
     col += rays * 0.045 * uGodRay * vec3(1.0, 0.62, 0.32);
   }
-  // color grade: violet shadows / amber highlights (Outer Wilds dusk mood).
+  // color grade: violet shadows / amber highlights by day (Outer Wilds dusk mood).
   // At night this same violet sat on an already dark frame and turned the whole base into
   // purple mush, so the split-tone, the black crush and the vignette all back off with it.
   float lum = dot(col, vec3(0.299, 0.587, 0.114));
   // The old lift was blue-dominant (0.085 B vs 0.052 R), so every unlit face — the underside of
   // arches, the shaded side of hulls — collapsed into a purple dead-pixel silhouette.
-  vec3 shadows = mix(vec3(0.062, 0.042, 0.062), vec3(0.020, 0.026, 0.048), uNight);
+  //
+  // The night half fixed that only partway: (0.020, 0.026, 0.048) is still blue at 2.4× its red, and
+  // because the term is *added flat* onto every pixel the scene failed to light, it is the reason the
+  // after-dark frame held one hue no matter what the lamps were set to. Measured 2026-09-24: raising
+  // the scene's own night fill by 48 % (hemisphere, ambient, moon key, in world/environment.js) moved
+  // the shadow band's blue/red ratio by 0.065 at three of four vantages and by 0.009 at the fourth.
+  // A grade that swallows a half-strength relight is not tinting the scene, it is replacing it — and
+  // a constant added across the whole frame carries no geometry, which is the other half of why unlit
+  // ground read as a slab instead of a surface.
+  //
+  // So the night side of the split tone flips. Cool stays on the highlights, where the moon actually
+  // is; the shadows take the rust-warm of a settlement's own lamp spill bouncing off the deck, which
+  // is what a base at night is genuinely made of and is the second hue the frame was missing. The lift
+  // comes back up (0.55 → 0.85) because the black floor it was being rationed against is the defect,
+  // not the cost of avoiding one.
+  vec3 shadows = mix(vec3(0.062, 0.042, 0.062), vec3(0.038, 0.026, 0.021), uNight);
   vec3 highs = mix(vec3(1.10, 0.88, 0.64), vec3(0.92, 0.97, 1.10), uNight);
-  col = mix(col * highs * 0.94, mix(col, col * highs, 0.55) + shadows * (1.0 - clamp(lum * 2.6, 0.0, 1.0)) * mix(1.15, 0.55, uNight), uGrade);
+  col = mix(col * highs * 0.94, mix(col, col * highs, 0.55) + shadows * (1.0 - clamp(lum * 2.6, 0.0, 1.0)) * mix(1.15, 0.85, uNight), uGrade);
   // excess fill light flattens the image into pale pink — crush blacks and re-saturate
   col = max(col - mix(0.022, 0.004, uNight), vec3(0.0)) * mix(1.10, 1.55, uNight);
   float lum2 = dot(col, vec3(0.299, 0.587, 0.114));

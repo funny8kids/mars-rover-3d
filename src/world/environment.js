@@ -11,6 +11,25 @@ const COOL_GROUND = new THREE.Color(0.10, 0.12, 0.19);
 // the direct beam first, so what is left is the deep amber of a low Martian afternoon seen through
 // the front. Linear values — light colours are worked in linear space and tone-mapped downstream.
 const SUN_THROUGH_DUST = new THREE.Color(0.95, 0.40, 0.15);
+// Night, held to the same rule as the daytime fill above. Measured 2026-09-24 at four street-level
+// night vantages, every light in the scene was drawn from one blue-violet family — key (0.50,0.58,0.82),
+// hemi sky (0.10,0.13,0.26), and ambient taken straight from the night fog (0.045,0.05,0.075), whose
+// blue is 1.7× its red. Three copies of one hue and nothing to push against: the frame read as a
+// periwinkle filter, and the base's own 175 warm lamps — the only colour a night scene should actually
+// own — were competing with the sky instead of being the only colour in it.
+//
+// So the night fill goes near-neutral with a hair of rust in the ground bounce, which is both what an
+// unlit Martian slope looks like and the second hue that lets the lamps be the saturated ones.
+const MOONLIGHT = new THREE.Color(0.62, 0.68, 0.80);
+// Cool, but only a shade — the key is what should say "night", and it can do that without being the
+// only thing in the frame that says it.
+const NIGHT_SKY = new THREE.Color(0.152, 0.158, 0.192);
+// Bounce off regolith the sun left hours ago. Deliberately *not* blue: this is the colour of every
+// moon-shadow face in the frame, and while it was COOL_GROUND all night those faces were a third
+// sample of the same violet.
+const NIGHT_GROUND = new THREE.Color(0.072, 0.058, 0.052);
+// Near-neutral and one step above black, because this value doubles as the night ambient's colour.
+const NIGHT_FOG = new THREE.Color(0.054, 0.051, 0.058);
 // Metres out along the sun's ground track where the air is probed for dust. The slab a storm drags
 // behind its leading edge is ~260 m deep, so the probes straddle it and one beyond.
 const SUN_PATH = [45, 110, 190, 285, 400];
@@ -138,7 +157,7 @@ export class Environment {
     // term and the sun-path term are measuring two halves of the same column and must not stack.
     this.sun.intensity = THREE.MathUtils.lerp(0.10, 3.4, dayF) * (1 - Math.max(stormMix * 0.68, this.sunShade * 0.74));
     this._c.sun.setRGB(1.0, 0.72, 0.5).lerp(new THREE.Color(1.0, 0.92, 0.82), smoothstep(0.1, 0.5, el));
-    this.sun.color.copy(this._c.sun).lerp(new THREE.Color(0.50, 0.58, 0.82), nightF * 0.99);
+    this.sun.color.copy(this._c.sun).lerp(MOONLIGHT, nightF * 0.99);
     this.sun.color.lerp(SUN_THROUGH_DUST, this.sunShade * 0.8);
     this.sun.intensity += nightF * 1.6; // moonlight key: strong enough to throw real shadows
 
@@ -148,10 +167,15 @@ export class Environment {
     // as much as every face, and the measured histogram collapsed from seven luminance bins into
     // three: the gate became a silhouette because nothing in the frame was *not* lit any more.
     // Dust scatters, it does not replace the sun, so the fill now climbs about half as hard.
-    this.hemi.intensity = THREE.MathUtils.lerp(0.42, 0.62, dayF) * (1 + stormMix * 0.7) + nightF * 0.34;
+    this.hemi.intensity = THREE.MathUtils.lerp(0.42, 0.62, dayF) * (1 + stormMix * 0.7) + nightF * 0.52;
     this._c.sky.setRGB(0.46, 0.33, 0.27).lerp(new THREE.Color(0.74, 0.57, 0.46), dayF);
-    this._c.sky.lerp(new THREE.Color(0.10, 0.13, 0.26), nightF);
-    this.amb.intensity = 0.13 + dayF * 0.09 + nightF * 0.12 + stormMix * 0.13;
+    this._c.sky.lerp(NIGHT_SKY, nightF);
+    // The ground side of the hemisphere used to be one constant for the whole 24 hours, so after dusk
+    // the bounce under a hab's eaves was the same slate it is at noon — from a sky that no longer
+    // exists. At night the ground is the unlit half of the frame, and it is the only warm thing left
+    // once the sun is gone; leaving it cool is what made every shadow in the night render one hue.
+    this.hemi.groundColor.copy(COOL_GROUND).lerp(NIGHT_GROUND, nightF);
+    this.amb.intensity = 0.13 + dayF * 0.09 + nightF * 0.22 + stormMix * 0.13;
     // The blocked key does not vanish, it is scattered — and a front a kilometre wide that has the
     // sun behind it is the largest lamp in the scene. So the fill climbs on the same signal that
     // dims the sun: the ground loses its shadows and gains a flat, sourceless glow, which is the
@@ -167,7 +191,7 @@ export class Environment {
     // previous tint (0.275, 0.135, 0.062) was darker than the clear-sky fog it was lerping away
     // from, so every increase in dust could only push the histogram down into one maroon bin.
     const shift = 0.5 + 0.5 * Math.sin(elapsed * 0.07 + this.field.tick * 0.13);
-    const fogC = this._c.fog.setRGB(0.38, 0.175, 0.085).lerp(new THREE.Color(0.045, 0.05, 0.075), nightF);
+    const fogC = this._c.fog.setRGB(0.38, 0.175, 0.085).lerp(NIGHT_FOG, nightF);
     fogC.lerp(new THREE.Color(0.42, 0.14, 0.05), duskF * 0.6);
     this._c.dust.setRGB(0.585 + shift * 0.075, 0.375 + shift * 0.055, 0.185 + shift * 0.030);
     fogC.lerp(this._c.dust, stormMix);

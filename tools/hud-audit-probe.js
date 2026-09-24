@@ -125,6 +125,10 @@
         sharePct: +(Math.abs(a1.y - a0.y) * 50).toFixed(2),
         horizonPct: +((0.5 - fh.y * 0.5) * 100).toFixed(1),
         gas: +R.input().gas.toFixed(2), rescue: R.state.rescue, fps: +R.state.fps.toFixed(1),
+        // Who moved the rig this frame. `shareAttribution` can only say "the distance grew"; without
+        // this the distance is a mystery term and a prop dodging the camera reads as a camera design.
+        dodge: R.camDodge ? R.camDodge() : 'no R.camDodge',
+        plan: R.camPlan ? R.camPlan() : 'no R.camPlan',
       };
     } catch (e) { return { fail: String(e).slice(0, 160) }; }
   };
@@ -189,8 +193,19 @@
     const drive = { spawn: [+P.x.toFixed(1), +P.z.toFixed(1)], spawnBlocker, lane, ladder: [] };
     if (lane) {
       R.place(lane.x, lane.z, lane.yaw);
-      Q.step(40, 1000 / 60);                            // let the rig land on the new pose first
-      drive.atRest = readLens();
+      // The baseline has to be a SETTLED pose. `place` teleports the rover and the follow filter spends
+      // about a second catching up, so the fixed 40-frame wait used to measure a rig still flying in
+      // (dist 12.8 m against a settled 10.4 m) and every ratio in the ladder inherited that error —
+      // which is how a composition that holds can look like one that gains 8 %.
+      let restFrames = 0, rest = null, prevD = null, prevY = null;
+      while (restFrames < 120) {
+        Q.step(15, 1000 / 60); restFrames += 15;
+        rest = readLens();
+        if (prevD !== null && Math.abs(rest.dist - prevD) < 0.05 && Math.abs(rest.camY - prevY) < 0.01) break;
+        prevD = rest.dist; prevY = rest.camY;
+      }
+      drive.atRestFrames = restFrames;
+      drive.atRest = rest;
       const keys = R.input().keys;                       // `input: () => input.inp` — the object, not a namespace
       keys.add('KeyW');
       for (let i = 0; i < 20; i++) {

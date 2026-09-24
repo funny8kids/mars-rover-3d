@@ -2752,6 +2752,11 @@ window.__RSB = {
   // which no phase-pinning standoff can do from outside the object
   stormRef: () => stormField,
   phys: () => phys, env: () => env, launchRef: launch,
+  // The chase rig's per-frame keep-out correction. §6's composition reading needs it: a distance that
+  // grew can mean "the camera design pulls back" or "the rig just dodged a lamp post", and only the
+  // second one is a prop-layout bug.
+  camDodge: () => chase && chase.dodge,
+  camPlan: () => chase && chase.plan,
   // The stack as two vehicles. The merge pass is allowed to collapse each body to a handful of
   // meshes, so "how many nodes" proves nothing; what the separation depends on is that every part
   // rides with exactly one body. `stray` holds anything welded at the seam instead — it has to come

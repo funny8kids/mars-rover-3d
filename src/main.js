@@ -4137,7 +4137,15 @@ window.__RSB = {
     const bins = new Array(10).fill(0);
     for (let i = 0; i < q.length; i += 4)
       bins[Math.min(9, (0.2126 * q[i] + 0.7152 * q[i + 1] + 0.0722 * q[i + 2]) >> 5)]++;
-    const r = await fetch('http://127.0.0.1:8123/' + name, { method: 'POST', body: cv.toDataURL('image/jpeg', 0.85) });
+    // Lossless, deliberately. The old `toDataURL('image/jpeg', 0.85)` put an 8 px lattice in the
+    // frames the acceptance check is supposed to read: measured 2026-09-24 with
+    // tools/codec_control.py, the same sky straight off the canvas scores blockiness 1.00 in
+    // luminance and 1.00 in R-B, and once re-encoded at that quality it scores 1.34 and 1.89 — the
+    // chroma axis is where 4:2:0 does its worst damage. That lattice is what looked like programmed
+    // art in the storm sky, and it tracked the codec, not the weather: the *calm* frame carried the
+    // strongest version of it (1.82). A capture that manufactures a weave cannot be used to clear a
+    // shader of one, so the QA rig writes PNG and the check measures the render.
+    const r = await fetch('http://127.0.0.1:8123/' + name, { method: 'POST', body: cv.toDataURL('image/png') });
     return { name, status: r.status, bins: bins.map(b => Math.round(b / 1600 * 100)), clip: +(bins[8] / 16 + bins[9] / 16).toFixed(1) };
   },
   // what is actually in front of the lens — finds blown-out emitters by screen position

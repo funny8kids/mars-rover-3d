@@ -43,6 +43,20 @@
   --mono:"JetBrains Mono","Consolas",ui-monospace,monospace;
   --sans:"IBM Plex Sans","Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
   --display:"Big Shoulders Display","IBM Plex Sans","Noto Sans SC",sans-serif;
+  /* ---------- motion ----------
+     Four curves, and all four put a control point outside [0,1] — that is what "overshoot" means,
+     and no keyword can produce it (`ease` tops out at the target and comes back down; it never
+     passes through). They are named for the moment each one owns, because a curve is not a taste
+     choice: it is a claim about the physics of the thing moving.
+     Judged by tools/ref-site-font-probe.mjs (`customBeziers`, `overshootingBeziers`,
+     `beziersApplied`, `bareTransitions`), which expands these var() references before it counts,
+     so declaring a curve nobody consumes reads as 0 applied rather than as motion design.
+     Continuous readouts (battery %, film bars, telemetry widths) stay on `linear` on purpose: a
+     number that overshoots its value reads as a broken instrument, not as a lively one. */
+  --ease-pop:cubic-bezier(.34,1.56,.64,1);        /* arrives, leans past the line, settles back */
+  --ease-glide:cubic-bezier(.22,1.28,.36,1);      /* a row or panel sliding into place */
+  --ease-lean:cubic-bezier(.62,-.34,.34,1.24);    /* hover/press: coils first, then springs past */
+  --ease-exit:cubic-bezier(.6,-.28,.86,.5);       /* leaves: contracts before it goes */
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{width:100%;height:100%;overflow:hidden;background:#05040a;font-family:var(--sans);color:#e8e2d6}
@@ -82,7 +96,8 @@ button{font-family:var(--sans);cursor:pointer}
 .quality-grid{display:grid;grid-template-columns:repeat(2,minmax(150px,200px));gap:14px;justify-content:center}
 @media(max-width:640px){.quality-grid{grid-template-columns:1fr}}
 .q-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 10px;color:#dcd4c4;
-  display:flex;flex-direction:column;gap:6px;transition:.25s}
+  display:flex;flex-direction:column;gap:6px;
+  transition:transform .3s var(--ease-lean),border-color .2s var(--ease-glide),background-color .2s var(--ease-glide),box-shadow .3s var(--ease-glide)}
 .q-card b{font-size:22px;letter-spacing:.2em;color:var(--amber)}
 .q-card span{font-size:12px}.q-card i{font-style:normal;font-size:12px;color:#8a8478;font-family:var(--mono)}
 .q-card:hover{transform:translateY(-3px);border-color:var(--amber)}
@@ -104,7 +119,8 @@ button{font-family:var(--sans);cursor:pointer}
 #lang-btn:hover{border-color:var(--amber);color:var(--amber)}
 .auto-tip{margin-top:14px;font-size:12px;color:#8a8478;font-family:var(--mono)}
 .start-btn{margin-top:26px;font-size:18px;letter-spacing:.4em;padding:14px 46px;border-radius:999px;
-  border:1px solid var(--amber);background:linear-gradient(180deg,rgba(255,120,26,.22),rgba(255,60,10,.12));color:#ffe1b8;transition:.25s}
+  border:1px solid var(--amber);background:linear-gradient(180deg,rgba(255,120,26,.22),rgba(255,60,10,.12));color:#ffe1b8;
+  transition:transform .32s var(--ease-lean),box-shadow .32s var(--ease-glide),opacity .2s var(--ease-glide)}
 .start-btn:hover:not(:disabled){box-shadow:0 0 34px rgba(255,120,26,.5);transform:scale(1.04)}
 .start-btn:disabled{opacity:.35;cursor:not-allowed}
 /* The row is sized by its own line box (12 px × 1.5 = 18 px) while a `kbd` chip inside it is 19–20 px
@@ -122,17 +138,26 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 #mission-panel{position:absolute;top:18px;left:18px;background:var(--panel);backdrop-filter:blur(8px);
   border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:230px}
 .mp-title{font-size:13px;letter-spacing:.06em;color:var(--amber);margin-bottom:8px;font-weight:600}
-#mission-list{list-style:none}
-#mission-list li{padding:3px 0;color:#9a9184;font-size:13px;transition:.3s}
+/* The active row leans 3 px out of the list (§4's overshoot), so the list itself reserves the room.
+   This has to be the list's own padding: on a shrink-to-fit panel, padding on the *outside* grows the
+   border box but leaves the inner content width alone, so the first attempt here (padding on
+   #mission-panel) measured exactly the same `#mission-list 326>323` as before it. */
+#mission-list{list-style:none;padding-right:4px}
+#mission-list li{padding:3px 0;color:#9a9184;font-size:13px;
+  transition:color .28s var(--ease-glide),text-shadow .28s var(--ease-glide),transform .34s var(--ease-pop)}
 #mission-list li::before{content:"○ ";color:#5a5348}
-#mission-list li.active{color:#ffe9c9;text-shadow:0 0 12px rgba(255,150,50,.4)}
+/* the active row leans out of the list — the overshoot is what makes a row "become" the current one
+   instead of merely changing colour at the same pixel */
+#mission-list li.active{color:#ffe9c9;text-shadow:0 0 12px rgba(255,150,50,.4);transform:translateX(3px)}
 #mission-list li.active::before{content:"▶ ";color:var(--amber)}
 #mission-list li.done{color:#6f8f6a;text-decoration:line-through}
 #mission-list li.done::before{content:"● ";color:#79b36f}
 #info-card{position:absolute;left:18px;bottom:20px;max-width:340px;background:var(--panel);backdrop-filter:blur(10px);
   border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:8px;padding:14px 18px;
-  opacity:0;transform:translateY(8px);transition:.35s}
-#info-card.show{opacity:1;transform:none}
+  opacity:0;transform:translateY(8px);
+  transition:opacity .24s var(--ease-exit),transform .24s var(--ease-exit)}
+/* the card that appears next to a thing you just drove up to should arrive, not fade in */
+#info-card.show{opacity:1;transform:none;transition:opacity .34s var(--ease-pop),transform .34s var(--ease-pop)}
 #info-card.hidden{display:block;pointer-events:none}
 #info-tag{font-family:var(--mono);font-size:18px;letter-spacing:.25em;color:#79a9c4;margin-bottom:4px}
 #info-name{font-size:22px;font-weight:700;color:#ffdfb0;margin-bottom:6px;letter-spacing:.02em}
@@ -156,7 +181,8 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 #battery-row.crit #battery-fill{background:linear-gradient(90deg,#c9302a,#ff6a4a);animation:pulse-batt 1s ease-in-out infinite}
 @keyframes pulse-batt{0%,100%{opacity:1}50%{opacity:.35}}
 #grid-row{display:flex;gap:5px;justify-content:flex-end;margin-top:8px}
-.grid-pip{width:30px;height:4px;border-radius:2px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.08);transition:.4s}
+.grid-pip{width:30px;height:4px;border-radius:2px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.08);
+  transition:background-color .35s var(--ease-glide),border-color .35s var(--ease-glide),box-shadow .35s var(--ease-glide)}
 .grid-pip.on{background:var(--cyan);border-color:var(--cyan);box-shadow:0 0 10px rgba(60,210,230,.8)}
 .grid-pip.link{background:var(--amber);border-color:var(--amber);box-shadow:0 0 12px rgba(255,150,50,.9);animation:pulse-batt .55s ease-in-out infinite}
 /* A storm's bill, kept beside the thing it costs: dust settled on the solar arrays and on the
@@ -176,20 +202,24 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
    overlap, and this row was its first catch — before the offset the pill sat on "FPS" of
    「画质 标准 · 已降档 · 26 FPS」 and ate it. */
 #topbar{position:absolute;top:14px;right:74px;display:flex;gap:14px;font-family:var(--mono);font-size:12px;color:#8a8478}
-#toast{position:absolute;top:64px;left:50%;transform:translateX(-50%);background:rgba(10,8,6,.8);border:1px solid var(--line);
-  color:#ffd9a0;padding:10px 26px;border-radius:999px;letter-spacing:.06em;font-size:15px;opacity:0;transition:.4s;pointer-events:none!important;
+#toast{position:absolute;top:64px;left:50%;transform:translateX(-50%) translateY(10px);background:rgba(10,8,6,.8);border:1px solid var(--line);
+  color:#ffd9a0;padding:10px 26px;border-radius:999px;letter-spacing:.06em;font-size:15px;opacity:0;pointer-events:none!important;
+  transition:opacity .3s var(--ease-exit),transform .3s var(--ease-exit);
   /* a nowrap pill for a long mission line grows wide enough to sit on top of the task log */
   max-width:min(560px,52vw);white-space:normal;text-align:center;line-height:1.5}
-#toast.show{opacity:1}
+/* the pill has to carry its own centring through the motion, so the entry offset rides on the
+   Y axis next to translateX(-50%) rather than replacing it */
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);
+  transition:opacity .42s var(--ease-pop),transform .42s var(--ease-pop)}
 #countdown{position:absolute;top:38%;left:50%;transform:translate(-50%,-50%);font-family:var(--mono);font-size:clamp(60px,12vw,150px);
   font-weight:700;color:#fff;text-shadow:0 0 60px rgba(255,120,20,.9);opacity:0;pointer-events:none!important}
 #countdown.show{opacity:1}
-#objective-arrow{position:absolute;top:50%;left:50%;margin:-14px 0 0 -14px;width:28px;height:28px;opacity:.9;transition:transform .1s}
+#objective-arrow{position:absolute;top:50%;left:50%;margin:-14px 0 0 -14px;width:28px;height:28px;opacity:.9;transition:transform .1s linear}
 #objective-arrow svg{width:100%;height:100%;fill:var(--amber);filter:drop-shadow(0 0 8px rgba(255,140,40,.9))}
 #objective-arrow.back svg{fill:var(--cyan)}
 /* A sliding optical fix should *look* untrustworthy: the bearing already drifts from the sin waves in
    UI.arrowAngle; the blur is the same signal in the other channel, and only ever runs while lock is low. */
-#objective-arrow.unstable{transition:transform .05s;animation:nav-drift 2.4s ease-in-out infinite}
+#objective-arrow.unstable{transition:transform .05s linear;animation:nav-drift 2.4s ease-in-out infinite}
 @keyframes nav-drift{0%,100%{filter:none}46%{filter:blur(1.1px)}70%{filter:blur(.35px)}}
 #nav-chip{position:absolute;top:50%;left:50%;transform:translate(-50%,26px);display:none;align-items:center;gap:8px;
   font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:#e8b06a;white-space:nowrap;pointer-events:none!important;
@@ -214,12 +244,14 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
    vehicle is flying, which is why `body.launching` dims the rover's own instruments below it: a speed
    and a battery reading have nothing to say about a ship leaving the pad beside them, and two HUDs in
    the same corner is how a finale starts to look like clutter. */
-body.launching #speedo,body.launching #power-hud,body.launching #info-card{opacity:0;transition:opacity .6s}
+body.launching #speedo,body.launching #power-hud,body.launching #info-card{opacity:0;transition:opacity .6s var(--ease-exit)}
 /* the arrow's opacity is written inline every frame, so only !important can outvote it */
 body.launching #objective-arrow{opacity:0!important}
 #tel-wrap{position:absolute;left:0;right:0;bottom:18px;display:flex;flex-direction:column;align-items:center;
-  gap:7px;opacity:0;transform:translateY(10px);transition:opacity .5s ease,transform .5s ease;pointer-events:none!important}
-#tel-wrap.show{opacity:1;transform:none}
+  gap:7px;opacity:0;transform:translateY(10px);pointer-events:none!important;
+  transition:opacity .25s var(--ease-exit),transform .25s var(--ease-exit)}
+/* the whole launch panel is one entrance: it rises off the bottom edge and leans past the line */
+#tel-wrap.show{opacity:1;transform:none;transition:opacity .55s var(--ease-pop),transform .55s var(--ease-pop)}
 #tel-log{display:flex;flex-direction:column;align-items:center;gap:1px}
 .tel-ev{display:flex;gap:9px;align-items:baseline;font-family:var(--mono);font-size:12px;letter-spacing:.05em;
   color:#c3a67d;opacity:.62;text-shadow:0 1px 7px rgba(0,0,0,.92)}
@@ -245,7 +277,8 @@ body.launching #objective-arrow{opacity:0!important}
 #tel-trace{display:block}
 .eng-row{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:8px}
 .eng-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.07);
-  border:1px solid rgba(255,255,255,.1);transition:.18s}
+  border:1px solid rgba(255,255,255,.1);
+  transition:background-color .2s var(--ease-glide),border-color .2s var(--ease-glide),box-shadow .2s var(--ease-glide)}
 .eng-dot.on{background:var(--amber);border-color:var(--amber);box-shadow:0 0 8px rgba(255,170,60,.95)}
 .eng-tally{color:#7f7159;letter-spacing:.04em}
 .tel-gauge{width:146px}
@@ -296,6 +329,14 @@ body.no-ui #hud,body.no-ui #photo-ui .photo-tip{opacity:0}
 #tele-fab{position:fixed;left:18px;bottom:18px;z-index:36;background:var(--panel);border:1px solid var(--cyan);
   color:var(--cyan);border-radius:999px;padding:9px 18px;letter-spacing:.06em;font-size:15px;backdrop-filter:blur(6px)}
 #tele-fab:hover{background:rgba(60,200,225,.14)}
+/* Both corner pills arrive by losing `display:none`, which no transition can interpolate *from* — so
+   their entrance is an animation (flipping display back on restarts it), and the overshoot is what
+   makes the control read as placed by hand. No fill mode: `both` would keep the animation's final
+   transform in charge and outvote `:hover` forever after. */
+#tele-fab,#mute-fab{animation:fab-in .42s var(--ease-pop);
+  transition:transform .28s var(--ease-lean),background-color .2s var(--ease-glide),border-color .2s var(--ease-glide),color .2s var(--ease-glide)}
+#tele-fab:hover,#mute-fab:hover{transform:translateY(-2px) scale(1.03)}
+@keyframes fab-in{from{opacity:0;transform:translateY(10px) scale(.92)}to{opacity:1;transform:none}}
 #teleport-ui{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:45;width:min(760px,94vw);
   background:rgba(10,8,14,.92);border:1px solid var(--line);border-radius:14px;padding:0 0 14px;backdrop-filter:blur(10px)
   ;max-height:94vh;overflow:auto}
@@ -324,3 +365,14 @@ body.no-ui #hud,body.no-ui #photo-ui .photo-tip{opacity:0}
 #mute-fab{position:fixed;left:18px;bottom:60px;z-index:36;background:var(--panel);border:1px solid var(--line);
   color:#c9beac;border-radius:999px;padding:7px 16px;letter-spacing:.06em;font-size:12px}
 #mute-fab:hover{border-color:var(--amber);color:var(--amber)}
+
+/* ─── reduced motion ───
+   An easing curve is a claim about physics, so when the platform asks not to be shown physics the
+   curves flatten and the loops stop — the states still change, and nothing travels. Flattening the
+   four tokens is enough because every entrance reads them rather than a literal curve. */
+@media (prefers-reduced-motion:reduce){
+  :root{--ease-pop:linear;--ease-glide:linear;--ease-lean:linear;--ease-exit:linear}
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;
+    transition-duration:.12s!important}
+  .logo-glyph{animation:none}
+}

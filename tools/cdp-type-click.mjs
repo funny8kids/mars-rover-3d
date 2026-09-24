@@ -195,6 +195,41 @@ await step('menu:start', {
 
 await step('hud:mission-panel', {}, { measure: true, shot: 'hud' });
 
+// ── §4 动效落位：computed style, then the same reading under emulated reduced motion ──
+// The spec-side ruler counts what is written; this asks the browser what it will interpolate with,
+// and then flips `prefers-reduced-motion` to check the `@media` block actually flattens the same
+// elements. A reduced-motion rule that never fires is the most common kind of accessibility comment.
+const motion = fs.readFileSync(new URL('./motion-landing-probe.js', import.meta.url), 'utf8');
+const motionOn = !stepRe || stepRe.test('hud:motion-landing');
+const judgeMotion = (name, p, mode) => {
+  const bad = [];
+  if (p.reducedMotionMatches !== (mode === 'reduce')) bad.push(`media query reads ${p.reducedMotionMatches} in ${mode} mode`);
+  const wantBezier = mode === 'reduce' ? 0 : p.landed.length;
+  if (p.landedBezier !== wantBezier) bad.push(`landedBezier ${p.landedBezier} != ${wantBezier}`);
+  if (p.keepLinearOk !== p.keepLinear.length) bad.push(`keepLinear ${p.keepLinearOk}/${p.keepLinear.length}`);
+  if (mode === 'reduce' && !p.entryAnimationDurations.every(d => parseFloat(d) <= 0.001))
+    bad.push(`entry animations still run: ${p.entryAnimationDurations}`);
+  if (mode === 'default') {
+    if (p.entryAnimationsOk !== p.entryAnimations.length) bad.push(`entry ${p.entryAnimationsOk}/${p.entryAnimations.length}`);
+    for (const x of p.landed) if (!x.ok) bad.push(`${x.sel}: ${x.why}`);
+  }
+  const out = { name, mode, bezier: p.landedBezier, of: p.landed.length,
+    keepLinear: `${p.keepLinearOk}/${p.keepLinear.length}`,
+    entry: `${p.entryAnimationsOk}/${p.entryAnimations.length}`,
+    durations: p.entryAnimationDurations, tokens: p.tokens, fail: bad.length ? bad.join('; ') : undefined };
+  results.push(out);
+  console.log((bad.length ? '!! ' : '## ') + name + ' ' + JSON.stringify(out));
+};
+if (motionOn) {
+  judgeMotion('hud:motion-landing', JSON.parse(await evaluate(motion)), 'default');
+  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  try {
+    judgeMotion('hud:motion-reduced', JSON.parse(await evaluate(motion)), 'reduce');
+  } finally {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  }
+}
+
 await step('hud:teleport-open', {
   after: () => evaluate(`(() => { const u = document.getElementById('teleport-ui');
     return u ? [u.className, u.querySelectorAll('.tp-item').length, getComputedStyle(u).display].join(' | ') : 'no #teleport-ui'; })()`)
@@ -231,6 +266,7 @@ await step('hud:board-close', { after: () => evaluate(`document.getElementById('
   { sel: '#board-close', measure: true });
 
 console.log('SUMMARY ' + JSON.stringify(results.map(r => ({ n: r.name, fail: r.fail, got: r.got,
+  bezier: r.bezier, of: r.of, mode: r.mode,
   read: r.reading && { min: r.reading.min, col: r.reading.collisions, h: r.reading.h, v: r.reading.v,
     wide: r.reading.wide?.length ? r.reading.wide : undefined },
   png: r.png })), null, 1));

@@ -157,6 +157,32 @@ hud 档 `tracked15.pct` 43.8 % → **0 %**（六个 HUD 状态各测一遍，全
 **判负标准**：`ref-site-font-probe` 我们这侧 `customBeziers ≥ 4` 且 `overshootingBeziers === customBeziers`；
 `transition:.25s` 这种"只给时长"的写法在 `src/styles.css` 里为 0。
 
+**落地（2026-09-24）**：`:root` 里四条曲线，全部带过冲，各管一种物理 ——
+`--ease-pop`（到位后越过再收）、`--ease-glide`（滑进位）、`--ease-lean`（先蓄力再弹过，给 hover/press）、
+`--ease-exit`（退出前先缩）。规格侧：`customBeziers 4 / overshootingBeziers 4 / beziersApplied 4`，
+`bareTransitions 0`（原来 7 条裸写法：`.q-card`、`.start-btn`、`#mission-list li`、`#info-card`、
+`.grid-pip`、`#toast`、`.eng-dot`），`transitions` 15 → 20 条，每条都写明 property + duration + curve。
+参考站 23 条 / 4 过冲 / 2 裸 —— 数量上我们仍少 3 条，但"零过冲 vs 全过冲"这一项已经翻过来了。
+
+**渲染侧另开一把尺子**（`tools/motion-landing-probe.js`）：文本尺子数的是写过的字面，看不见层叠之后的
+结果，所以它读 `getComputedStyle`。八处点名的进入态（`#toast`、`#info-card`、`#mission-list li.active`、
+`#tele-fab`、`#mute-fab`、`.start-btn`、`.q-card`、`#tel-wrap.show`）computed timing function 全部是
+控制点越界的 `cubic-bezier` = **8/8**；连续读数（`#battery-fill`、`.film-bar i`、`.tel-ramp i`）
+必须**不是** bezier（会过冲的百分比不是生动，是仪表坏了）= **3/3**；两颗胶囊靠 `display:none → block`
+出现，transition 无法从 `none` 插值，所以进入是 `@keyframes fab-in` + `--ease-pop` = **2/2**
+（不带 `both`：fill-forwards 会永久压住 `:hover` 的 transform）。
+`prefers-reduced-motion` 用 CDP `Emulation.setEmulatedMedia` 实测第二遍：同一批元素 bezier 计数
+8 → **0**，四个 token 全部解析成 `linear`，进入动画时长压到 `1e-05s` —— 那段 `@media` 是真在生效的机制。
+
+**两条自己踩到的**：① 给 `li.active` 加 3 px 侧倾后，`fit.hiddenScreen.onScreen.h` 立刻报
+`#mission-list 326>323`；第一次把 3 px 补在 `#mission-panel` 的 padding 上**没有用** —— 自适应宽度的盒子，
+外侧 padding 长的是 border box，内容宽度一点没变，两次读数一模一样；补在列表自己的 `padding-right` 才归零。
+② 规格尺子原本用 `Object.fromEntries` 建自定义属性表，于是**最后**一条定义赢 —— `prefers-reduced-motion`
+块里那四条 `linear` 覆盖掉真曲线，`beziersApplied` 报 0（一个假红，但方向诚实）。现在取**第一**条定义，
+并把 reduce 块里的覆盖单独报成 `reducedMotionTokens`，不再静默改写。
+RED 对照：同一把新尺子跑改动前的 `src/styles.css` 字节 → `transitions 15 / bare 7 / beziers 0 /
+overshoot 0 / applied 0 / reducedTokens []`，四个新字段全部会因缺曲线而红。
+
 ---
 
 ## 5 用发光代替了层级

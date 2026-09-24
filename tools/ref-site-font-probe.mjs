@@ -29,28 +29,62 @@ const paired = css => {
 };
 
 const cssRules = css => {
+  // Comments are stripped before anything motion-related is counted. The counts below are the
+  // judgment for §4/§5, and a text search over the raw file would let a `cubic-bezier(…)` named in
+  // a prose comment score as an animation that exists — the same hole as a guard fed by its own
+  // annotations.
+  const code = css.replace(/\/\*[\s\S]*?\*\//g, '');
   const px = v => (v.endsWith('rem') ? parseFloat(v) * 16 : parseFloat(v));
-  const sizes = all(css, /font-size:\s*([-\d.]+(?:px|rem|em|vw))/g).sort((a, b) => px(a) - px(b));
-  const beziers = all(css, /cubic-bezier\(([^)]*)\)/g);
+  const sizes = all(code, /font-size:\s*([-\d.]+(?:px|rem|em|vw))/g).sort((a, b) => px(a) - px(b));
+  const beziers = all(code, /cubic-bezier\(([^)]*)\)/g);
   // 过冲 = 控制点 y 落到 [0,1] 之外：这是"弹一下"的签名，关键字 `ease` 永远给不出来。
   const overshoot = beziers.filter(b => { const p = b.split(',').map(Number); return p[1] > 1 || p[1] < 0 || p[3] > 1 || p[3] < 0; });
-  const fams = all(css, /font-family:\s*([^;}]+)/g);
+  const decls0 = [...code.matchAll(/transition(?:-duration|-property|-timing-function)?:([^;}]+)/g)].map(m => m[1].trim());
+  // Curves live in `:root` as custom properties so one easing is owned by one line, which means a
+  // plain text scan would find four declared and zero applied. Expand `var(--…)` against the file's
+  // own declarations before judging what a transition actually runs on.
+  // A custom property has a cascade, and the last one written is not the one a normal render uses:
+  // the `prefers-reduced-motion` block deliberately re-declares these tokens as `linear`. So the map
+  // keeps the FIRST definition (the base `:root`) and the reduced-motion overrides are reported as
+  // their own reading instead of silently clobbering the curves into "0 applied".
+  const vars = {};
+  for (const m of code.matchAll(/(--[\w-]+)\s*:\s*([^;}]+)/g)) if (!(m[1] in vars)) vars[m[1]] = m[2].trim();
+  const reducedTokens = [];
+  for (const at of [...code.matchAll(/@media[^{]*/g)]) {
+    if (!/prefers-reduced-motion/.test(at[0])) continue;
+    let i = at.index + at[0].length, depth = 1;
+    while (i < code.length && depth > 0) { if (code[i] === '{') depth++; else if (code[i] === '}') depth--; i++; }
+    reducedTokens.push(...[...code.slice(at.index + at[0].length, i).matchAll(/(--[\w-]+)\s*:/g)].map(m => m[1]));
+  }
+  const expand = s => { let p = s; for (let i = 0; i < 3; i++) { const q = p.replace(/var\((--[\w-]+)(?:,[^)]*)?\)/g,
+    (m, n) => vars[n] ?? m); if (q === p) break; p = q; } return p; };
+  const decls = decls0.map(expand);
+  // A declaration whose every comma-item is a bare time is `transition: all .25s ease` in disguise:
+  // the whole computed style rides the transition, and the curve is the default one.
+  const bare = decls.filter(d => d.split(',').every(part => /^\s*[\d.]+m?s\s*$/.test(part)));
+  // Declaring a curve nobody consumes is a promise with no writer, so count what is actually applied.
+  const applied = [...code.matchAll(/(?:transition|animation)[^;}]*/g)].map(m => expand(m[0]))
+    .flatMap(d => [...d.matchAll(/cubic-bezier\(([^)]*)\)/g)].map(m => m[1].trim()));
+  const fams = all(code, /font-family:\s*([^;}]+)/g);
   return {
     bytes: css.length,
     families: fams,
     faceRoles: { brand: fams.filter(f => !/sans-serif|serif|system-ui|monospace/.test(f)) },
     fontSizes: sizes,
     fontSizeSpan: sizes.length ? `${sizes[0]} → ${sizes[sizes.length - 1]} = ${(px(sizes[sizes.length - 1]) / px(sizes[0])).toFixed(1)}×` : null,
-    letterSpacing: all(css, /letter-spacing:\s*([^;}]+)/g),
-    sizeAndTracking: paired(css).slice(0, 12),
-    weights: all(css, /font-weight:\s*([-\d\w]+(?:\s*,\s*[-\d\w]+)?)/g),
-    transitions: (css.match(/transition(?:-duration)?:/g) || []).length,
-    keyframes: (css.match(/@keyframes/g) || []).length,
+    letterSpacing: all(code, /letter-spacing:\s*([^;}]+)/g),
+    sizeAndTracking: paired(code).slice(0, 12),
+    weights: all(code, /font-weight:\s*([-\d\w]+(?:\s*,\s*[-\d\w]+)?)/g),
+    transitions: (code.match(/transition(?:-duration)?:/g) || []).length,
+    bareTransitions: { n: bare.length, list: bare.slice(0, 8) },
+    keyframes: (code.match(/@keyframes/g) || []).length,
     customBeziers: beziers.length,
     overshootingBeziers: overshoot.length,
-    keywordEaseOnly: uniq(css.match(/\b(?:ease|ease-in|ease-out|ease-in-out|linear)\b/g) || []),
-    textShadows: (css.match(/text-shadow:/g) || []).length,
-    fontFaces: (css.match(/@font-face/g) || []).length,
+    beziersApplied: uniq(applied).length,
+    reducedMotionTokens: uniq(reducedTokens),
+    keywordEaseOnly: uniq(code.match(/\b(?:ease|ease-in|ease-out|ease-in-out|linear)\b/g) || []),
+    textShadows: (code.match(/text-shadow:/g) || []).length,
+    fontFaces: (code.match(/@font-face/g) || []).length,
   };
 };
 

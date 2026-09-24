@@ -78,8 +78,13 @@ button{font-family:var(--sans);cursor:pointer}
       eye reads it as separate letters. */
 
 /* ---------- loader ---------- */
+/* ---------- glow ----------
+   §5: `text-shadow` is down to two, and both are objects the world actually lights — the T-minus
+   number over the pad at ignition, and the launch panel hanging under the plume. Everything else
+   states its rank with size, weight and the colour ramp (see the type scale above); readability that
+   used to come from a dark ink shadow now comes from the plate the element is already sitting on. */
 .loader-inner{text-align:center;animation:fadeUp 1.2s ease both}
-.logo-glyph{font-size:64px;color:var(--amber);text-shadow:0 0 40px rgba(255,120,26,.8);animation:spinSlow 9s linear infinite}
+.logo-glyph{font-size:64px;color:var(--amber);animation:spinSlow 9s linear infinite}
 @keyframes spinSlow{to{transform:rotateZ(360deg)}}
 .title{font-family:var(--display);font-size:clamp(34px,6vw,64px);letter-spacing:.42em;margin:14px 0 4px;font-weight:800;
   background:linear-gradient(180deg,#fff3e0,#ff9a3c);-webkit-background-clip:text;background-clip:text;color:transparent}
@@ -144,11 +149,11 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
    #mission-panel) measured exactly the same `#mission-list 326>323` as before it. */
 #mission-list{list-style:none;padding-right:4px}
 #mission-list li{padding:3px 0;color:#9a9184;font-size:13px;
-  transition:color .28s var(--ease-glide),text-shadow .28s var(--ease-glide),transform .34s var(--ease-pop)}
+  transition:color .28s var(--ease-glide),transform .34s var(--ease-pop)}
 #mission-list li::before{content:"○ ";color:#5a5348}
-/* the active row leans out of the list — the overshoot is what makes a row "become" the current one
-   instead of merely changing colour at the same pixel */
-#mission-list li.active{color:#ffe9c9;text-shadow:0 0 12px rgba(255,150,50,.4);transform:translateX(3px)}
+/* the active row leans out of the list, and says so with weight + the top of the colour ramp —
+   §5: no glow, because a lit label is a light source and this is a checklist */
+#mission-list li.active{color:#fff3df;font-weight:600;transform:translateX(3px)}
 #mission-list li.active::before{content:"▶ ";color:var(--amber)}
 #mission-list li.done{color:#6f8f6a;text-decoration:line-through}
 #mission-list li.done::before{content:"● ";color:#79b36f}
@@ -169,7 +174,7 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
    scrollHeight 从 1 的 60 px 一路涨到 69 px 就饱和，box 要到 line-height 1.3 才追上它）。
    所以 `line-height:1` 不是紧凑而是溢出：多出的墨量压到下面的 #speed-unit（§2c census 抓到
    31.2×8.0 px 重叠）。取 1.35 = 固有行盒之上留余量，别再往回调。 */
-#speed-val{font-family:var(--mono);font-size:52px;font-weight:700;color:#fff;text-shadow:0 0 22px rgba(255,140,40,.55);line-height:1.35}
+#speed-val{font-family:var(--mono);font-size:52px;font-weight:700;color:#fff;line-height:1.35}
 #speed-unit{font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:#a08b6e}
 /* rover battery + base grid restoration */
 #power-hud{position:absolute;right:22px;bottom:104px;width:240px;text-align:right}
@@ -223,8 +228,7 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 @keyframes nav-drift{0%,100%{filter:none}46%{filter:blur(1.1px)}70%{filter:blur(.35px)}}
 #nav-chip{position:absolute;top:50%;left:50%;transform:translate(-50%,26px);display:none;align-items:center;gap:8px;
   font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:#e8b06a;white-space:nowrap;pointer-events:none!important;
-  background:rgba(10,8,6,.74);border:1px solid rgba(232,176,106,.34);border-radius:999px;padding:4px 11px;
-  text-shadow:0 1px 6px rgba(0,0,0,.85)}
+  background:rgba(10,8,6,.86);border:1px solid rgba(232,176,106,.34);border-radius:999px;padding:4px 11px}
 #nav-chip.show{display:flex}
 #nav-chip-val{color:#ffd9a0}
 #nav-chip.blind{color:#ff9d6d;border-color:rgba(255,110,70,.5);background:rgba(22,8,5,.78)}
@@ -247,14 +251,18 @@ kbd{font-family:var(--mono);border:1px solid #57504a;border-bottom-width:2px;bor
 body.launching #speedo,body.launching #power-hud,body.launching #info-card{opacity:0;transition:opacity .6s var(--ease-exit)}
 /* the arrow's opacity is written inline every frame, so only !important can outvote it */
 body.launching #objective-arrow{opacity:0!important}
+/* The trace log used to stay readable by putting a dark ink shadow under every line — that is the
+   same "paint the text, not the layer" habit §5 is about. The lines now sit on the plate they were
+   always floating above, which is also what makes the dim ones dim instead of muddy. */
+#tel-log{display:flex;flex-direction:column;align-items:center;gap:1px;
+  background:rgba(9,11,17,.55);border-radius:9px;padding:3px 14px}
 #tel-wrap{position:absolute;left:0;right:0;bottom:18px;display:flex;flex-direction:column;align-items:center;
   gap:7px;opacity:0;transform:translateY(10px);pointer-events:none!important;
   transition:opacity .25s var(--ease-exit),transform .25s var(--ease-exit)}
 /* the whole launch panel is one entrance: it rises off the bottom edge and leans past the line */
 #tel-wrap.show{opacity:1;transform:none;transition:opacity .55s var(--ease-pop),transform .55s var(--ease-pop)}
-#tel-log{display:flex;flex-direction:column;align-items:center;gap:1px}
 .tel-ev{display:flex;gap:9px;align-items:baseline;font-family:var(--mono);font-size:12px;letter-spacing:.05em;
-  color:#c3a67d;opacity:.62;text-shadow:0 1px 7px rgba(0,0,0,.92)}
+  color:#c3a67d;opacity:.62}
 .tel-ev b{color:var(--amber);font-weight:600;font-variant-numeric:tabular-nums}
 .tel-ev:last-child{opacity:1;color:#ffe4bd}
 .tel-bar{display:flex;align-items:stretch;background:rgba(9,11,17,.72);backdrop-filter:blur(10px);

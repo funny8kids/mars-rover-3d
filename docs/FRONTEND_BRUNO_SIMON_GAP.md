@@ -199,6 +199,21 @@ overshoot 0 / applied 0 / reducedTokens []`，四个新字段全部会因缺曲�
 
 **判负标准**：`textShadows ≤ 2`。
 
+**落地（2026-09-24）**：7 → **2**。留下的两处是画面里真的有光源照着字的对象 —— `#countdown`（点火时
+压在探照灯柱上的 T- 秒数）与 `#tel-wrap`（尾羽正下方的发射遥测板）。其余五处全部改由字号 / 字重 /
+色阶承担：`.logo-glyph` 去掉 40 px 光晕（它是一枚标志，不是一盏灯）、`#speed-val` 去掉 22 px 光晕
+（52 px / 700 已经是全场最大，发光只是把层级涂在字上）、`#mission-list li.active` 从
+「亮色 + 12 px 光晕」改成 `#fff3df` + `font-weight:600` + 第 4 条给的 3 px 侧倾。
+两处**深色**墨影（`#nav-chip`、`.tel-ev`）本来也不是发光，是拿墨影当代偿底板：胶囊自己的
+`background` 从 `.74` 提到 `.86`，发射轨迹日志改落到一块 `rgba(9,11,17,.55)` 的小底板上，
+`text-shadow` 一并删掉 —— 顺带把 `#mission-list li` 的 transition 里那条再也不会变的
+`text-shadow` 撤了（挂在不变性质上的过渡是死重量）。
+
+**没有失手的地方**：八个状态（菜单 zh/en + HUD 六态）真实点击走查后 `contrast.below45` 仍为 0，
+`min` 5.5（hud 档）/ 4.72–4.73（菜单档最暗的 `.q-card i`，红线 4.5）；`h=0 v=0 collisions=0`
+（`li.active` 提到 600 字重没有把最长一行顶出列表 —— 汉字的 em 框等宽，拉丁只宽约 1 px，4 px 预留吃得住）。
+`STEPS 16 FAILED 0`。
+
 ---
 
 ## 6 镜头会在加速过程中换一张构图（这条不依赖参考站）

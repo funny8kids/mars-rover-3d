@@ -157,7 +157,13 @@ function recentre(root) {
 // Recentring moves every child by the union bbox's centre — harmless when a pack's parts travel
 // together, and a silent half-metre lie the moment they are placed separately. Everything else in
 // the library has been laid out under the recentre it gets, so the exemption stays name-specific.
-const NO_RECENTRE = new Set(['rim_rock']);
+// `lox_stand` opts out because a bbox centre is not always the datum: this builder puts its origin
+// on the middle of the bund the drum stands in, and the asset then carries a 5.7 m cryo transfer
+// line away from it. The union bbox's centre rides 2.13 m out along that line — measured, the shift
+// is (−0.77, +1.98) — so recentring dragged the whole stand back off its own collision discs and
+// left the line short of the pad it feeds. The same footprint-centre lie as the Kenney cells, but
+// here the correct datum is the authored one.
+const NO_RECENTRE = new Set(['rim_rock', 'lox_stand']);
 
 // name may carry a subfolder prefix, e.g. 'kenney/space/hangar_largeA'
 export function loadModel(name) {

@@ -1251,18 +1251,68 @@ export async function buildBase(scene, quality) {
       sparkPoints.push({ x: bx2 + 3, y: by + 2.2, z: bz2 + 1.5, rate: 0.5 });
     }
     // support gantries + FATO tanks around the pad
-    // A support frame with nothing standing under it is scaffolding somebody abandoned, so this one
-    // is the pad's LOX stand: a cryo drum, a transfer line slung to the flame deck, and a barrel cage.
     {
       const sx = px + 6, sz = pz - 12, sy = heightAt(sx, sz);
       // A kit scaffold frame standing over empty ground was the last bare prop on the pad. This is
-      // the LOX stand instead: bund, drum, cradle, manifold and a transfer line to the flame deck.
-      // One authored stand: a bundled cryo drum on its saddles inside a four-leg cage with a
-      // guard ring, its manhole and relief valve, and the transfer line laid — with its clamps
-      // and its riser flange — out to the flame deck it feeds.
+      // the pad's LOX stand instead: a bundled cryo drum on its saddles inside a four-leg cage with
+      // a guard ring, its manhole and relief valve, and a transfer line slung out of the bund on
+      // clamps, running over two lattice trestles bolted to grade, and landing on a distribution
+      // manifold on its own concrete pad short of the mount — the pad's umbilicals take it from there.
       put('lox_stand', sx, sz, 1, 0, 0);
-      k('barrels', sx - 2.4, sz + 1.6, 0.5);
-      lot('lox-stand', sx, sz, 3.5, 3.5);
+      // The bund is a poured saucer, and it is the widest thing the stand puts on the ground: measured
+      // off the export, `bund` reaches 1.709 m and `bund_lip` 1.715 m, the cage's own leg feet land at
+      // 1.327 m inside it, and the one thing that overhangs the concrete is the relief valve on the
+      // drum's top at 1.729 m. `coverDiscs` circumscribes a rectangle to half its diagonal, so a round
+      // pour has to be authored as the square whose diagonal *is* its diameter: a 2.45 m side yields
+      // the 1.732 m drum that holds the valve with 3 mm to spare. The 3.5 × 3.5 lot this replaces read
+      // the saucer's ⌀ as a square edge and then circumscribed that, which spent the diagonal twice
+      // and parked a 0.75 m invisible wall in the ring all the way around the concrete.
+      lot('lox-stand', sx, sz, 2.45, 2.45);
+      // The drum crate is body-height solid, so it takes the same ruling as every other `barrels`
+      // placement in the world (pad-drums, drum-crate, lubricant-drums): `kSolid`, which sizes the
+      // drum off the model's own measured footprint rather than a constant. As `k()` it carried no
+      // collider at all and the rover drove straight through a crate of cryo drums. `kSolid` measures
+      // the crate 1.83 m square, circumscribing to 1.296 m, so its centre has to clear the bund's
+      // 1.732 m by both radii plus the 0.3 m `LAMP_CLEAR` that keeps two *different* props' discs from
+      // touching — the crease between touching discs has no legal position in it, which is the "WASD
+      // stopped working" bug. Sited at 3.53 m out, which the audit reads as 0.5 m of daylight between
+      // the two drums. It stays west of the pipe run: the nearest trestle foot plate is 0.8 m clear,
+      // so none of the line's own footprints moved.
+      kSolid('barrels', sx - 2.95, sz + 1.95, 0.5, 1, 'lox-drums');
+      // Colliders follow the line's height, not its extent — the same ruling that keeps `lamp.glb`'s
+      // cross-arm wall-less (see LAMP_BASE). The band a drum has to cover is set by the vehicle, not
+      // by a person standing in the apron: parked on this pad with the suspension settled, the rover
+      // measures 2.63 m from wheel to camera mast and tops out 2.72 m above the grade it stands on
+      // (read off `phys.groundY` at the stand, the mid-span and the terminal, which all return 0.60 —
+      // the apron is one flat pour). So a span below that is something the mast shears rather than
+      // something it drives under. Measured off the export, the transfer line's lowest vertex outside
+      // the bund sits at 3.945 m over the same datum, which leaves 1.2 m of clearance with the rover
+      // parked directly under the sagged middle, so the ground beneath the bridge really is open and
+      // a disc there would be a wall on nothing. Only the three things that stand *in* the apron get
+      // discs: two trestle foot plates and the terminal pad, all sized off the export instead of off
+      // the builder's own constants. The plates are 0.34 m squares and circumscribe to 0.24 m, and
+      // the widest member of either lattice — a leg foot at the plate — reaches 0.224 m, so one drum
+      // owns the whole tower. The pad is 1.15 m and circumscribes to 0.813 m, and everything stacked
+      // on it, manifold gauge dial included, reaches 0.812 m.
+      // That the trestles *carry* the span rather than standing next to it is the same class of claim
+      // and gets the same treatment — measured off the export, not off the builder's intent. The line's
+      // underside at the two tower centres is 4.118 and 3.945; the saddle bands run 4.121-4.176 and
+      // 3.897-3.952 and the clamp bands 4.206-4.296 and 3.982-4.072, so the two bracket the pipe's own
+      // circumference instead of stopping under it. The towers' topmost hoop band, at 3.673 and 3.450,
+      // clears the line by 0.445 and 0.495 m, so a lattice built up to its hoops would be scenery;
+      // what holds the span is the four legs, which run unbroken from the 0.000-0.090 foot plate to
+      // 4.206 and 3.983 at the clamps. The invariant that checks all of it: no
+      // vertex from 0.15 m up to the rover's own 2.72 m ceiling may sit outside these four discs, and
+      // it reports 0 — where the drum's relief valve at 1.729 m is the tightest case and the guard
+      // ring, at 2.240 m out but 3.010 m up, is the one thing the sweep clears *because* it is above
+      // the ceiling. Run it half a metre higher, to 3.27 m, and those four braces are the only
+      // strays it finds (192 vertices, no other node), which is the reading that says the band's top
+      // has to be the vehicle and not a round number. All three keep the
+      // stand's own prop id, so the audit reads them as one structure and never asks a drum to hold
+      // corridor distance from its own pipe.
+      for (const [n, dx, dz, side] of [[1, -0.71, 1.42, 0.34], [2, -1.42, 2.83, 0.34],
+                                       [3, -2.55, 5.10, 1.15]])
+        lot(`lox-stand#${n}`, sx + dx, sz + dz, side, side);
       sparkPoints.push({ x: sx, y: sy + 2.4, z: sz, rate: 0.22 });
     }
     kSolid('machine_generatorLarge', px - 8, pz - 10, 1.9, 0.35, 'pad-diesel');

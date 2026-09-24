@@ -595,16 +595,24 @@ function updateGrid(dt, st) {
     // new geometry to look like programmer art.
     const f = r.film, clear = 1 - f * 0.62;
     r.mats[1].color.copy(RIG_PLATE).lerp(RIG_DUST, f);
-    r.mats[2].color.copy(RIG_BEAM).lerp(RIG_DUST, f);
+    r.mats[2].uniforms.uColor.value.copy(RIG_BEAM).lerp(RIG_DUST, f);
     // The rotor is the one part of a tap that owns its own material, so the coating lands on it
     // too: iron dulled to a matte, dust-brown film. Without this the daytime read of a choked
     // district was nothing at all — the plate and the shaft are both dusk-only by design.
     r.mats[0].color.copy(RIG_CORE).lerp(RIG_DUST, f * 0.62);
     r.mats[0].roughness = 0.2 + f * 0.55;
-    r.core.material.emissiveIntensity = p * (0.10 + st.nightF * 5.3) * beat * clear;
+    // 5.3 at dusk put the rotor's own radiance ~12x over the night bloom gate (0.42), so bloom took
+    // the cyan 0x4fe2ff and rendered it as a white disc with six spikes: the lamp lost its colour at
+    // exactly the moment it was supposed to be the thing you navigate by. 2.1 still clears the gate
+    // by five times, so the shaft keeps blooming, and what comes back through the bloom is the hue.
+    r.mats[0].emissiveIntensity = p * (0.10 + st.nightF * 2.1) * beat * clear;
     r.core.rotation.y += dt * (0.4 + p * 2.6) * clear;   // the rotor slows when the array is choked
     r.mats[1].opacity = p * (0.02 + 0.73 * st.nightF) * beat * clear;
-    r.mats[2].opacity = p * (0.012 + 0.05 * st.nightF) * (1 - st.stormF * 0.6) * clear;
+    const bu = r.mats[2].uniforms;
+    bu.uLevel.value = p * (0.012 + 0.05 * st.nightF) * (1 - st.stormF * 0.6) * clear;
+    bu.uTime.value = elapsed;
+    bu.uCam.value.copy(camera.position);
+    bu.uFogDen.value = scene.fog ? scene.fog.density : 0;
     if (r === grid.target && grid.linkT > 0) {
       // the tap you are currently welding flickers in amber so the hold has a target
       r.mats[1].opacity = 0.25 + 0.6 * Math.abs(Math.sin(elapsed * 7));

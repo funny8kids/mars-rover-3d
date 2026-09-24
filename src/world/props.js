@@ -7,6 +7,7 @@ import { mergeInto, noMerge } from './merge.js';
 import { applySurfaceDetail } from './surface_detail.js';
 import { makeDriftMaterial } from './terrain.js';
 import { coverDiscs, discLayout, streetEncroach, STREETS, STREET_HW, CORRIDOR, audit, sealCheck } from './plan.js';
+import { UNIT_BEAM, shaftMaterial } from '../fx/beams.js';
 
 // ─── RED STARBASE · compact diorama ───
 // One ~110 m island, six readable landmarks, everything hand-placed.
@@ -26,6 +27,29 @@ const G = new THREE.Group();
 // them. assets.js leaves the verdict on the object itself, and that verdict survives cloneModel().
 const shade = (o) => {
   if (o.isMesh) { o.castShadow = !o.userData.rsbPane; o.receiveShadow = true; }
+};
+
+// A lamp's pool on the deck is a falloff, not a shape. The grid taps drew theirs as
+// `CircleGeometry(1.35, 6)` under a flat additive material — a cyan hexagon stamped on the concrete,
+// its six straight edges running out of the light instead of the light running out. The ramp below is
+// that disc's alpha, so the pool lands, thins, and has no rim at all. One texture shared by all six
+// taps; `CircleGeometry`'s UVs already map the disc into the unit square.
+let poolTex = null;
+const lightPool = () => {
+  if (poolTex) return poolTex;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const g = cv.getContext('2d');
+  const rg = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  rg.addColorStop(0.00, '#ffffff');
+  rg.addColorStop(0.22, '#d0d0d0');
+  rg.addColorStop(0.46, '#5c5c5c');
+  rg.addColorStop(0.72, '#171717');
+  rg.addColorStop(1.00, '#000000');
+  g.fillStyle = rg;
+  g.fillRect(0, 0, 128, 128);
+  poolTex = new THREE.CanvasTexture(cv);
+  return poolTex;
 };
 
 export async function buildBase(scene, quality) {
@@ -2074,13 +2098,22 @@ export async function buildBase(scene, quality) {
       const coreMat = new THREE.MeshStandardMaterial({ color: 0x101a1f, emissive: 0x4fe2ff, emissiveIntensity: 0, roughness: 0.2, metalness: 0.1 });
       const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.62, 0), coreMat);
       core.position.y = 5.85; core.castShadow = true; noMerge(core); rig.add(core);
-      const plateMat = new THREE.MeshBasicMaterial({ color: 0x4fe2ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-      const plate = new THREE.Mesh(new THREE.CircleGeometry(1.35, 6), plateMat);
+      const plateMat = new THREE.MeshBasicMaterial({ color: 0x4fe2ff, transparent: true, opacity: 0, alphaMap: lightPool(), blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+      // 1.35 → 1.75 m: the ramp puts most of a flat hexagon's light back on the inside, so the disc
+      // has to reach further to pool the same area of deck.
+      const plate = new THREE.Mesh(new THREE.CircleGeometry(1.75, 40), plateMat);
       plate.rotation.x = -Math.PI / 2; plate.position.y = 0.42; rig.add(plate);
-      const beamMat = new THREE.MeshBasicMaterial({ color: 0x6fe8ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-      // a shaft you navigate by at night, not a pole — shallow flare, and it dies away in daylight
-      const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 0.14, 15, 6, 1, true), beamMat);
-      beam.position.y = core.position.y + 7.5; rig.add(beam);
+      // The shaft is the pad floods' shaft — same unit cone, same grazing-edge falloff, same run-out
+      // instead of a cap. It used to be a `MeshBasicMaterial` on a 6-segment open cylinder at constant
+      // opacity, which drew its own silhouette: three flat quads of cyan with a straight rim on either
+      // side, and because the shell is DoubleSide and additive the two walls stacked into a brighter
+      // seam down the middle. `fx/beams.js` was written to remove exactly that from the launch pad;
+      // this was the last place in the base still doing it.
+      const beamMat = shaftMaterial(0x6fe8ff, 0, 0.22);
+      const beam = new THREE.Mesh(UNIT_BEAM, beamMat);
+      // shallow flare, and it dies away in daylight — the cone opens to 1.05 m over 15 m of rise
+      beam.scale.set(1.05, 15, 1.05);
+      beam.position.y = core.position.y; rig.add(beam);
       // the additive halo meshes must not cast — a shadow-casting light shaft reads as a solid pole
       for (const o of rig.children) if (o !== beam && o !== plate) { o.castShadow = true; o.receiveShadow = true; }
 

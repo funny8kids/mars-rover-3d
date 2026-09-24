@@ -20,7 +20,7 @@ import * as THREE from 'three';
 
 // One unit shaft: lens at local y = 0, far end at y = 1, radius 1 there and a twentieth of that at
 // the lens, so the caller scales it in metres. Open-ended — a capped cone would show its own lid.
-const UNIT_BEAM = new THREE.CylinderGeometry(1, 0.05, 1, 22, 14, true);
+export const UNIT_BEAM = new THREE.CylinderGeometry(1, 0.05, 1, 22, 14, true);
 UNIT_BEAM.translate(0, 0.5, 0);
 
 const VS = `
@@ -102,6 +102,30 @@ void main(){
   gl_FragColor = vec4(uColor, a);
 }`;
 
+// The one way to build a shaft of light in this world. Exported because the grid taps' night columns
+// were a second, independent answer to the same question — a `MeshBasicMaterial` cylinder with six
+// radial segments, constant opacity, and a cap-free but hard-rimmed silhouette, i.e. exactly the
+// paper cut-out this module's header names as the defect it replaced. Same physics, same shader, so a
+// shaft off the deck and a shaft on a tap cannot drift apart again.
+export function shaftMaterial(color, level = 0, wander = WANDER) {
+  return new THREE.ShaderMaterial({
+    vertexShader: VS,
+    fragmentShader: FS,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    uniforms: {
+      uTime: { value: 0 },
+      uWander: { value: wander },
+      uLevel: { value: level },
+      uFogDen: { value: 0 },
+      uCam: { value: new THREE.Vector3() },
+      uColor: { value: new THREE.Color(color) },
+    },
+  });
+}
+
 // Six of the ring's twenty-four lenses, evenly spaced. Every lamp throwing a shaft would be a solid
 // drum of light across the whole pad; a vehicle is floodlit from a few towers, not from its own
 // perimeter studs.
@@ -144,22 +168,7 @@ export function createPadBeams(scene, rig) {
     const dir = new THREE.Vector3(px - fx, 0, pz - fz).normalize().multiplyScalar(lean / reach);
     dir.y = 1;
     dir.normalize();
-    const mat = new THREE.ShaderMaterial({
-      vertexShader: VS,
-      fragmentShader: FS,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-      uniforms: {
-        uTime: { value: 0 },
-        uWander: { value: WANDER },
-        uLevel: { value: 0 },
-        uFogDen: { value: 0 },
-        uCam: { value: new THREE.Vector3() },
-        uColor: { value: new THREE.Color(0xa8c8ff) },
-      },
-    });
+    const mat = shaftMaterial(0xa8c8ff);
     const mesh = new THREE.Mesh(UNIT_BEAM, mat);
     mesh.frustumCulled = false;
     // Under the exhaust shells' 6, so a plume crossing a beam is the thing drawn on top.

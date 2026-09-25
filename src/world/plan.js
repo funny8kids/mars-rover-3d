@@ -89,6 +89,22 @@ export const streetEncroach = (x, z, r) => {
 //     will not trap the player inside itself.
 // Discs covering one and the same prop are exempt: they are strung along one axis, so their lens
 // always has an escape perpendicular to it.
+//
+// The census of that last class, 2026-09-25, and what it took to empty it. The world then reported
+// 45 `tight` pairs, which `scan()` groups into 33 seams standing next to drive-reached ground, and
+// every one of those 33 was then *driven* rather than argued (tools/cdp-seam-drive.mjs parks the
+// rover on the pair's cusp and holds full throttle on six headings; 4 m of travel without the
+// unstick firing is what counts as out). Eight held the rover. Moving the corridor check out of the
+// audit and into the placement site — `siteClear`/`kClear` for satellites in props.js, `putLamp`
+// sliding along its own run instead of being skipped where it no longer fits, and the crew rover
+// parked off its bay's leg line, which no garage this narrow can hold — emptied all eight.
+//
+// What survives is 7 pairs / 4 seams, each one measured to release: the spaceport gate's own leg and
+// a plaza machine 1 cm off the bar (3.20), the starship against the LOX terminal that feeds it (2.38)
+// and against the strongback that holds it (0.89), and the habitat's drum standing on the crater
+// rampart it is sheltered by (1.60 to 3.10). That is the bar for this class, not "the counter reads
+// zero": no stance the audit can name may hold a rover under the shipped physics, and a residual with
+// no measurement next to its name is not an argument, it is the old default pass in better prose.
 export function audit(items) {
   const blocks = [], tight = [], intrusions = [];
   const clearOf = STREET_HW + PAVEMENT;

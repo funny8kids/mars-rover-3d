@@ -589,9 +589,14 @@ export async function buildBase(scene, quality) {
   // is why the wheel stops at the bolted plinth rather than a metre short of the mast.
   const LAMP_BASE = [-0.114, 0.60, 0.61];
   // A drum must not touch another prop's discs: two raw discs with no daylight between them have no
-  // legal position in the crease, which is the "WASD stopped working" bug. 300 mm is well under the
-  // rover's own ground clearance, so a pole that close to a wall is one it can never wedge into.
-  const LAMP_CLEAR = 0.3;
+  // legal position in the crease, which is the "WASD stopped working" bug. How much daylight is
+  // settled by the audit, not by taste: the driven census (tools/cdp-seam-drive.mjs, 2026-09-25)
+  // parked the rover on every one of the 33 seams `plan()` reported and drove out on six headings —
+  // 8 held, and a lamp post standing beside a gantry stanchion was one of them. The bar it used to
+  // ask for was 0.3 m on the reasoning that a pole that close to a wall is one the rover can never
+  // wedge into; that is backwards. The wedge is the space between the two *inflated* bodies, and it
+  // exists for any pair under 2 × BODY_R apart, which is exactly `CORRIDOR`.
+  const LAMP_CLEAR = CORRIDOR;
   const lampDrum = (x, z, s, ry) => {
     const [ox, w, d] = LAMP_BASE, c = Math.cos(ry), si = Math.sin(ry);
     return discLayout(w * s, d * s, x + ox * s * c, z - ox * s * si, ry);
@@ -611,12 +616,85 @@ export async function buildBase(scene, quality) {
     }
     return true;
   };
-  const putLamp = (id, x, z, s, ry) => {
-    if (!lampFits(x, z, s, ry)) return false;
+  // Where a lamp's slot is taken it slides along its own run rather than being dropped: an avenue
+  // with a 50 m hole where one post refused to fit is a worse defect than a post 3 m down the kerb,
+  // and the alternative — a pole standing inside another structure's clearance — is the defect this
+  // whole pass exists to end.
+  const putLamp = (id, x, z, s, ry, along = null) => {
+    if (!lampFits(x, z, s, ry)) {
+      let found = null;
+      // Capped at 2 m, which is an eighth of the avenue's own post spacing: a slide that long is still
+      // the same rhythm on the kerb, and a longer one is a different post standing somewhere else. The
+      // first version of this allowed 8 m and moved a south-street lamp 5.5 m, which parked it dead
+      // centre in the spaceport gate's drive-through lane — clear of every collider, wrong in the
+      // picture, and the reason the cap is a number rather than a comment.
+      if (along) {
+        for (let n = 1; n <= 4 && !found; n++) {
+          for (const t of n % 2 ? [n * 0.5, -n * 0.5] : [-n * 0.5, n * 0.5]) {
+            const cx = x + along[0] * t, cz = z + along[1] * t;
+            if (lampFits(cx, cz, s, ry)) { found = [cx, cz]; break; }
+          }
+        }
+      }
+      if (!found) return false;
+      x = found[0]; z = found[1];
+    }
     put('lamp', x, z, s, ry, 0);
     const [ox, w, d] = LAMP_BASE, c = Math.cos(ry), si = Math.sin(ry);
     lot(id, x + ox * s * c, z - ox * s * si, w * s, d * s, ry);
     return true;
+  };
+  // ── satellites are sited by the rule the audit judges, where they are committed ──
+  // A district's small furniture is the side of a seam that can move, so it asks for the nearest
+  // ground that holds `CORRIDOR` against everything already standing and off the carriageway, and its
+  // mesh, footing and collider are then built at that answer — one object moved, so the collider stays
+  // the geometry it was measured from rather than a second guess typed after it.
+  // The carriageway is a blocker like any other disc, and it gets the same answer: the way out of it
+  // is off the lane, perpendicular to the centreline it is standing in.
+  const offStreet = (x, z) => {
+    let best = null, bd = Infinity;
+    for (const s of STREETS) {
+      const ex = s.b[0] - s.a[0], ez = s.b[1] - s.a[1];
+      const ll = ex * ex + ez * ez || 1;
+      const t = Math.max(0, Math.min(1, ((x - s.a[0]) * ex + (z - s.a[1]) * ez) / ll));
+      const qx = s.a[0] + ex * t, qz = s.a[1] + ez * t, d = Math.hypot(x - qx, z - qz);
+      if (d < bd) { bd = d; best = d > 1e-6 ? [x - qx, z - qz] : [-ez, ex]; }
+    }
+    return best;
+  };
+  const corridorBreak = (x, z, w, d, ry) => {
+    for (const p of discLayout(w, d, x, z, ry)) {
+      if (streetEncroach(p.x, p.z, p.r) > 0) return offStreet(p.x, p.z);
+      let worst = Infinity, off = null;
+      for (const q of colliders) {
+        if (q.floor !== undefined) continue;
+        const g = Math.hypot(q.x - p.x, q.z - p.z) - q.r - p.r;
+        if (g < worst) { worst = g; off = q; }
+      }
+      // the disc that is in the way names the way out of it
+      if (worst < CORRIDOR) return [p.x - off.x, p.z - off.z];
+    }
+    return null;
+  };
+  const siteClear = (x, z, w, d, ry = 0, reach = 9) => {
+    const block = corridorBreak(x, z, w, d, ry);
+    if (!block) return [x, z];
+    const away = Math.atan2(block[1], block[0]);
+    for (let r = 0.5; r <= reach; r += 0.5) {
+      for (let k = 0; k <= 16; k++) {
+        const th = away + (k % 2 ? Math.ceil(k / 2) : -k / 2) * (Math.PI / 8);
+        const cx = x + Math.cos(th) * r, cz = z + Math.sin(th) * r;
+        if (!corridorBreak(cx, cz, w, d, ry)) return [cx, cz];
+      }
+    }
+    return [x, z];        // nothing within reach: leave it where the audit can still see it
+  };
+  // place a model on ground that holds the corridor, and give it the collision its geometry occupies
+  const kClear = (name, x, z, ry, sc = 1, id, reach = 9) => {
+    const b = footOf(name), s = S * sc;
+    const [cx, cz] = siteClear(x, z, b.w * s, b.d * s, ry || 0, reach);
+    putSolid(name, cx, cz, s, ry, id);
+    return id;
   };
   // A gantry portal is four stanchions carrying a girder. The bay under it is driveable ground, so
   // the collision is the feet and nothing else — a disc on the centre would wall off the very space
@@ -1027,17 +1105,30 @@ export async function buildBase(scene, quality) {
       // An ungated lamp ring dropped a post dead-centre in the carriageway, i.e. directly in the
       // rover's path at spawn. Same south exclusion as the structures, plus two lamps squared up on
       // the barrier ends so the approach reads as an avenue rather than a gap in the ring.
-      for (let i = 0; i < 10; i++) {
-        const a = i / 10 * Math.PI * 2 + 0.31;
-        if (Math.hypot(Math.cos(a), Math.sin(a) + 1) < 0.95) continue;
-        const lx = hx + Math.cos(a) * 13.8, lz = hz + Math.sin(a) * 13.8;
+      // The lamp ring used to share its radius with the machine ring: both at 13.8 m, so every post
+      // stood inside a 2-2.9 m disc's clearance and the avenue of lights the plaza was designed
+      // around could not be built at all once the drum had to hold CORRIDOR. Two rings on one radius
+      // is the mistake, not the corridor. The lights move inside, to the brim of the paved core, and
+      // the machines keep the outer ring they were already reading as their own edge.
+      // Closed as a ring, six posts on a 7 m brim turn the plaza's core into a carousel of aisles:
+      // the scan found a 15-20 m blind run between the fifth lamp and the spaceport gate's own leg.
+      // Open as an arc across the north side, the same lights frame the heart of the plaza and leave
+      // every approach lane unobstructed. Four, not five: the fifth stood at (-5.9, -4.1), and 12.6 m
+      // due south of it is the spaceport gate's own west leg, which together with a street lamp made a
+      // 15 m blind run the scan reports as a trap.
+      for (let i = 0; i < 4; i++) {
+        const a = (0.30 + i * 0.20) * Math.PI;
+        const lx = hx + Math.cos(a) * 7, lz = hz + Math.sin(a) * 7;
         // A 5.7 m mast landing 1.8 m off the pad centre grew straight up through the teleport disc
         // and hid the markings from the approach. Fast-travel nodes keep their own clear envelope.
         if (Math.hypot(lx - (hx - 8.5), lz - (hz + 11)) < 5.4) continue;
-        putLamp(`lamp-ring-${i}`, lx, lz, 1.25, a);
+        putLamp(`lamp-ring-${i}`, lx, lz, 1.25, a, [-Math.sin(a), Math.cos(a)]);
       }
       for (const sgn of [-1, 1]) {
-        putLamp(`gate-lamp-${sgn}`, hx + sgn * 7.6, hz - 19.5, 1.15, sgn > 0 ? -1.57 : 1.57);
+        // Outboard of the gate's own legs, not between them: the pylons' discs reach to x 6.66 and a
+        // drum needs 3.73 m past that, which is where a driver's eye lands on the lamps anyway — the
+        // pair frames the portal from outside instead of standing in its opening.
+        putLamp(`gate-lamp-${sgn}`, hx + sgn * 10.5, hz - 19.5, 1.15, sgn > 0 ? -1.57 : 1.57, [sgn, 0]);
       }
     }
     infoZones.push({
@@ -1399,19 +1490,12 @@ export async function buildBase(scene, quality) {
       // and parked a 0.75 m invisible wall in the ring all the way around the concrete.
       lot('lox-stand', sx, sz, 2.45, 2.45);
       // The drum crate is body-height solid, so it takes the same ruling as every other `barrels`
-      // placement in the world (pad-drums, drum-crate, lubricant-drums): `kSolid`, which sizes the
-      // drum off the model's own measured footprint rather than a constant. As `k()` it carried no
-      // collider at all and the rover drove straight through a crate of cryo drums. `kSolid` measures
-      // the crate 1.83 m square, circumscribing to 1.296 m, so its centre has to clear the bund's
-      // 1.732 m by both radii plus the 0.3 m `LAMP_CLEAR` that keeps two *different* props' discs from
-      // touching — the crease between touching discs has no legal position in it, which is the "WASD
-      // stopped working" bug. Sited by that evaluator over every launch-district disc: at 3.53 m out the
-      // crate bit 0.364 m into the light ring and left only 0.228 m against the stand drum, so the site
-      // moved 0.67 m south-west to 3.61 m out, which reads 0.511 m clear of the ring and 0.584 m clear of
-      // the nearest other disc (the stand), with nothing else in the district closer. It stays west of
-      // the pipe run: the nearest trestle foot plate is still clear by the same margin, so none of the
-      // line's own footprints moved.
-      kSolid('barrels', sx - 3.5, sz + 0.9, 0.5, 1, 'lox-drums');
+      // placement (pad-drums, drum-crate, lubricant-drums): sized off the model's own measured
+      // footprint, not a constant. As `k()` it carried no collider at all and the rover drove straight
+      // through a crate of cryo drums. Its centre used to be solved by hand against the bund at
+      // `LAMP_CLEAR` = 0.3 m; that bar has since become the audit's `CORRIDOR`, which no offset this
+      // side of the light ring can satisfy by arithmetic, so the crate asks for its ground instead —
+      // bounded to 4 m because it belongs to this pipe run and must not wander off the pad.
       // Colliders follow the line's height, not its extent — the same ruling that keeps `lamp.glb`'s
       // cross-arm wall-less (see LAMP_BASE). The band a drum has to cover is set by the vehicle, not
       // by a person standing in the apron: parked on this pad with the suspension settled, the rover
@@ -1446,15 +1530,18 @@ export async function buildBase(scene, quality) {
       for (const [n, dx, dz, side] of [[1, -0.71, 1.42, 0.34], [2, -1.42, 2.83, 0.34],
                                        [3, -2.55, 5.10, 1.15]])
         lot(`lox-stand#${n}`, sx + dx, sz + dz, side, side);
+      // Sited after the trestle feet exist rather than before them: placement order is clearance
+      // order, and the crate's nearest neighbour on this pad is the terminal drum the line ends on.
+      kClear('barrels', sx - 3.5, sz + 0.9, 0.5, 1, 'lox-drums', 4);
       sparkPoints.push({ x: sx, y: sy + 2.4, z: sz, rate: 0.22 });
     }
     kSolid('machine_generatorLarge', px - 8, pz - 10, 1.9, 0.35, 'pad-diesel');
     portal('cargo-umbilical', px + 15, pz + 12, 1.0, 2.6);   // umbilical portal for the cargo rocket
     // The drum cage stood 3 m from the centre of an 8.8 m booster lot, i.e. inside the rocket's own
     // footprint, so its discs overlapped the stack by 2 m and the crease between them had no legal
-    // position in it. Searched out to the nearest apron position that keeps the full corridor clear
-    // of every collider on the pad: 3.4 m to the booster, nothing encroached on a street.
-    kSolid('barrels', px + 12, pz + 19, 0.7, 0.5, 'pad-drums');
+    // position in it. It is sited by `kClear` now, so the search that used to be done once by hand is
+    // re-run against whatever the district has committed when this line is reached.
+    kClear('barrels', px + 12, pz + 19, 0.7, 0.5, 'pad-drums');
 
     // pad wash ring for the light show — guaranteed in-frame from the trigger distance
     const wash = new THREE.Mesh(new THREE.TorusGeometry(13.5, 0.22, 8, 56), M.shipLightRing.clone());
@@ -1528,7 +1615,13 @@ export async function buildBase(scene, quality) {
     // and call it living space. It is the yard's dry store and LOX drum now, at the back of the
     // block where that is exactly what belongs.
     const drum = { x: vx - 8, z: vz + 14, s: S * 1.3 };
-    putSolid('hangar_roundA', drum.x, drum.z, drum.s, 0, 'hab-drum');
+    // The drum is a 15 m structure, so it is moved the few metres the rampart asks for rather than
+    // re-sited: `siteClear` searches outwards and takes the nearest legal ground.
+    {
+      const b = footOf('hangar_roundA'), s = drum.s;
+      const [hx2, hz2] = siteClear(drum.x, drum.z, b.w * s, b.d * s, 0, 5);
+      putSolid('hangar_roundA', hx2, hz2, s, 0, 'hab-drum');
+    }
     // Yard life, all of it in the courtyard the two rows leave open and none of it on a disc, so the
     // crew read as a settlement's people rather than props standing in a wall.
     k('stairs', drum.x + 5.2, drum.z - 4.2, Math.PI / 2);   // the drum's only way to its roof hatch
@@ -1614,15 +1707,18 @@ export async function buildBase(scene, quality) {
     // hazard, so its face is aimed at the nearest street centreline instead of at the leak behind
     // it, and the `+ PI` is what makes the aim land on the printed side: the exporter turns the
     // authored +Y face into the app's -Z, so a bare atan2 shows the rover the sign's back legs.
-    const bx = mx + 0.5, bz = mz + 5.6;
+    const px0 = mx + 0.5, pz0 = mz + 5.6;
     let roadDist = 1e9, aimX = 20, aimZ = 6;
     for (const s of STREETS) {
       const ex = s.b[0] - s.a[0], ez = s.b[1] - s.a[1];
-      const t = Math.max(0, Math.min(1, ((bx - s.a[0]) * ex + (bz - s.a[1]) * ez) / (ex * ex + ez * ez)));
-      const d = Math.hypot(bx - (s.a[0] + ex * t), bz - (s.a[1] + ez * t));
+      const t = Math.max(0, Math.min(1, ((px0 - s.a[0]) * ex + (pz0 - s.a[1]) * ez) / (ex * ex + ez * ez)));
+      const d = Math.hypot(px0 - (s.a[0] + ex * t), pz0 - (s.a[1] + ez * t));
       if (d < roadDist) { roadDist = d; aimX = s.a[0] + ex * t; aimZ = s.a[1] + ez * t; }
     }
-    const bRy = Math.atan2(aimX - bx, aimZ - bz) + Math.PI;
+    const bRy = Math.atan2(aimX - px0, aimZ - pz0) + Math.PI;
+    // Sited after the aim, not before: the board's three foot discs are strung across its own 2.24 m,
+    // so the rotation is part of what has to hold the corridor.
+    const [bx, bz] = siteClear(px0, pz0, 2.24, 0.55, bRy);
     beginProp('leak-board');
     put('hazard_sign', bx, bz, 1, bRy, 0);
     // Three discs spanned across the board's own 2.24 m, not one blob at its centre: the panel is
@@ -1689,10 +1785,13 @@ export async function buildBase(scene, quality) {
     // as invisible bollards in a field of glass.
     lot('anomaly-07', sx - 2, sz - 3, 4.4, 4.4);
     for (const [dx, dz, cs] of [[7, 4, 1.05], [-9, 5, 0.8], [3, 9, 0.62], [-5, -9, 0.9]]) {
-      const c = seat(put('crystal', sx + dx, sz + dz, cs, dx * dz, cs * 0.34), 0.22);
+      // a crystal the size of a rover is a boulder, and the survey scatter does not know what the
+      // anomaly's own lot already occupies, so each one takes the nearest ground that holds the corridor
+      const [pxx, pzz] = siteClear(sx + dx, sz + dz, cs * 1.7, cs * 1.7, dx * dz, 6);
+      const c = seat(put('crystal', pxx, pzz, cs, dx * dz, cs * 0.34), 0.22);
       c.traverse(o => { if (o.isMesh) o.material = M.crystal; });
-      scree(sx + dx, sz + dz, cs * 2.0, dx + dz);
-      lot(`shard-${dx}${dz}`, sx + dx, sz + dz, cs * 1.7, cs * 1.7);
+      scree(pxx, pzz, cs * 2.0, dx + dz);
+      lot(`shard-${dx}${dz}`, pxx, pzz, cs * 1.7, cs * 1.7, dx * dz);
     }
     k('desk_computer', sx + 9, sz - 4, 2.2);
     k('craft_speederA', sx - 11, sz - 2, 1.1, 0.8);
@@ -1714,17 +1813,24 @@ export async function buildBase(scene, quality) {
     // to live here. A bay you cannot drive into is not a bay, so the canopy keeps its collision to
     // the four stanchions it stands on, and the apron is one service pad sized to the rover rather
     // than two 14 m kit decks that buried it.
-    const cradle = putDeck('platform_low', mx - 0.6, mz - 5.2, 1.4, Math.PI / 2, -0.1);
-    const cradleTop = new THREE.Box3().setFromObject(cradle).max.y;
     portal('rover-bay', mx - 0.6, mz - 5.2, 0.92, Math.PI / 2);
     // The bots stand on the apron's graded deck, so the ground under a foot is the deck: no rim
     // survey needed.
     const pit = (x, z) => heightAt(x, z);
 
-    // ── the crew rover, parked nose-out on its stand so the cupola clears the girder ──
-    const rover = cloneModel(models.crew_rover);
+    // ── the crew rover, parked nose-out on its cradle at the mouth of the bay ──
+    // It used to stand *between* the portal's four stanchions, and that is not a garage: the posts are
+    // 3.4 m apart and the hull is 3.2 m across, so every one of the four creases came to 1.83 m of
+    // daylight, and the driven census found the rover sitting in one of them at full throttle on all
+    // six headings. Widening the portal to hold the corridor would have made it an 18 m carport, so
+    // the vehicle lives on the apron where a rover actually leaves it and the bay is the open space
+    // behind it — which is the thing the district's own note already wanted: a bay you can drive into.
     const ry0 = Math.PI / 2;
-    rover.position.set(mx - 0.6, cradleTop + 0.02, mz - 5.2);
+    const [rx, rz] = siteClear(mx - 0.6, mz + 3.4, 4.1, 2.44, ry0, 7);
+    const cradle = putDeck('platform_low', rx, rz, 1.4, ry0, -0.1);
+    const cradleTop = new THREE.Box3().setFromObject(cradle).max.y;
+    const rover = cloneModel(models.crew_rover);
+    rover.position.set(rx, cradleTop + 0.02, rz);
     rover.rotation.y = ry0;
     rover.traverse(shade);
     G.add(rover);
@@ -1732,13 +1838,14 @@ export async function buildBase(scene, quality) {
     // passing them the other way round strung the two cover discs across the hull instead of
     // along it — a collider standing sideways through a 4.1 m vehicle, and a nose-in pin at each
     // end of it.
-    lot('crew-rover', mx - 0.6, mz - 5.2, 4.1, 2.44, ry0);
+    lot('crew-rover', rx, rz, 4.1, 2.44, ry0);
     // the stand it docks on: a low cradle the rover's rockers sit in, so it reads parked, not fallen
-    for (const dx of [-1.2, 1.2])
-      kitAt('cradle', mx - 0.6 + dx, cradleTop, mz - 5.2, ry0);
+    for (const dx of [-1.2, 1.2]) kitAt('cradle', rx + dx, cradleTop, rz, ry0);
 
     // ── two Optimus on the apron: one checking the airlock, one waiting at the mast ──
-    for (const [i, [bx, bz, turn]] of [[mx - 3.9, mz - 3.4, 2.3], [mx + 4.2, mz + 1.6, -1.1]].entries()) {
+    for (const [i, [bx0, bz0, turn]] of [[mx - 3.9, mz - 3.4, 2.3], [mx + 4.2, mz + 1.6, -1.1]].entries()) {
+      // a 0.62 m robot does not need the crease it was making with the bay posts it stands beside
+      const [bx, bz] = siteClear(bx0, bz0, 0.62, 0.62);
       const bot = cloneModel(models.optimus_bot);
       bot.position.set(bx, pit(bx, bz), bz);
       bot.rotation.y = turn;
@@ -1751,11 +1858,16 @@ export async function buildBase(scene, quality) {
     }
 
     // ── the pit: mast, workbench, drums and the second vehicle that still runs on wheels ──
-    kSolid('machine_wireless', mx + 6.5, mz - 2.5, 0, 1.15, 'charge-mast');
-    kSolid('desk_computer', mx + 1.6, mz + 6.8, 0.6, 1.5, 'pit-desk');
-    kSolid('barrels', mx + 5.6, mz + 4.2, 1.2, 1.3, 'lubricant-drums');
-    k('craft_speederA', mx - 6.4, mz + 1.4, 1.1, 1.35);
-    lot('utility-speeder', mx - 6.4, mz + 1.4, 2.2, 3.4, 1.1);
+    // The pit's three machines used to be pinned to hand-typed offsets, which is how the apron ended
+    // up with three of the eight creases the driven census found the rover cannot drive out of: a
+    // charger, a workbench and a drum stack each standing inside a bay stanchion's clearance. They are
+    // now sited from the corridor the audit judges, at the offset they were drawn for.
+    kClear('machine_wireless', mx + 6.5, mz - 2.5, 0, 1.15, 'charge-mast');
+    kClear('desk_computer', mx + 1.6, mz + 6.8, 0.6, 1.5, 'pit-desk');
+    kClear('barrels', mx + 5.6, mz + 4.2, 1.2, 1.3, 'lubricant-drums');
+    const [ux2, uz2] = siteClear(mx - 6.4, mz + 1.4, 2.2, 3.4, 1.1);
+    k('craft_speederA', ux2, uz2, 1.1, 1.35);
+    lot('utility-speeder', ux2, uz2, 2.2, 3.4, 1.1);
     k('rail', mx - 8.5, mz + 5.5, 0.4, 1.2);
     for (const [dx, dz] of [[-2.5, 0.5], [-1, 1.5], [0.5, 2.5]]) {
       const cx2 = mx + dx, cz2 = mz + dz;
@@ -1883,10 +1995,14 @@ export async function buildBase(scene, quality) {
     // Registered before the lanterns because placement order is clearance order: a lamp yields to
     // ground it can already see, and drawn after them the pier sat inside a lamp's drum by 30 mm.
     lot('telescope', nx - 7, nz - 6, 1.0, 1.0);
+    // Six posts on a 9 m arc are 3.86 m apart, which is 3 cm short of the corridor, and the arc ran
+    // through the telescope's own bearing. Five steps over the same sweep on a wider ring clears both:
+    // the lanterns light the hill's edge instead of crowding the scope.
     for (let i = 0; i < 6; i++) {
-      const a = i / 6 * 2.6 + 2.4;
-      const lx = nx + Math.cos(a) * 9, lz = nz + Math.sin(a) * 9;
-      putLamp(`lantern-${i}`, lx, lz, 1.3, a);
+      const a = i / 5 * 2.6 + 2.4;
+      const lx = nx + Math.cos(a) * 11.5, lz = nz + Math.sin(a) * 11.5;
+      if (Math.hypot(lx - (nx - 7), lz - (nz - 6)) < 5.4) continue;
+      putLamp(`lantern-${i}`, lx, lz, 1.3, a, [-Math.sin(a), Math.cos(a)]);
     }
     // Three cylinders used to stand here: a tapered pier, a white tube tipped over at -0.7 rad,
     // and a matte black disc glued onto the tube's end at +1.43. The disc was the tell — a
@@ -1921,8 +2037,12 @@ export async function buildBase(scene, quality) {
     lot('dawn7', yx, yz, 10, 10);
     k('barrel', yx + 9, yz + 4, 1.9);
     k('barrel', yx + 11, yz + 1, -0.4);
-    k('craft_speederA', yx - 8, yz + 8, 0.9, 0.7);    // the rescue craft that found it
-    lot('rescue-speeder', yx - 8, yz + 8, 3.4, 2.2, 0.7);
+    {
+      // the rescue craft that found it, on ground that holds the corridor with the lander's own lot
+      const [rx, rz] = siteClear(yx - 8, yz + 8, 3.4, 2.2, 0.9);
+      k('craft_speederA', rx, rz, 0.9, 0.7);
+      lot('rescue-speeder', rx, rz, 3.4, 2.2, 0.9);
+    }
     for (let i = 0; i < 5; i++) {
       const a = i * 1.7;
       k('terrain_roadStraight', yx - 14 + Math.cos(a) * (i * 3.5), yz - 6 + Math.sin(a) * (i * 2.8), a, 0.7); // scorch debris strip
@@ -2111,7 +2231,7 @@ export async function buildBase(scene, quality) {
           const ox = dz / l * 8.2, oz = -dx / l * 8.2;
           const side = (i % 6 < 3) ? 1 : -1;
           putLamp(`lamp-${si}-${i}`, x + ox * side, z + oz * side, 1.05,
-                  yaw + (side > 0 ? Math.PI / 2 : -Math.PI / 2));
+                  yaw + (side > 0 ? Math.PI / 2 : -Math.PI / 2), [dx / l, dz / l]);
         }
       }
     }

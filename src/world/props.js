@@ -566,6 +566,15 @@ export async function buildBase(scene, quality) {
     }
     return b;
   };
+  // The footprint a model actually has at an absolute scale — for the places where a prop is drawn
+  // by `k`/`put` (which take the scale directly) rather than by `kSolid`, and which therefore have no
+  // `putSolid` to measure them. A lot typed by eye next to a model placed by scale is the second
+  // hand-typed guess the plan was rebuilt to end: the two speeders and the crystal shards are sized
+  // this way, and both came out of the face sweep with wall geometry 3-5 m outside their own discs.
+  const measuredSlot = (name, s) => {
+    const b = footOf(name);
+    return [b.w * s, b.d * s];
+  };
   // place a model and give it the collision its geometry actually occupies
   const kSolid = (name, x, z, ry, sc = 1, id) => {
     putSolid(name, x, z, S * sc, ry, id);
@@ -1034,7 +1043,12 @@ export async function buildBase(scene, quality) {
     putDeck('teleport_pad', hx - 8.5, hz + 11, 1.25, 0, -0.08);
     teleports.push({ key: 'hub', name: ZONES.hub.name, x: hx - 8.5, z: hz + 11 });
     put('astronaut', hx + 3, hz + 6, 1, 2.4, -0.02);   // the Blender EMU: 1.85 m, real metres
-    k('craft_speederA', hx + 10, hz + 1, 0.9);
+    // The plaza's service quad used to be drawn here with no collider at all, so the rover drove
+    // through it. Giving it the collision its body actually has made it a 3.5 × 3.7 m object, and
+    // there is no bay on the plaza's own ring that holds the corridor: sited at (10, 1) it came to
+    // 2.83 m from the flag mast, at (19, -6) 1.56 m from a transformer ring, and a 16 m search found
+    // nothing legal either. The plaza keeps its flag, its gate and its machines; the vehicles live
+    // in the district built for them.
     // A flag mast is a 16 cm pole. Wrapping it in an r=0.8 disc meant the plaza had an invisible
     // metre-wide column nobody could see, in the exact line the player drives to reach the pad.
     // The rectangle now is the asset's own ground-level extent measured from its bounding box: the
@@ -1794,18 +1808,25 @@ export async function buildBase(scene, quality) {
     // A crystal is a hard spire in a skirt of loose scree: only the spire is an obstacle, and the
     // rubble is what the rover drives over. Ringing the footprints at r=1.2 left the grove reading
     // as invisible bollards in a field of glass.
-    lot('anomaly-07', sx - 2, sz - 3, 4.4, 4.4);
+    // The spire cluster is 2.6× its model, and the model is a grove, not a needle: the typed
+    // 4.4 × 4.4 lot left over a thousand wall faces of the outermost spires outside the disc, which
+    // is a rock the rover drives through. Measured off the same model the grove is drawn from.
+    {
+      const [aw, ad] = measuredSlot('crystal', 2.6);
+      lot('anomaly-07', sx - 2, sz - 3, aw, ad);
+    }
     for (const [dx, dz, cs] of [[7, 4, 1.05], [-9, 5, 0.8], [3, 9, 0.62], [-5, -9, 0.9]]) {
       // a crystal the size of a rover is a boulder, and the survey scatter does not know what the
       // anomaly's own lot already occupies, so each one takes the nearest ground that holds the corridor
-      const [pxx, pzz] = siteClear(sx + dx, sz + dz, cs * 1.7, cs * 1.7, dx * dz, 6);
+      const [sw2, sd2] = measuredSlot('crystal', cs);
+      const [pxx, pzz] = siteClear(sx + dx, sz + dz, sw2, sd2, dx * dz, 6);
       const c = seat(put('crystal', pxx, pzz, cs, dx * dz, cs * 0.34), 0.22);
       c.traverse(o => { if (o.isMesh) o.material = M.crystal; });
       scree(pxx, pzz, cs * 2.0, dx + dz);
-      lot(`shard-${dx}${dz}`, pxx, pzz, cs * 1.7, cs * 1.7, dx * dz);
+      lot(`shard-${dx}${dz}`, pxx, pzz, sw2, sd2, dx * dz);
     }
     k('desk_computer', sx + 9, sz - 4, 2.2);
-    k('craft_speederA', sx - 11, sz - 2, 1.1, 0.8);
+    kClear('craft_speederA', sx - 11, sz - 2, 1.1, 0.5, 'field-speeder');
     k('craterLarge', sx + 14, sz + 12, 0.7, 1.3);
     putDeck('teleport_pad', sx + 4, sz + 10, 1.0, 0, -0.08);
     teleports.push({ key: 'science', name: ZONES.science.name, x: sx + 4, z: sz + 10 });
@@ -1876,9 +1897,15 @@ export async function buildBase(scene, quality) {
     kClear('machine_wireless', mx + 6.5, mz - 2.5, 0, 1.15, 'charge-mast');
     kClear('desk_computer', mx + 1.6, mz + 6.8, 0.6, 1.5, 'pit-desk');
     putClear('drum_crate', mx + 5.6, mz + 4.2, 1.2, 1.28, 'lubricant-drums');
-    const [ux2, uz2] = siteClear(mx - 6.4, mz + 1.4, 2.2, 3.4, 1.1);
-    k('craft_speederA', ux2, uz2, 1.1, 1.35);
-    lot('utility-speeder', ux2, uz2, 2.2, 3.4, 1.1);
+    // The Kenney `craft_speederA` is 2.0 × 2.1 m in its own units, and the diorama scale is 3.5, so
+    // at sc 1.35 it drew a 9.5 × 9.9 m vehicle beside a 4.1 m crew rover while its typed lot claimed
+    // 2.2 × 3.4 — a wall-thin collider around a body the rover drove straight through (the face sweep
+    // found its skin 5.0 m outside that disc). Sized to what a light rover-quad should be next to the
+    // crew rover, and the collision now comes off the same measurement as the mesh.
+    const [usw, usd] = measuredSlot('craft_speederA', S * 0.45);
+    const [ux2, uz2] = siteClear(mx - 6.4, mz + 1.4, usw, usd, 1.1);
+    k('craft_speederA', ux2, uz2, 1.1, 0.45);
+    lot('utility-speeder', ux2, uz2, usw, usd, 1.1);
     k('rail', mx - 8.5, mz + 5.5, 0.4, 1.2);
     for (const [dx, dz] of [[-2.5, 0.5], [-1, 1.5], [0.5, 2.5]]) {
       const cx2 = mx + dx, cz2 = mz + dz;
@@ -2050,9 +2077,10 @@ export async function buildBase(scene, quality) {
     k('barrel', yx + 11, yz + 1, -0.4);
     {
       // the rescue craft that found it, on ground that holds the corridor with the lander's own lot
-      const [rx, rz] = siteClear(yx - 8, yz + 8, 3.4, 2.2, 0.9);
-      k('craft_speederA', rx, rz, 0.9, 0.7);
-      lot('rescue-speeder', rx, rz, 3.4, 2.2, 0.9);
+      const [rsw, rsd] = measuredSlot('craft_speederA', S * 0.55);
+      const [rx, rz] = siteClear(yx - 8, yz + 8, rsw, rsd, 0.9);
+      k('craft_speederA', rx, rz, 0.9, 0.55);
+      lot('rescue-speeder', rx, rz, rsw, rsd, 0.9);
     }
     for (let i = 0; i < 5; i++) {
       const a = i * 1.7;

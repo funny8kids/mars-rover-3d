@@ -4062,10 +4062,28 @@ window.__RSB = {
         // they cross is precisely the stance that touches both faces.
         const ra = a.r + CLEAR, rb = b.r + CLEAR;
         const mouth = gap / 2 - CLEAR;      // hull daylight along the line of centres
+        // The crossing test the paragraph above states, written out as the predicate both consumers
+        // need. `pinch` is only a joint if a hull position exists that touches both faces at once.
+        const bothBind = d >= Math.abs(ra - rb) && d <= ra + rb;
         let stance = null, pinch = 0;
-        if (gap > 2 * CLEAR) { stance = [mx, mz]; pinch = 2 * mouth; }  // axis stands free: both faces bind equally there
-        else if (d < Math.abs(ra - rb)) continue;  // one disc shadows the other: there is no pinch
-        else {
+        if (!bothBind) {
+          // No stance touches both faces. Either one disc shadows the other (|ra−rb| > d) or the two
+          // inflated circles miss each other entirely (d > ra + rb), and the old code answered that
+          // second case by adopting the midpoint of the centres as a "stance where both faces bind
+          // equally". That is only true for equal radii: the midpoint is d/2 from each *centre*, so
+          // its slack against the two faces is d/2 − ra and d/2 − rb, and with an asymmetric pair the
+          // bigger disc swallows it. Measured on the hub drive of 2026-09-26: six of its seven
+          // PINNED rows began from such a stance, each one already inside a disc's padded ring by up
+          // to 1.47 m (`hub:lamp-ring-2 | hub:loose0#11`, raw gap 5.44, midpoint 0.84 m from a third
+          // disc `hub:loose0#1` r0.67). The drive `place()`s the body, which bypasses the solver, so
+          // the rig started a *wall contact* and reported the solver's shove as a trap. A stance the
+          // physics cannot hold is not a defect to re-site; it is a ruler lying.
+          // The pair can still bound a lane, which is what the dead-end analysis below reads, so the
+          // midpoint is kept for that — but only where a hull can actually sit.
+          if (d > ra + rb && Math.min(d / 2 - ra, d / 2 - rb) >= 0 && clearAt(mx, mz) >= 0) {
+            stance = [mx, mz]; pinch = d - ra - rb;
+          }
+        } else {
           // The pair's cusp: where the hull touches both faces at once. It is where the pocket is,
           // but a third solid can cover it — which is exactly why this joint resisted two rounds of
           // analysis. So the stance kept is the nearest *standable* point that still has both faces
@@ -4088,7 +4106,7 @@ window.__RSB = {
         // Two discs of ONE structure is a corner, not a joint — the `#n` suffix counts the footprint
         // discs a sign board or a substation is laid out with. A seam is where two *structures* meet.
         const root = c => cname(c).replace(/#\d+$/, '');
-        if (gap > 0 && mouth < MOUTH && root(a) !== root(b)) {
+        if (gap > 0 && bothBind && mouth < MOUTH && root(a) !== root(b)) {
           const key = root(a) + '|' + root(b) + '|' + Math.round(mx / 4) + ':' + Math.round(mz / 4);
           const prev = seamCand.get(key);
           const e = { a: cname(a), b: cname(b), gap: +gap.toFixed(2),

@@ -706,6 +706,22 @@ export async function buildBase(scene, quality) {
     putSolid(name, cx, cz, s, ry, id);
     return id;
   };
+  // A pipe run is laid by its own length. Two segments 6 m apart of a model that is 3.15 m long is
+  // not a pipeline, it is isolated culverts parked on the apron, and once they carry collision a
+  // player bumps into the gaps between them. So the run is divided into as many segments as its
+  // length needs, each turned to face the next, and all of them share the host structure's id: the
+  // joints are one rigid object, and the audit is right to read them that way.
+  const pipeRun = (id, x0, z0, x1, z1, sc, from = 0) => {
+    const b = footOf('pipe_straight'), s = S * sc, len = b.d * s;
+    const dx = x1 - x0, dz = z1 - z0, dist = Math.hypot(dx, dz);
+    const k = Math.max(1, Math.round(dist / len));
+    const ry = Math.atan2(dx, dz);
+    for (let i = 0; i < k; i++) {
+      const t = (i + 0.5) / k;
+      kSolid('pipe_straight', x0 + dx * t, z0 + dz * t, ry, sc, `${id}#${from + i}`);
+    }
+    return k;
+  };
   // place a model on ground that holds the corridor, and give it the collision its geometry occupies
   const kClear = (name, x, z, ry, sc = 1, id, reach = 9) => {
     const b = footOf(name), s = S * sc;
@@ -1693,13 +1709,19 @@ export async function buildBase(scene, quality) {
       putSolid('cryo_tank', tx, tz, 0.95, 0.5 + i, 'cryo-farm');
       sparkPoints.push({ x: tx, y: heightAt(tx, tz) + 1.8, z: tz - 1.6, rate: 0.45 + i * 0.1 });
     }
-    // pipe rack from tanks toward the fab
-    for (let i = 0; i < 2; i++) {
-      k('pipe_straight', ix + 10 - 6 * i, iz - 4 + 6 * i, 0.75, 0.9 + i * 0.1);
-    }
-    k('pipe_corner', ix + 6, iz - 10, 0.4);
+    // The rack from the tank farm toward the fab: 1.9 m of steel laid on the ground, and until now
+    // it had no collision at all — the face sweep found its skin outside every disc. It carries the
+    // farm's own prop id with a `#n` suffix, because that is what it is: the manifold welded to the
+    // tanks it drains. The audit groups `#n` discs into one rigid object, so neither the joints
+    // between the segments nor the overlap where the line lands on a tank's footing reads as a crease
+    // a rover could be trapped in — and it is not one.
+    // It stops at ix + 8.5 rather than running on to the fab: the west end of the apron is a genset,
+    // and a rack laid against it leaves 2.87 m of daylight, which is a seam.
+    pipeRun('cryo-farm', ix + 15, iz - 7.5, ix + 8.5, iz - 7.5, 0.9);
     putSolid('drum_crate', ix - 13, iz + 6, 1.1, 2.0, 'drum-crate');   // crate of drums by the rail
-    k('rover', ix - 1, iz + 3, 1.8);                   // parked work rover
+    // The parked work rover: a 1.4 m body the rover drove through, because `k` draws and never
+    // collides. Measured off the model like every other body in the world.
+    kClear('rover', ix - 1, iz + 3, 1.8, 1, 'work-rover', 12);
     putDeck('teleport_pad', ix - 3, iz + 20, 1.05, 0, -0.08);
     teleports.push({ key: 'industry', name: ZONES.industry.name, x: ix - 3, z: iz + 20 });
     infoZones.push({
@@ -1715,13 +1737,22 @@ export async function buildBase(scene, quality) {
     ZONE = 'leak';
     const my2 = heightAt(mx, mz);
     kSolid('machine_generator', mx, mz + 2.5, 1.4, 0.8, 'valve-housing');   // the valve housing
-    k('pipe_straight', mx - 5, mz - 1.5, 0.2);
-    k('pipe_corner', mx + 4.5, mz - 2.5, 2.4);
+    // The BOG line the leak comes from stays drawn-and-uncollided, and that is a filed open defect
+    // rather than an oversight. The valve housing stands 8.2 m off the cryo farm's tank line, so a
+    // 1.9 m pipe laid on the ground anywhere between them keeps only 2.2-2.7 m of daylight against one
+    // side or the other; laid south it reaches the street shoulder and reads as an intrusion; laid
+    // west it blocks on the tanks. A half-collided line is worse than an honest gap, because the rover
+    // stops on the near side and sails through the far one. The fix belongs to the leak district's
+    // rebuild, not to a constant here.
     // hazard ring + red beacon on a hooded mast
     for (let i = 0; i < 10; i++) {
       const a = i / 10 * Math.PI * 2;
       kitAt('stake', mx + Math.cos(a) * 5.4, my2, mz + Math.sin(a) * 5.4, a);
     }
+    // South-west, off the housing's own bund. Laid west it crossed the tank farm's footings — the
+    // line does belong to that farm, but three blocks in the collision map is not how to say so.
+    k('pipe_straight', mx - 5, mz - 1.5, 0.2);
+    k('pipe_corner', mx + 4.5, mz - 2.5, 2.4);
     kitAt('mast', mx - 3.4, my2, mz - 3.4);
     // The hooded mast the ring is there to warn about. Two primitives used to stand in for it —
     // a red drum and a 0.9 m square cap plate under it, which read as a lantern balanced on a

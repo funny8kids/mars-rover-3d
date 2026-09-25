@@ -574,6 +574,27 @@ export async function buildBase(scene, quality) {
     (parent || CUR).add(tagScope(m)); return m;
   };
   const colliders = [];
+  // ─── the containment ring is emitted first, because every siting judge reads this array ───
+  // `corridorBreak`/`siteClear` can only walk a prop out of what is already in `colliders`, so a
+  // blocker added late is invisible to everything sited before it. The rim wall was the last block in
+  // the pass, and the walk-out that is supposed to keep a prop off its neighbours happily walked it
+  // *into* the wall: measured 2026-09-26 on 556eb85, `habitat:hab-drum` lies 2.02 m of raw edge gap from
+  // `rim:border#51`, i.e. 2.02/2 − 1.6 = −0.59 m of hull daylight — the audit counts that as a seam and
+  // the scan counts that bay as two of its ten traps. With the ring emitted at the top, the drum's own
+  // walk-out sees the wall, clears it, `seams` goes 51 → 49, and the drum↔border pair is gone (the bay
+  // itself is still reported, now bounded by the wall's neighbouring discs instead of by the drum: the
+  // count that has to fall is the driven one, not this label). The ring is pure collision data — the
+  // visible boundary is `rim_veil.js`, and the boards below are placed by angle, not by siting — so
+  // hoisting its discs costs nothing and hands every judge, including the ones not written yet, the one
+  // obstacle no prop may ever be walked into.
+  {
+    const rimDiscs = Math.ceil((Math.PI * 2 * RIM.discR) / RIM.arc);
+    for (let k = 0; k < rimDiscs; k++) {
+      const a = (k / rimDiscs) * Math.PI * 2;
+      colliders.push({ x: +(Math.cos(a) * RIM.discR).toFixed(2), z: +(Math.sin(a) * RIM.discR).toFixed(2),
+        r: RIM.disc, prop: `rim:border#${k}`, zone: 'rim' });
+    }
+  }
   // ─── footprints ───
   // A prop's collision discs used to be typed by hand in the line below the code that drew it, and
   // the two drifted apart: an r=3.4 disc around a deck whose furniture spanned 6 m, an r=1.6 disc
@@ -2493,6 +2514,16 @@ export async function buildBase(scene, quality) {
       // solid rock standing in the road with no collision on it at all — a prop you drive through
       // on the road you drive along. The site is the thing that is free to move, so it asks the
       // corridor before its drift is laid down, exactly as a satellite prop does.
+      // The mouth bar was tried here and measured away. Tightening this one call from `CORRIDOR` to
+      // `MOUTH_GAP` left site 0 exactly where it started — the `mulberry32(1234)` anchor (80.03, 62.85)
+      // that the audit reads back as (80.0, 62.8) — because no ground within its 14 m reach clears the
+      // mouth against everything standing there, so `siteClear` fell through to its last line. The
+      // anchor is not a neutral place to be left: it puts the spire 1.59 m *inside* `industry:cryo-farm`,
+      // where the corridor bar had left a 1.05 m pinch. A stricter bar that finds nothing is therefore
+      // worse than a looser bar that answers, and it says so nowhere — see the note on `siteClear`
+      // before any future bar is tightened across the map. And the clock it was bought for was never
+      // there: the tour prints `sample:0 25.0` on both bytes, so that leg's cost is the route into the
+      // site, not the site's position.
       const [cw, cd] = measuredSlot('crystal', cs);
       [x, z] = siteClear(x, z, cw, cd, 0, 14);
       const y = heightAt(x, z);
@@ -2962,12 +2993,9 @@ export async function buildBase(scene, quality) {
     // this block only guarantees that the two circles agree — both take their radius from `RIM`.
     ZONE = 'rim';
     const TAU = Math.PI * 2;
-    const discs = Math.ceil((TAU * RIM.discR) / RIM.arc);
-    for (let k = 0; k < discs; k++) {
-      const a = (k / discs) * Math.PI * 2;
-      colliders.push({ x: +(Math.cos(a) * RIM.discR).toFixed(2), z: +(Math.sin(a) * RIM.discR).toFixed(2),
-        r: RIM.disc, prop: `rim:border#${k}`, zone: 'rim' });
-    }
+    // The ring's collision discs are emitted at the top of the pass, in time for every siting judge
+    // to see them; this block keeps the boards, the seal measurement and the report.
+    const discs = colliders.filter(c => c.prop.startsWith('rim:border')).length;
     // Warn the driver in the one language they read at speed. Deliberately sparse — eight boards
     // around 735 m of rim is a hint, one every 12 m is a fence — and set back inside the veil so the
     // boards are not themselves a pinch point. The hubward aim is the leak board's convention: the

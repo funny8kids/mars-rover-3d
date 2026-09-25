@@ -16,11 +16,25 @@
 // failed. `teleports` must stay empty: a run that warps between districts is not a continuous path.
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 
-const [,, url, portStr, secondsStr, chunkStr] = process.argv;
+// Named options are read from anywhere in argv, same rule that `cdp-seam-drive.mjs` learned the hard
+// way: a positional slot that receives the wrong token silently becomes a filter that matches
+// nothing, and the run then reports an empty census as a clean one. The name list is explicit because
+// the URL is a positional argument and carries `?auto=std` — matching on "=" alone drops it.
+const NAMED = ['only', 'at', 'grace', 'pace'];
+const positional = process.argv.slice(2).filter(a => !NAMED.some(n => a.startsWith(n + '=')));
+const flag = name => process.argv.find(a => a.startsWith(name + '='))?.slice(name.length + 1);
+const [url, portStr, secondsStr, chunkStr] = positional;
 const port = Number(portStr || 9333);
 const SECONDS = Number(secondsStr || 300);
 const CHUNK = Number(chunkStr || 10);
-const RENDER_WINDOW = 1200;   // ms of real rAF rendering granted per chunk — that is the fps sample
+// `pace=0` drops the render window, which is the only reason this harness is slow. It is legal for
+// one thing only: a leg run (`only=`/`at=`) that asks where the autopilot steered, not how fast the
+// frame drew. The bars below refuse to read fps from a pace=0 run.
+const RENDER_WINDOW = Number(flag('pace') ?? 1200);   // ms of real rAF rendering granted per chunk — that is the fps sample
+// Leg rig: `only=<regex>` narrows the waypoint list and `at=x,z,yawDeg` puts the rover at a named
+// pose, so one approach the five-minute cruise failed can be re-driven from its own last good frame.
+const LEG = { only: flag('only'), at: flag('at')?.split(',').map(Number) };
+const grace = flag('grace');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // An fps reading is a property of the machine as much as of the code, and this box has been burned
@@ -148,21 +162,26 @@ for (let t = 0; t < SECONDS + CHUNK; t += CHUNK) {
   // (main.js teleports to hub when the cell empties), not a stuck-glitch escape hatch. The bar asks
   // for a continuous 5-minute path through every district, and a rover that spends a third of the
   // tour at the charging pad is not testing that. The teleport bar stays armed for every other hop.
-  const opts = JSON.stringify({ seconds: SECONDS, chunk: CHUNK, loop: true, pause: 1.5, keepPower: true,
-                                reset: calls === 0 });
-  report = JSON.parse(await evaluate(CHUNK_CALL(opts)));
+  const opts = { seconds: SECONDS, chunk: CHUNK, loop: true, pause: 1.5, keepPower: true,
+                 reset: calls === 0 };
+  if (LEG.only) { opts.only = LEG.only; opts.traceAll = true; }
+  if (LEG.at) opts.at = LEG.at;
+  if (grace) opts.grace = Number(grace);
+  report = JSON.parse(await evaluate(CHUNK_CALL(JSON.stringify(opts))));
   calls++;
   // The frequency has to be caught *inside* the render window, not after it: `scaling_cur_freq` is a
   // live reading, and in the gap between the window closing and the next evaluate the browser's main
   // thread is parked, so the peak would be sampled at an idle clock. Polled at 200 ms and reduced to
   // its maximum, which is the value the throttling bar is about (see BASE_GHZ).
   let peakGhz = null;
-  const win = Date.now() + RENDER_WINDOW;
-  do {
-    await sleep(200);
-    const g = env().ghz;
-    if (g !== null && (peakGhz === null || g > peakGhz)) peakGhz = g;
-  } while (Date.now() < win);
+  if (RENDER_WINDOW > 0) {
+    const win = Date.now() + RENDER_WINDOW;
+    do {
+      await sleep(200);
+      const g = env().ghz;
+      if (g !== null && (peakGhz === null || g > peakGhz)) peakGhz = g;
+    } while (Date.now() < win);
+  }
   const e = env();
   e.ghz = peakGhz;
   // fps sampled at the pose the tour actually reached, not at a forced render queue.
@@ -186,6 +205,29 @@ for (let t = 0; t < SECONDS + CHUNK; t += CHUNK) {
 }
 
 const c = report.coverage;
+if (LEG.only) {
+  // A leg run has no fps, no districts and no five-minute clock — it answers one question, which is
+  // what the autopilot did on the named approach. Printing the acceptance bars over it would either
+  // fail spuriously or, worse, read as a pass on a map it never drove.
+  console.log(`LEG only=${LEG.only} at=${LEG.at ? LEG.at.join(',') : 'spawn'} grace=${grace ?? 'default'}`);
+  console.log('LEGS ' + report.connectivity.legs);
+  console.log('DETAIL ' + report.connectivity.detail.join(' | '));
+  for (const a of report.connectivity.abandon) console.log('ABANDON ' + a);
+  // A leg is judged on *how* it arrives, not only whether it does. `rescues=2` with the rover parked
+  // 3 m off the target reads as a pass above, but the unstick emptied the crease, not the planner —
+  // the same distinction the acceptance bar draws. The event records carry the pose and the cause.
+  for (const ev of report.rescueLog || []) console.log('RESCUE ' + JSON.stringify(ev));
+  // The controller's own readings for the 4 s before each rescue, thinned to ~0.2 s so the line fits
+  // on a screen: [t,x,z,dNow,parking,blind,lane,parkX,parkZ,stageX,stageZ,speed,gas,range,aimErr].
+  for (const w of report.connectivity.wedges || [])
+    console.log(`WEDGE ${w.t} ${w.cause} @${w.at} wp=${w.wp} rows=${w.n} pocket=${w.pocket.join(',')}\n  ` +
+      w.trail.split(' ; ').filter((_, i) => i % 6 === 0).join(' ; '));
+  console.log(`LEGRESULT zones=${report.coverage.zones} streets=${report.coverage.streets} ` +
+    `points=${report.coverage.points} driven=${report.coverage.driven}/${report.coverage.of} ` +
+    `retries=${report.retries} laps=${report.laps} rescues=${report.rescues} ` +
+    `stuck=${report.stuckPockets} pen=${report.clip.bodyPenMax} sim=${report.simSeconds}s`);
+  process.exit(0);
+}
 const gpuInfo = JSON.parse(gpu);
 const fpsSort = fpsAt.map(r => r.fps).sort((a, b) => a - b);
 const fpsMin = fpsSort[0], fpsMed = fpsSort[fpsSort.length >> 1];

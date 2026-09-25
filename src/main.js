@@ -3478,7 +3478,8 @@ window.__RSB = {
     // point was already "arrived" the frame it became the target: `s.wp++` then fired once per frame,
     // burning all 46 waypoint indices in 0.77 s. A run that reported `laps: 175` had not driven 175
     // laps — it had stopped driving and kept counting.
-    const armLap = p => { p.lapBest = 1e9; p.since = null; p.held = 0; p.park = undefined; };
+    const armLap = p => { p.lapBest = 1e9; p.since = null; p.held = 0; p.park = undefined;
+      p.stage = null; p.wayT = -9; };
     let s = qaDrive;
     if (!s || opts.reset) {
       const ride = phys.y - phys.groundY;
@@ -3488,6 +3489,14 @@ window.__RSB = {
       phys.yaw = START.heading;
       phys.vx = 0; phys.vz = 0; phys.vy = 0; phys.speed = 0; phys.lateral = 0;
       phys.wheelAngle = 0; phys.grounded = true; phys.onFloor = false;
+      if (opts.at) {
+        // Leg rig: drop the rover at a named pose, so one failing approach can be re-driven verbatim
+        // instead of being chased through a five-minute cruise that never draws the same trajectory
+        // twice. Without this every hypothesis about a leg costs a full acceptance run.
+        phys.x = opts.at[0]; phys.z = opts.at[1];
+        if (opts.at.length > 2) phys.yaw = opts.at[2];
+        phys.groundY = surfaceAt(phys.x, phys.z); phys.y = phys.groundY + ride;
+      }
 
       // the runtime unstick is part of what the audit measures, so its log starts with the run
       rescue.events.length = 0; rescue.phase = ''; rescue.cool = 0; rescue.tries = 0;
@@ -3509,6 +3518,19 @@ window.__RSB = {
           }
         }
       }
+      // `only` narrows the route to the waypoints a regex names. Paired with `at` it turns the
+      // acceptance cruise into a single re-drivable leg: the five-minute run cannot reproduce a
+      // trajectory (the wind moves the rover between chunks), so a leg hypothesis has to be testable
+      // without one.
+      const visible = opts.only ? new RegExp(opts.only) : null;
+      if (visible) {
+        for (let i = spots.length - 1; i >= 0; i--) if (!visible.test(spots[i].name)) spots.splice(i, 1);
+        if (!spots.length) {
+          // An `only` that matches nothing drives an empty route and reports 0/0, which reads as a
+          // clean run. Name the option that was mistyped instead.
+          throw new Error(`DRIVE_ONLY_NOMATCH ${opts.only} — no waypoint is named by it`);
+        }
+      }
       // `best` is the closest the hull ever came to this point while the audit drove anywhere;
       // `aimBest` is the closest it came while this point was the one being steered at, and `aimed`
       // says whether that ever happened at all. The pair is what separates the two ways a point can
@@ -3517,7 +3539,7 @@ window.__RSB = {
       // five-minute run report 43/46 with no way to tell which of the three were walls.
       for (const p of spots) {
         p.best = 1e9; p.bestAt = null; p.aimBest = 1e9; p.aimed = false;
-        p.dwell = 0; p.retried = false; armLap(p);
+        p.dwell = 0; p.retried = false; p.handed = 0; p.parkT = 0; p.legT = 0; armLap(p);
       }
       const route = [];
       let at = [phys.x, phys.z];
@@ -3579,6 +3601,13 @@ window.__RSB = {
         loop: !!opts.loop, laps: 1, worstPen: 0, penPos: null, penFrames: 0,
         worstSink: 0, sinkPos: null, sinkFrames: 0, maxStep: 0, visited: new Set(),
         clipLog: [], trace: [],
+        // The last 4 s of the parking controller's own answers, dumped on the frame a rescue fires.
+        // `s.samples` is a 2 s grid and `legTraces` only copies out when a leg *misses*; a lap that
+        // reaches the point, drives off and then wedges on the way back in files neither, so the run
+        // reports `rescues=2` with no statement anywhere of what `parking`/`lane` read on the frames
+        // that led there. Rows: [t, x, z, dNow, parking, blind, lane, parkX, parkZ, stageX, stageZ,
+        // speed, gas, range, aimErr].
+        dec: [], wedgeTrails: [], nRes: 0,
         // The wind pushes the rover, so two runs of the same route are not the same drive. The
         // audit does not reset the weather (resetting it would hide a real failure mode) — it
         // reports how much storm the run drove through, so a missed point can be read honestly.
@@ -3609,24 +3638,80 @@ window.__RSB = {
       return max;
     };
     const wrap = v => Math.atan2(Math.sin(v), Math.cos(v));
-    const OFF = [24, -24, 48, -48, 72, -72, 100, -100, 135, -135, 180].map(d => d * Math.PI / 180);
+    // Bearings the planner may steer to, relative to the waypoint. Half-circle at most: the run of
+    // evidence against the wider fan is in the abandon traces, where the aim sits 100-135° off its own
+    // target (`tap:habitat aim -136 against brg -1`, `east-avenue:0` aimed for 25 s without coming
+    // inside 60 m of the point it was steered at). A 180° whisker out-scores a forward one whenever the
+    // goal ray is short, because the range term is worth up to `look` and the bearing penalty only 3.5
+    // — so the planner turned around, found the goal behind it, turned around again, and the leg spent
+    // its grace window on a circle. Turning round is the rescue state machine's job, not the aim's.
+    const OFF = [24, -24, 48, -48, 72, -72, 100, -100].map(d => d * Math.PI / 180);
+    let laneDiscs = [];
+    // Exact hull margin along the straight the parking controller is about to drive: the true
+    // point-to-segment distance to every solid, minus the disc, minus the 1.6 m ring. `rangeOf` cannot
+    // answer this — it samples every 1.5 m, so it reports a line as clear when its closest true
+    // approach slips between two samples. Measured 2026-09-26 on pad:motor: the stance the run filed at
+    // (6.9,-59.3) had `motor:optimus-02` (r 0.44, envelope 2.04) 2.0 m ahead and 8° off the line to the
+    // pad, and the rescue records show the hull came to rest at gap -0.01 against it with the only free
+    // bearing at 95-110°, i.e. away from the target. The step ray called that approach visible.
+    const laneMargin = (x0, z0, x1, z1, discs) => {
+      const dx = x1 - x0, dz = z1 - z0, len2 = dx * dx + dz * dz || 1;
+      let m = 99, by = null;
+      for (const c of discs || laneDiscs) {
+        let t = ((c.x - x0) * dx + (c.z - z0) * dz) / len2;
+        t = Math.max(0, Math.min(1, t));
+        const v = Math.hypot(x0 + dx * t - c.x, z0 + dz * t - c.z) - c.r - 1.6;
+        if (v < m) { m = v; by = c; }
+      }
+      return { m, by };
+    };
     // Point at the waypoint; only go hunting for another bearing once the carriageway ahead is
     // actually closing. The first version scored every whisker against a self-referential heading
     // that it then overwrote, so "straight on" earned a permanent bonus and the audit drove itself
     // to the rim of the map while chasing a waypoint behind it.
-    const pick = (tx, tz) => {
-      const goal = Math.atan2(tx - phys.x, tz - phys.z);
+    const pick = tgt => {
+      const goal = Math.atan2(tgt.x - phys.x, tgt.z - phys.z);
       const look = 6 + Math.min(11, phys.speed * 0.7);
       const rg = rangeOf(phys.x, phys.z, goal);
-      if (rg >= look) return { a: goal, r: rg };
-      let best = null;
-      for (const o of OFF) {
-        const a = goal + o;
-        const r = rangeOf(phys.x, phys.z, a);
-        const score = Math.min(r, 14) - Math.abs(o) * 1.1 - Math.abs(wrap(a - phys.yaw)) * 0.3;
-        if (!best || score > best.score) best = { a, r, score };
-      }
-      return best && best.r > rg ? best : { a: goal, r: rg };
+      if (rg >= look) { tgt.detour = 0; return { a: goal, r: rg }; }
+      const sweep = side => {
+        let best = null;
+        for (const o of OFF) {
+          if (side && Math.sign(o) !== side) continue;
+          const a = goal + o;
+          const r = rangeOf(phys.x, phys.z, a);
+          // Extra ray beyond the sight line is worth nothing: `look` is already "the ground I can
+          // actually stop on at this speed", so scoring raw range let a whisker one 1.5 m step longer
+          // than the goal-ward one outvote a 135° bearing penalty (the |o| term tops out at 3.5, the
+          // raw range term at 14). Measured on tap:habitat: aim 135° off its own target at 12.4 m/s
+          // with full pedal, and the leg spent the next 20 s describing a circle around the pad.
+          // Capping at `look` makes every whisker that reaches tie, and the tie breaks on goal bearing.
+          // The score is a function of *where the rover is*, never of which way it faces. The heading
+          // term this replaced (`- |wrap(a - yaw)| * 0.3`) made the winning whisker slide around the fan
+          // as the yaw swept, so the aim kept sitting ahead of the nose: a permanent tangent, and a
+          // closed 10 m loop. Measured 2026-09-26 on sample:0 (grace=9, `/tmp` leg run): the goal ray
+          // closed to 2 m, the aim sat at the fan's cap with `o=+100`, and over the next 6 s the yaw
+          // wound 109° → 216° → 355° while `dist` went 24 → 30 → 36 and the leg's own position trace
+          // came back to where it started — [[51.6,36.1] … [60.4,43.4]] round (63,40) on ground the
+          // hull-margin map measures at 5 m of room or better. Turning is the wheel's job; the bearing
+          // may only be a property of the ground.
+          const score = Math.min(r, look) - Math.abs(o) * 1.1;
+          if (!best || score > best.score) best = { a, r, o, score };
+        }
+        return best;
+      };
+      // Whichever side was chosen to pass an obstruction is held until the goal line is clear again.
+      // Re-deciding every frame cannot work: the score rewards the shallowest deflection, so against
+      // a 4.8 m disc standing between the rover and its target the planner picked +24°, slid back
+      // toward the wall one frame later, and repeated until every whisker read 0 m. Measured 2026-09-26
+      // on tap:habitat, whose circle has 16-64 standable points but is walled on the east by
+      // `habitat:hab-domeB` 3 m ahead of the stance it gave up at — the leg stopped at 15.4 m of a
+      // 9 m circle without ever arming parking. That is Bug-2's tangent step, not a new planner.
+      let best = tgt.detour ? sweep(tgt.detour) : null;
+      if (!best || best.r <= rg) best = sweep(0);
+      if (!best || best.r <= rg) return { a: goal, r: rg };
+      tgt.detour = Math.sign(best.o);
+      return best;
     };
     const touched = () => base.colliders
       .map((c, i) => ({ c, i, d: Math.hypot(phys.x - c.x, phys.z - c.z) }))
@@ -3638,9 +3723,12 @@ window.__RSB = {
     // disc's radius, minus the 1.6 m hull. Negative means the spot is inside a wall.
     const marginAt = (x, z) => {
       const list = s.cells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) || NONE;
-      let m = 99;
-      for (const c of list) m = Math.min(m, Math.hypot(x - c.x, z - c.z) - c.r - 1.6);
-      return m;
+      let m = 99, by = null;
+      for (const c of list) {
+        const v = Math.hypot(x - c.x, z - c.z) - c.r - 1.6;
+        if (v < m) { m = v; by = c; }
+      }
+      return { m, by };
     };
     // The trigger circle is a working area, not a pin. Every light pad has its reactor rig standing
     // on the 3.9 m ring itself (measured: grid:grid-rig at 3.90 m, 6 cm of body clearance), so the
@@ -3648,25 +3736,141 @@ window.__RSB = {
     // in the gap they can see; the audit does the same — it takes, once per waypoint, the standable
     // point inside the circle that has the most clearance and a straight approach from where the
     // rover is, and falls back to the centre if the whole circle is walled in.
-    const parkSpot = tgt => {
+    // `at` re-runs the same search from another stance, and `count` answers only "does this stance see
+    // the circle at all" — it stops at the Nth lane-clear candidate and returns a number instead of a
+    // spot. One owner of the criteria on purpose: a second sampler for the stance test would drift from
+    // the tier the real pick uses, and the whole point of the stage search is that both agree.
+    const parkSpot = (tgt, at, count) => {
+      const fx = at ? at.x : phys.x, fz = at ? at.z : phys.z;
       let best = null;
+      // `parkΔnone` on its own can't tell the two ways a circle goes blind: every candidate inside a
+      // wall (a siting fact, and the map's problem) versus candidates with room but no straight
+      // approach from where the rover stands (the driver's problem, since it parks the search at the
+      // rover's own bearing). The census says which, and names the disc that owns the tightest room.
+      const diag = { n: 0, tight: 0, nolos: 0, mMax: -99, ringMax: 0, by: null, laneMax: -99, laneBy: null };
+      // Only discs that can reach the ~16 m the search spans matter to the lane test.
+      laneDiscs = base.colliders.filter(c => c.floor === undefined &&
+        Math.hypot(c.x - fx, c.z - fz) < 20 + c.r);
+      const cand = [];
+      let nClear = 0;
       for (let ring = 0; ring <= Math.max(0.1, tgt.r - 0.5); ring += 0.5) {
         const n = ring < 0.1 ? 1 : Math.max(12, Math.round(ring * 8));
         for (let i = 0; i < n; i++) {
           const a = (i / n) * Math.PI * 2;
           const x = tgt.x + Math.sin(a) * ring, z = tgt.z + Math.cos(a) * ring;
-          const m = marginAt(x, z);
+          const { m, by } = marginAt(x, z);
+          diag.n++;
+          if (m > diag.mMax) { diag.mMax = m; diag.ringMax = ring; diag.by = by; }
           // 0.4 m of hull clearance is what a driver actually settles for on a pad half-occupied by
           // its own reactor rig; demanding a full metre instead leaves no legal point inside the
           // circle, and then the audit aims straight through the rig and earns an unstick.
-          if (m < 0.4) continue;
-          const d = Math.hypot(x - phys.x, z - phys.z);
-          if (rangeOf(phys.x, phys.z, Math.atan2(x - phys.x, z - phys.z)) < d) continue;
-          const score = m - ring * 0.25;   // room to sit in, and deep enough to register the pad
-          if (!best || score > best.score) best = { x, z, d, m, score };
+          if (m < 0.4) { diag.tight++; continue; }
+          const d = Math.hypot(x - fx, z - fz);
+          const lane = laneMargin(fx, fz, x, z);
+          if (lane.m > diag.laneMax) { diag.laneMax = lane.m; diag.laneBy = lane.by; }
+          if (lane.m >= 0.4 && ++nClear >= count) return nClear;
+          cand.push({ x, z, d, m, lane: lane.m, score: m - ring * 0.25 });
         }
       }
+      // Count mode answers the stance question with the strict tier only: a lane that clears by 0.0 m is
+      // a line the hull grazes, which is fine as a last resort inside the circle and useless as the
+      // reason to route a rover to an apron point.
+      if (count) return nClear;
+      // Two tiers, widest-first: take the candidates whose whole approach line clears the hull by the
+      // same 0.4 m the spot itself must clear, and only fall back to "the line at least does not cross
+      // a solid" when no candidate has such a lane. Falling back is what keeps a genuinely walled pad
+      // from going blind and handing the aim back to the whisker planner, which orbits the rig instead
+      // of parking (the `tap:habitat` 25 s + 25 s circle measured before the parking controller).
+      const pooled = cand.filter(c => c.lane >= 0.4);
+      const pool = pooled.length ? pooled : cand.filter(c => c.lane >= 0);
+      if (!pool.length) diag.nolos = cand.length;
+      for (const c of pool) if (!best || c.score > best.score) best = c;
+      tgt.parkDiag = best ? null : diag;
       return best ? { x: best.x, z: best.z } : null;
+    };
+    // A blind pad must not be aimed at from wherever the rover happened to arrive.
+    // `parkSpot`'s whole search is *inside* the trigger circle and its lane test starts at the rover's
+    // own stance, so one unlucky entry arc reads the circle as blind — and blind hands the aim back to
+    // the centre ray, which is the wall the parking controller exists to avoid. Measured 2026-09-26 on
+    // pad:motor (decision trace `v=trace3`): from t 5.4 s to the rescue at t 12.0 s every row read
+    // parking=1 with parkX/parkZ equal to the pad centre (1.5,-51.5) — blind for the entire approach —
+    // while the range to that aim fell 18 → 1.5 → 0 m at gas 0.35 and the heading error closed to 0.02
+    // rad, i.e. the hull aligned itself onto a blocked ray and crawled into the crease at (6.9,-59.3).
+    // The stance replay (/tmp/rsb_stances.js) then found lane4=0 lane0=0 at every one of the seven
+    // stances on that approach, each blocked by a different disc (pit-desk r0.75, lubricant-drums r0.93,
+    // optimus-02 r0.44, loose86#0 r0.11), with free escape bearings falling 39 → 20 → 5 → 1 → 0 as it
+    // went in. But the apron census (/tmp/rsb_parkreach.js) says pad:motor is parkable from 14 of its 61
+    // apron stances, and that *no* pad or tap in the map is blind from every stance (launch 47/70,
+    // habitat 43/49, science 42/72, comms 32/72, industry 16/62, hub 12/44, motor 14/61 — all of them
+    // ≥9). So the defect is the stance the driver stood on, not the props: the fix is to go and look for
+    // a better one instead of moving the map.
+    const stageSpot = tgt => {
+      // Discs that can reach either line this search spans: rover→stance and stance→pad. `laneDiscs` is
+      // saved around the loop because the nested stance searches re-point it at the stance, while the
+      // driver's own per-frame lane test reads it relative to the rover.
+      const held = laneDiscs;
+      const discs = base.colliders.filter(c => c.floor === undefined &&
+        (Math.hypot(c.x - phys.x, c.z - phys.z) < 20 + c.r ||
+         Math.hypot(c.x - tgt.x, c.z - tgt.z) < tgt.r + 15 + c.r));
+      // A straight lane from the rover is a preference, not a qualification. Probe
+      // (/tmp/rsb_stagewhy.js) at the habitat tap (-53.9,63.7 r9) from the stance that blinded the leg
+      // (-38.9,67.4): 120 stances in the band, 28 with hull room, 11 of those seeing ≥4 park points
+      // inside the circle, and 0 of the 11 with a clear straight line from the rover — habitat:hab-domeB
+      // on 6 of them (worst −6.05 m), grid:grid-rig on 5 (−3.32 m). Demanding that lane as a veto threw
+      // away every stance the map had and left the pad centre, i.e. the rig disc, as the fallback aim;
+      // the leg ground four laps at 15.4 m against a 9 m circle and filed `no-net-progress`. The rover
+      // is driven with whiskers and can go round a dome, so such a stance is still worth routing to —
+      // just not before one it can reach straight ahead, which is why the test ranks rather than vetoes:
+      // the same ruler measured pad:motor arriving in 11.6 s with the lane as a veto and 25.0 s with it
+      // dropped, while the habitat tap went from four blind laps and one rescue to arriving clean.
+      const onStage = (x, z) => {
+        if (marginAt(x, z).m < 0.4) return 0;
+        return parkSpot(tgt, { x, z }, 4);
+      };
+      let best = null;
+      // Keep the stance already being driven at unless it has stopped paying: re-picking from scratch on
+      // every tick let two symmetric apron points out-vote each other and the rover wove between them.
+      let cand = [];
+      const k = tgt.stage;
+      if (k && onStage(k.x, k.z)) cand = [k];
+      else {
+        for (let ring = tgt.r + 2; ring <= tgt.r + 11.5; ring += 2) {
+          for (let i = 0; i < 24; i++) {
+            const a = (i / 24) * Math.PI * 2;
+            const x = tgt.x + Math.sin(a) * ring, z = tgt.z + Math.cos(a) * ring;
+            const sees = onStage(x, z);
+            if (!sees) continue;
+            const d = Math.hypot(x - phys.x, z - phys.z);
+            const turn = Math.abs(wrap(Math.atan2(x - phys.x, z - phys.z) - phys.yaw));
+            // `sees` saturates at the 4 the stance test asked for, so it cannot rank anything: every
+            // stance in the list sees at least four park points. The clear-lane term is what ordering
+            // the old veto used to do indirectly, and 100 makes it lexicographic — a stance the rover
+            // can drive to in a straight line wins over any it cannot, and inside each group the
+            // nearest, most forward one wins. When no stance has a clear lane the term is 0 for all of
+            // them and the ranking falls through to distance and turn, which is the habitat-tap case.
+            const clear = laneMargin(phys.x, phys.z, x, z, discs).m >= 0.4 ? 100 : 0;
+            cand.push({ x, z, sees, d,
+              score: Math.min(sees, 4) * 1.5 + clear - d * 0.25 - turn * 2.2 });
+          }
+        }
+      }
+      for (const c of cand) if (!best || c.score > best.score) best = c;
+      laneDiscs = held;
+      if (!best) return null;
+      // The stage carries the park point it can see, so arriving there is not a dead end: `parking`
+      // adopts `stage.park` at 3.5 m and drives the line in from a stance whose lane was measured.
+      const park = parkSpot(tgt, { x: best.x, z: best.z });
+      return { x: best.x, z: best.z, sees: best.sees, park, detour: 0 };
+    };
+    // One question per waypoint, with a clock of its own: can this circle be entered from where the
+    // rover stands now, and if not, from where could it be?
+    const findWayIn = tgt => {
+      tgt.park = parkSpot(tgt);
+      tgt.stage = tgt.park ? null : stageSpot(tgt);
+      if (tgt.stage && !tgt.stage.park) tgt.stage = null;
+      // A branch that never fires on the real map is not a fix, it is a hypothesis — so the leg keeps
+      // its own count of stances found, and the report prints it next to the parking clock.
+      if (tgt.stage) tgt.stageN = (tgt.stageN || 0) + 1;
     };
 
     input.inp.keys.add('KeyW');
@@ -3700,35 +3904,147 @@ window.__RSB = {
         input.inp.gas = 0; input.inp.brake = 1; input.inp.steer = 0;
       } else {
         input.inp.brake = 0;
-        // The last approach is a parking manoeuvre, not an avoidance problem. Every light pad has its
-        // reactor rig standing on the 3.9 m trigger ring itself (surf 2.06 m), so the whisker planner
-        // steers around the rig, reads "missed by one metre", and reports a working pad as dead. Aimed
-        // straight in at crawl speed the real collision response slides the hull off the disc, which
-        // is exactly what a player does with the wheel.
+        // The last approach is a parking manoeuvre, not an avoidance problem. Every pad and every
+        // grid tap has its reactor rig standing on its own trigger circle's centre (measured 2026-09-26:
+        // `grid:grid-rig` r1.84 centred on all seven taps, so its rim reaches 3.44 m off centre with
+        // the hull's 1.6 m on top of it). Aiming the whisker planner at the centre therefore aims at a
+        // disc, and the planner spends the whole approach swerving around the object that marks the
+        // target. That is not a story: `tap:habitat` burned 25 s + a 25 s retry at 14.1 m against a
+        // 9 m circle on the last run, and the flood fill says every cell inside that circle is
+        // reachable from the apron (7/7 taps, `reachedIn == freeIn`), so the map was never the defect.
+        // Hand over on distance, and aim at the nearest standable point of the ring rather than the
+        // centre. If the ring has no visible point (a genuinely walled pad) the waypoint goes back to
+        // the whisker planner instead of grinding into the wall, and the ring is re-read from the new
+        // side below. The old "only hand over once progress stalls" rule could not fix this: an orbit
+        // tightens its own best distance on every swing, so the stall never registered and the
+        // planner kept dodging the rig for the whole grace window.
         const dNow = Math.hypot(phys.x - tgt.x, phys.z - tgt.z);
-        const parking = dNow < 9;
-        if (parking && tgt.park === undefined) tgt.park = parkSpot(tgt);
-        // The parking spot is picked from where the rover stood when it entered the circle. An
-        // unstick puts the rover somewhere else entirely, and then it grinds toward a spot it can no
-        // longer see: the losing run of pad:industry ended 6.1 m out on the far side of its own ring
-        // point. Re-pick whenever the chosen spot has fallen behind a wall.
-        if (parking && tgt.park && s.runFrames % 20 === 0) {
-          const pa = Math.atan2(tgt.park.x - phys.x, tgt.park.z - phys.z);
-          if (rangeOf(phys.x, phys.z, pa) < Math.hypot(phys.x - tgt.park.x, phys.z - tgt.park.z)) {
-            tgt.park = parkSpot(tgt) || tgt.park;
+        const reach = Math.min(16, tgt.r + 7);
+        const near = dNow < reach;
+        // Ask the pad how it can be entered *before* committing to a line into it. The old rule only
+        // ran the search on the frame the handover fired (`tgt.park === undefined`), and `parkSpot`
+        // answers a blind circle with null — not undefined — so one failed read pinned the waypoint to
+        // the centre for the rest of its life: the pad:motor trace held that aim from 5.4 s to the
+        // unstick at 12.0 s. This fires from 17 m out, i.e. ahead of the handover circle, so the rover
+        // is already aimed at an entry stance when the circle opens.
+        if (!tgt.park && dNow < 17 && s.t - tgt.wayT > 0.34) { tgt.wayT = s.t; findWayIn(tgt); }
+        // The stance is a means, not a destination: on reaching it, the park point it measured — a line
+        // whose hull margin was read from that stance — becomes the aim.
+        if (near && tgt.stage && Math.hypot(phys.x - tgt.stage.x, phys.z - tgt.stage.z) < 3.5) {
+          tgt.park = tgt.stage.park; tgt.stage = null; tgt.spotFor = null;
+          tgt.stageUsed = (tgt.stageUsed || 0) + 1;
+        }
+        // The exact hull lane into the chosen park point, read every frame — the same number the
+        // re-pick test and the aim gate below use, so the three can never disagree.
+        let lane = 99;
+        if (near && tgt.park) {
+          lane = laneMargin(phys.x, phys.z, tgt.park.x, tgt.park.z).m;
+          // The parking spot is picked from where the rover stood when it entered the circle. An
+          // unstick puts the rover somewhere else entirely, and then it grinds toward a spot it can no
+          // longer see: the losing run of pad:industry ended 6.1 m out on the far side of its own ring
+          // point. Re-pick whenever the chosen spot has fallen below the lane bar it was picked with, or
+          // whenever there is no spot at all — the side that hid the ring may be the side the rover has
+          // since driven round.
+          if (lane < 0.4 && s.runFrames % 20 === 0) {
+            findWayIn(tgt);
+            lane = tgt.park ? laneMargin(phys.x, phys.z, tgt.park.x, tgt.park.z).m : 99;
           }
         }
-        const park = parking && tgt.park ? tgt.park : { x: tgt.x, z: tgt.z };
-        const b = parking ? { a: Math.atan2(park.x - phys.x, park.z - phys.z),
-                              r: Math.hypot(park.x - phys.x, park.z - phys.z) } : pick(tgt.x, tgt.z);
+        // Parking is a commitment to a straight line, so it may only be made while that line is open.
+        // Distance alone handed over at 10.9 m and then drove the line regardless. Measured 2026-09-26
+        // on pad:motor: the stance replay (/tmp/rsb_stances.js) read lane4=0 lane0=0 at every one of the
+        // seven stances on that approach — including the one 10.2 m out in the open, where 39 of 72
+        // escape bearings were still free — and the blockers were four different discs on four different
+        // stances (`motor:pit-desk` r0.75, `motor:lubricant-drums` r0.93, `motor:optimus-02` r0.44,
+        // `motor:loose86#0` r0.11), with the free bearings falling 39 → 20 → 5 → 1 → 0 as the rover
+        // entered. So the lane does close on the way in, and a line committed at the handover cannot be
+        // driven. When it closes the waypoint falls back to the cruise planner — aimed at the entry
+        // stance if one has been found, at the pad centre otherwise — and the lane re-opens as soon as
+        // the hull is past the obstruction.
+        const parking = near && (!tgt.park || lane >= 0.4);
+        // What the clock is actually spent on. `parkT` is seconds this waypoint was steered by the
+        // parking controller rather than the whisker planner; `handed` counts the frames the handover
+        // fired while the rover was still outside the clean 9 m circle.
+        if (parking) { tgt.parkT += dt; if (dNow >= 9) tgt.handed++; }
+        const blind = parking && !tgt.park;
+        const park = blind ? { x: tgt.x, z: tgt.z } : tgt.park;
+        // Straight in only while the lane is clear at hull resolution. The moment it is not, the last
+        // approach is an avoidance problem like any other and the whisker planner takes the park point as
+        // its goal. Measured 2026-09-26 on pad:motor: the run filed `no-net-progress` 9.5 m out, *outside*
+        // the 3.9 m circle it was parking into, with the hull at gap -0.01 against `motor:optimus-02` and 4
+        // of 72 escape bearings free — all of them pointing away from the pad. A spot inside the circle does
+        // exist on parkSpot's own sampler (33 of its 125 points stand at the 0.4 m bar), so the defect was
+        // never the spot: a rover enters on an arc, and the parking aim had no whiskers to follow that arc
+        // around an obstruction that stands between the stance and the circle.
+        // The three aims are mutually exclusive, and the pedal needs to know which one is live.
+        const toStage = !(parking && !blind) && tgt.stage;
+        let b;
+        if (parking && !blind) {
+          const dPark = Math.hypot(park.x - phys.x, park.z - phys.z);
+          if (laneMargin(phys.x, phys.z, park.x, park.z).m >= 0.4) {
+            tgt.spotFor = null;
+            b = { a: Math.atan2(park.x - phys.x, park.z - phys.z), r: dPark };
+          } else {
+            if (tgt.spotFor !== park) tgt.spotFor = park, tgt.spot = { x: park.x, z: park.z, detour: 0 };
+            b = pick(tgt.spot);
+            b.r = Math.min(b.r, dPark);   // the room to stop in is still bounded by the spot, not the ray
+          }
+        } else if (toStage) {
+          tgt.stageAim = (tgt.stageAim || 0) + 1;
+          // Driven like any other cruise point, whiskers and all: the apron it crosses is the cluttered
+          // part of the map, and an aim with no way round an obstacle is the aim that wedges.
+          b = pick(tgt.stage);
+        } else b = pick(tgt);
         s.aim = b.a;
         const err = wrap(b.a - phys.yaw);
         // The wheel model is inverted relative to bearing math: positive steer rotates yaw
         // downwards, so closing a negative heading error takes positive pedal. Commanding
         // sign(err) instead makes the autopilot fight its own target and wander off the map.
         if (Math.abs(err) < 1.6 || !s.turnDir) s.turnDir = -Math.sign(err) || 1;
-        input.inp.steer = s.turnDir * Math.min(1, Math.abs(err) * (parking ? 2.2 : 1.2));
-        input.inp.gas = (parking || b.r < 3) ? 0.35 : Math.abs(err) > 1.2 ? 0.45 : 1;
+        input.inp.steer = s.turnDir * Math.min(1, Math.abs(err) * (parking && !blind ? 2.2 : 1.2));
+        // Trace-only: the controller's own readings on the frames that lead to a wedge, so the next
+        // hypothesis is argued against what `parking` and `lane` actually said rather than against a
+        // 2 s sample grid that cannot see the 0.5 s in which the lane closed.
+        if (opts.traceAll && s.runFrames % 3 === 0) {
+          s.dec.push([+s.t.toFixed(1), +phys.x.toFixed(1), +phys.z.toFixed(1), +dNow.toFixed(1),
+            parking ? 1 : 0, blind ? 1 : 0, lane > 9 ? 9 : +lane.toFixed(2),
+            park ? +park.x.toFixed(1) : -999, park ? +park.z.toFixed(1) : -999,
+            tgt.stage ? +tgt.stage.x.toFixed(1) : -999, tgt.stage ? +tgt.stage.z.toFixed(1) : -999,
+            +phys.speed.toFixed(1), +input.inp.gas.toFixed(2),
+            +rangeOf(phys.x, phys.z, b.a).toFixed(1), +err.toFixed(2)]);
+          if (s.dec.length > 240) s.dec.shift();
+        }
+        // Speed limit from the room the aim actually has. Pedal curve measured on this build, settled
+        // on open ground (`/tmp/rsb_gascurve.js`): 0.2-0.25 does not move the rover at all, 0.35 →
+        // 4.3 m/s, 0.45 → 7.7, 0.6 → 9.6, 0.85 → 13.5, 1 → 14.4. Braking covers ≈0.15·v² metres
+        // (7.7 → 6.6 m, 11.9 → 24.6, 14.4 → 30.8), so stopping inside `r` metres of clear ground takes
+        // v ≤ r/0.15. The whisker planner's look-ahead is 6 + 0.7v, i.e. 15.8 m at full speed — half
+        // the distance to a stop — so the rule this replaces (full pedal unless the heading error is
+        // over 69°) sent the audit into a pad apron at 12-14 m/s with 0-3 m of free range in front of
+        // it, which it could neither stop inside nor turn inside. It swung out onto a 15-25 m arc
+        // around the pad instead: `tap:habitat` circled for 25 s + a 25 s retry at 18-30 m of a 9 m
+        // circle, every sample row reading gas 1 at 13 m/s. The pedal now comes from the measured
+        // plateaus (cut at the geometric mean of adjacent ones) and heading error only steers.
+        // `room` is the smaller of the clear ground ahead and the distance to the point it means to
+        // stop at; the ray runs to 32 m because the whisker ray's own 18 m ceiling would cap the
+        // rover below its top speed on open road, where the limit is sight, not clutter.
+        // Tried and withdrawn the same day: capping by the *worst* ray over the headings between the
+        // current yaw and the aim, on the argument that a turning vehicle occupies the whole sweep and
+        // `pad:motor`'s crease was entered at `winV 11.96`. Measured on the five legs it was worse on
+        // every one — motor 2 rescues → 3, tap:habitat 0 → 2, and the motor lap count fell 20 → 6. The
+        // reason is the `Math.max(2, room)` floor below: a blocked sweep cannot stop the rover, it can
+        // only make it crawl into the same pocket, where `no-net-progress` then files it. So the
+        // clearance the turn needs belongs in the bearing the planner picks, not in the pedal.
+        const see = Math.min(rangeOf(phys.x, phys.z, b.a, 32), 32);
+        // An entry stance bounds the pedal the same way a park point does: it is a point to arrive at,
+        // not a point to drive through at 13 m/s, and the apron past it is the clutter the last section
+        // is about.
+        const room = parking && !blind ? Math.min(see, b.r)
+          : toStage ? Math.min(see, Math.hypot(tgt.stage.x - phys.x, tgt.stage.z - phys.z) + 3)
+          : see;
+        const vCap = Math.sqrt(Math.max(2, room) / 0.15);
+        input.inp.gas = vCap < 5.75 ? 0.35 : vCap < 8.6 ? 0.45 : vCap < 11.8 ? 0.6 : 1;
+        input.inp.brake = phys.speed > vCap * 1.25 ? 1 : 0;
       }
       const before = [phys.x, phys.z];
       const throttle = input.inp.gas;
@@ -3864,8 +4180,11 @@ window.__RSB = {
       // report as a miss with its closest approach, instead of stalling the rest of the route.
       const dT = Math.hypot(phys.x - tgt.x, phys.z - tgt.z);
       tgt.aimed = true;
+      // The lap's best distance, kept at 25 cm so circling at a constant radius does not count as
+      // progress. This is the arrival claim: the run has to have *reached* the circle at some point,
+      // not merely be inside it on the frame the grace fires.
+      if (dT < tgt.lapBest - 0.25) tgt.lapBest = dT;
       if (dT < tgt.aimBest) tgt.aimBest = dT;
-      if (dT < tgt.lapBest) tgt.lapBest = dT;
       if (tgt.since === null) tgt.since = s.t;
       // Every point is measured on every frame, not only the one being steered at: the hull coming
       // within a pad's own circle is the physical fact the acceptance bar is made of, and it happens
@@ -3885,6 +4204,21 @@ window.__RSB = {
       // with the brake on — the state a player actually has to reach to work a pad or lift a sample —
       // and it turns the dwell column into measured standing time instead of one frame of a pass.
       const arrived = tgt.lapBest <= tgt.r || s.t - tgt.since > (opts.grace ?? 25);
+      if (arrived && tgt.legT === 0) tgt.legT = s.t - (tgt.since ?? s.t);
+      // A leg that ends on the clock instead of on the trigger circle needs its steering history in
+      // the report, not only its closest approach: `pad:hub 12.8m aimed` says the road stopped short
+      // but not whether the planner was blind, grinding against a wall, or re-routing. `s.samples`
+      // already files [t, speed, wp, dist, bearing, yaw, aim, range-to-target, gas, steer] every 2 s,
+      // so the leg's own rows are copied out on the frame the grace fires.
+      if (arrived && tgt.lapBest > tgt.r && (tgt.legTraces || []).length <= (tgt.retried ? 1 : 0)) {
+        tgt.legTraces = (tgt.legTraces || []).concat([s.samples.filter(x => x[2] === s.wp)]);
+        // The bearing/range rows say the planner refused the last metres; the ground it refused to
+        // cross is only readable off the positions. `s.trace` files one [x,z] every 15 frames
+        // (~0.25 s of sim), so the leg's own slice is taken by its elapsed seconds and thinned to
+        // roughly one point a second, which is enough to name the disc the approach bends around.
+        const back = Math.round((s.t - (tgt.since ?? s.t)) / 0.25);
+        tgt.legXZ = s.trace.slice(Math.max(0, s.trace.length - back)).filter((_, i) => i % 4 === 0);
+      }
       if (arrived && !tgt.held) { tgt.held = +opts.pause || 0; s.holdUntil = s.t + tgt.held; }
       if (arrived && s.t >= s.holdUntil) {
         // Running out of patience on a point is not evidence that the map is broken: an unstick can
@@ -3893,11 +4227,23 @@ window.__RSB = {
         // misses is a real defect, and the report labels which points needed the second try.
         if (tgt.lapBest > tgt.r && !tgt.retried && s.t < s.budget - 90) {
           tgt.retried = true; tgt.since = null; tgt.held = 0; tgt.park = undefined;
+          tgt.stage = null; tgt.wayT = -9;
           s.route.push(tgt); s.retries++;
         }
         s.wp++;
       }
       if (s.runFrames % 15 === 0) s.trace.push([+phys.x.toFixed(1), +phys.z.toFixed(1)]);
+      // A rescue is the one event whose approach is worth the bytes: dump what the controller saw in
+      // the 4 s before it, then clear the buffer so the next wedge reports its own run-up instead of
+      // the previous one's tail.
+      if (opts.traceAll && rescue.events.length !== s.nRes) {
+        s.nRes = rescue.events.length;
+        const ev = rescue.events[rescue.events.length - 1];
+        if (s.wedgeTrails.length < 6)
+          s.wedgeTrails.push({ t: ev.t, cause: ev.cause, at: ev.pos, wp: tgt.name, n: s.dec.length,
+            pocket: ev.pocket || [], trail: s.dec.map(r => r.join(',')).join(' ; ') });
+        s.dec.length = 0;
+      }
       // A five-minute run is longer than one lap of the map. Recycling the waypoint list keeps the
       // rover rolling instead of parking it at the finish line, and it never teleports: the next lap
       // starts from wherever the last one ended. Re-arming the arrival state is what makes the next
@@ -3948,7 +4294,38 @@ window.__RSB = {
                detail: pois.map(p => `${p.name} ${p.best === 1e9 ? 'never' : p.best.toFixed(1)}/${p.r}m` +
                  ` dwell${(p.dwell || 0).toFixed(1)}s${p.retried ? ' retried' : ''} parkΔ` +
                  (p.park ? Math.hypot(p.park.x - p.x, p.park.z - p.z).toFixed(1) : 'none') +
-                 `${inReach(p) ? '' : ' ✕@' + (p.bestAt || []).join(',') + '→park' + Object.values(p.park || []).join(',')}`) },
+                 // `BLIND` separates two failures that both print parkΔnone: the controller never
+                 // armed, versus it armed and finding no point of the trigger circle that a straight
+                 // line reaches. The second is a siting fact — the pad is shadowed by its own ring.
+                 (p.park === null && p.parkT ? ' BLIND' +
+                   (p.parkDiag ? `[cand${p.parkDiag.n} tight${p.parkDiag.tight} nolos${p.parkDiag.nolos}` +
+                     ` mMax${p.parkDiag.mMax.toFixed(2)}@r${p.parkDiag.ringMax.toFixed(1)}` +
+                     ` laneMax${p.parkDiag.laneMax.toFixed(2)}` +
+                     ` by:${p.parkDiag.by ? p.parkDiag.by.prop || 'disc' : 'open'}` +
+                     ` laneBy:${p.parkDiag.laneBy ? p.parkDiag.laneBy.prop || 'disc' : 'open'}]` : '') : '') +
+                 `${inReach(p) ? '' : ' ✕@' + (p.bestAt || []).join(',') + '→park' + Object.values(p.park || []).join(',')}`),
+               // `traceAll` keeps a leg's steering history even once a later lap reached the point. A
+              // leg rig asks "why did the first approach fail", and a run that eventually got there on
+              // a second lap is exactly the case where the answer is "the clock, not the map".
+              abandon: s.spots.filter(p => p.legTraces && (!inReach(p) || opts.traceAll))
+                 .map(p => `${p.name} @${p.x},${p.z} r${p.r} [t,spd,wp,dist,brg,yaw,aim,range,gas,steer] ` +
+                   p.legTraces.map(tr => tr.map(r => r.join(',')).join(' ; ')).join(' || ') +
+                   ` xz ${JSON.stringify(p.legXZ || [])}`),
+               // The clock ledger, in the order the tour drove it: seconds spent on each leg, then the
+               // share of that leg the parking controller held, then how many frames the handover fired
+               // outside the clean circle. A coverage miss with no clock against it is only half a
+               // reading — 42 points in 300 s says the map is drivable and the route does not fit, and
+               // which of the two is the defect is the question this column answers. `st N/M aF` is the
+               // entry-stance search: N searches that returned a stance, M times the rover reached one
+               // and took its park line over, F frames the aim was a stance rather than the pad centre.
+               legs: s.route.map(p => `${p.name} ${p.legT ? p.legT.toFixed(1) : '–'}` +
+                 `${p.parkT ? 's' + p.parkT.toFixed(1) : ''}${p.handed ? 'h' + p.handed : ''}` +
+                 `${p.stageN ? ' st' + p.stageN + (p.stageUsed ? '/' + p.stageUsed : '') +
+                   'a' + (p.stageAim || 0) : ''}`).join(' '),
+               // [t,x,z,dNow,parking,blind,lane,parkX,parkZ,stageX,stageZ,speed,gas,range,aimErr] every
+               // other frame for the 4 s before each rescue. Only filled on a leg run (`traceAll`),
+               // which is the only run that asks the question.
+               wedges: s.wedgeTrails },
              mps: s.t > 0 ? +(s.dist / s.t).toFixed(2) : 0, peakSpeed: +s.peakSpeed.toFixed(1),
              weather: { stormMax: +s.stormMax.toFixed(2), windMax: +s.windMax.toFixed(1),
                stormPct: Math.round(100 * s.stormFrames / Math.max(1, s.runFrames)) },

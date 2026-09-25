@@ -2,7 +2,31 @@ import { surfaceAt } from '../world/height.js';
 
 const G = 3.71;         // Mars gravity
 const MAX_SPEED = 32;   // m/s (~115 km/h cinematic)
-const RIDE = 0.46;      // wheel radius → body ground clearance reference
+// The two numbers a collider disc is judged against, held here because this file is the only one
+// that *enforces* them. Everything else that needs them imports them: `RIDE` decides whether drawn
+// geometry can reach under the hull at all (src/world/props.js `solidify`, tools/disc-audit-probe.js
+// band), and `BODY_R` is what a disc actually blocks — physics keeps the hull's *centre* clear, so
+// a face the hull's skin could touch is one the player drives through. A hand-copied 0.46 or 1.6
+// anywhere else is a second host, and the day one of the three is retuned the other two keep
+// measuring the old hull.
+export const RIDE = 0.46;       // wheel radius → body ground clearance reference
+export const BODY_R = 1.6;      // the hull's own ring radius around the centre of mass
+// The third number of the same envelope. RIDE/BODY_R are what the solver enforces; ROOF is not —
+// nothing in this file stops a prop at hull height — but every "does this geometry block the rover"
+// measurement needs it, so it lives beside the two it is read with.
+//
+// 2.72 m, measured off the vehicle standing in the page (2026-09-25, tools/cdp-run.mjs against the
+// live scene at the spawn): the rover group sits at y 0.67 over a drive surface of 0.55 at group
+// scale 1, and the highest *vertex* of any visible mesh under it is at 3.27 — i.e. 2.72 above the
+// sand it is standing on. The number this replaces, 3.086, was a Box3 over the unplaced asset: the
+// asset's own origin is not its contact plane, so it carried the hull 0.37 m taller than the vehicle
+// the player actually drives. That error is not in the safe direction. A band too tall does not miss
+// walls, it invents them — a lintel over a doorway, a pipe rack at head height and the underside of a
+// gantry all sit between 2.72 and 3.086, and `solidify` would have sealed a collider across each one
+// and turned a working entrance into an invisible wall. The same measurement gives the band's floor:
+// the lowest visible vertex is 0.089 above the sand, which is a wheel, so `RIDE` stays the lower
+// bound on its own terms (an obstacle shorter than the wheel radius is driven over, not into).
+export const ROOF = 2.72;
 const RHO = 0.020;      // kg/m³ — mean Martian surface density, 1.6% of Earth's air
 const CD_A = 1.9;       // m²·Cd for the boxy chassis and its mirror-flat solar deck
 const MASS = 260;       // kg
@@ -224,7 +248,7 @@ export class RoverPhysics {
       for (const c of colliders) {
         if (c.floor !== undefined) continue;
         const dx = this.x - c.x, dz = this.z - c.z;
-        const d = Math.hypot(dx, dz), min = c.r + 1.6;
+        const d = Math.hypot(dx, dz), min = c.r + BODY_R;
         if (d >= min) continue;
         if (d <= 0.001) { mx += min; continue; }
         const push = min - d, nx = dx / d, nz = dz / d;

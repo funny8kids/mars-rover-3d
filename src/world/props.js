@@ -6,7 +6,9 @@ import { loadModel, cloneModel } from './assets.js';
 import { mergeInto, noMerge } from './merge.js';
 import { applySurfaceDetail } from './surface_detail.js';
 import { makeDriftMaterial } from './terrain.js';
-import { coverDiscs, discLayout, streetEncroach, STREETS, STREET_HW, CORRIDOR, audit, sealCheck } from './plan.js';
+import { coverDiscs, discLayout, streetEncroach, STREETS, STREET_HW, CORRIDOR, audit, sealCheck,
+  coverPointDiscs, BAND_NY, BAND_STEP, discFamily } from './plan.js';
+import { RIDE, BODY_R, ROOF } from '../vehicle/physics.js';
 import { UNIT_BEAM, shaftMaterial } from '../fx/beams.js';
 
 // ─── RED STARBASE · compact diorama ───
@@ -304,7 +306,7 @@ export async function buildBase(scene, quality) {
     o.scale.setScalar(s);
     o.position.set(x, at !== undefined ? at : heightAt(x, z) + dy, z);
     o.rotation.y = ry || 0;
-    CUR.add(o); return o;
+    CUR.add(tagScope(o)); return o;
   };
   const k = (name, x, z, ry, sc = 1) => put(name, x, z, S * sc, ry);
 
@@ -320,6 +322,10 @@ export async function buildBase(scene, quality) {
   // Every teleport pad is one authored asset plus one marking decal, and both have to move
   // together when the pad is re-sited (see the pad-siting pass above the grid).
   const padMeshes = [];
+  // The teleport pad's own driveable surface, in the asset's metres. `build_teleport` lathes the
+  // deck through (r 1.90 → 0, z 0.30) then steps up to z 0.36 for the ring the emitter teeth stand
+  // on, so 0.30 is the height a wheel touches and 0.06 is the kerb at its rim.
+  const PAD_DECK_Z = 0.30;
   const putDeck = (name, x, z, s, ry, bias = 0) => {
     const b = footOf(name);
     // `bias` is now purely how far the asset's own plinth is inset below its deck. It used to carry
@@ -327,7 +333,20 @@ export async function buildBase(scene, quality) {
     // number at every call site unrepeatable.
     const lid = name === 'teleport_pad' ? `pad${padSeq}` : name;
     const foot = { w: b.w * s, d: b.d * s, ry: ry || 0 };
-    const y = grade(lid, x, z, foot.w, foot.d, foot.ry) + bias;
+    // A pad used to wear −0.08 at every call site, i.e. its plinth sat 8 cm under the *footing*
+    // while its deck stood the whole drum's height above it. `grade` cuts a lot to the highest
+    // natural ground under its own outline, so that left every one of the seven pads wearing a
+    // 0.22–0.30 m step no part of the physics knows about: with the rover parked on the deck,
+    // `R.ground(x, z)` returned the same height for the drawn sand, the analytic surface and the
+    // stand line at r 0/1.2/2.05/2.6/3.4 (2026-09-25, /tmp/rsb_padground.js), while the plate's
+    // own top vertex read 0.28–0.37 m higher — the wheels were drawn *inside* the pad. So the pad
+    // is now laid into its footing at its own deck height, which is the same site engineering
+    // every other building gets: the drum and its skirt bury themselves in the apron, the 6 cm
+    // step ring stays a kerb, and the 16 teeth — 0.32 m over the deck, under the 0.46 m ride
+    // height — become something the rover drives over instead of a wall the collision pass owes
+    // a disc for and the fast-travel keep-out then refuses to raise.
+    const seat = name === 'teleport_pad' ? -PAD_DECK_Z * s : bias;
+    const y = grade(lid, x, z, foot.w, foot.d, foot.ry) + seat;
     const o = put(name, x, z, s, ry, 0, y);
     if (name === 'teleport_pad') {
       const d = new THREE.Mesh(padMarkGeo, padMarkMat(PAD_MARKS[padSeq % 6], 0x1a2b3d + padSeq * 7919));
@@ -337,7 +356,7 @@ export async function buildBase(scene, quality) {
       d.position.set(x, o.position.y + 0.366 * s, z);
       noMerge(d);
       G.add(d);
-      padMeshes.push({ o, d, s, bias, x, z, foot, lotId: `${ZONE}:${lid}` });
+      padMeshes.push({ o, d, s, bias: seat, x, z, foot, lotId: `${ZONE}:${lid}` });
     }
     return o;
   };
@@ -505,12 +524,12 @@ export async function buildBase(scene, quality) {
   const box = (w, h, d, mat, x, y, z, parent) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
-    (parent || CUR).add(m); return m;
+    (parent || CUR).add(tagScope(m)); return m;
   };
   const cyl = (rt, rb, h, mat, x, y, z, seg = 18, parent) => {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
     m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
-    (parent || CUR).add(m); return m;
+    (parent || CUR).add(tagScope(m)); return m;
   };
   const colliders = [];
   // ─── footprints ───
@@ -524,6 +543,19 @@ export async function buildBase(scene, quality) {
   // that rectangle, which is why a long low building no longer carries one absurd central balloon.
   let CUR = G;
   let ZONE = '?';                       // the district being composed; the audit's grouping key
+  // Which authoring scope drew which object. `endProp` dissolves its group into the island right
+  // after taking the measurement, so by the time anything else looks, thirty struts of one gantry
+  // are thirty anonymous children of `G` and there is no way back to the structure they came from.
+  // The scope is therefore written onto the object at the moment it is added, and `solidify` below
+  // reads it to decide what counts as one rigid body: discs of one prop are exempt from each other
+  // in `audit` (their lens always has an escape), discs of two different props are a wedge.
+  const tagScope = o => {
+    if (o.userData.rsbScope === undefined) {
+      o.userData.rsbScope = CUR === G ? null : CUR.name;
+      o.userData.rsbZone = ZONE;
+    }
+    return o;
+  };
   const lots = [];
   const isDecal = m => m.isMesh && Math.abs(m.rotation.x + Math.PI / 2) < 0.02;
   const measured = () => {
@@ -543,11 +575,22 @@ export async function buildBase(scene, quality) {
   // which is fine in open sand and wrong when the lot's own end has to stop at something.
   const lot = (id, cx, cz, w, d, ry = 0, maxR = 9) => {
     const cos = Math.cos(ry), sin = Math.sin(ry);
+    // The lot's own outline, shared by every disc placed in it. A disc seen on its own cannot say
+    // whether its rim stands outside the drawn wall by more than the tiling maths had to allow —
+    // that needs the outline it was generated from, and the number is unrecoverable once the discs
+    // exist. tools/disc-audit-probe.js is the reader.
+    const outline = { cx, cz, hw: w / 2, hd: d / 2, ry };
     for (const p of coverDiscs(w, d, maxR)) {
       colliders.push({ x: cx + p.dx * cos + p.dz * sin, z: cz - p.dx * sin + p.dz * cos,
-                       r: p.r, prop: `${ZONE}:${id}`, zone: ZONE });
+                       r: p.r, prop: `${ZONE}:${id}`, zone: ZONE, lot: outline,
+                       // the disc's own share of the rectangle, as half-sides along the lot's axes:
+                       // `hw` with the lot's length, `hd` across it. The bulge the tiling is
+                       // entitled to is exactly r − min(hw, hd); past that is an invisible wall.
+                       share: { hw: p.hw, hd: p.hd } });
     }
-    lots.push({ id: `${ZONE}:${id}`, x: cx, z: cz, w: +w.toFixed(1), d: +d.toFixed(1) });
+    // `ry` travels with the rectangle. A consumer that tests containment without it sees the lot as
+    // its own axis-aligned bounding box, which for a rotated lot is a different piece of ground.
+    lots.push({ id: `${ZONE}:${id}`, x: cx, z: cz, w: +w.toFixed(1), d: +d.toFixed(1), ry });
     return id;
   };
   // A model template's own XZ outline, measured once and reused for every clone. The hand-typed
@@ -771,7 +814,7 @@ export async function buildBase(scene, quality) {
       lot(id, (b.min.x + b.max.x) / 2, (b.min.z + b.max.z) / 2, b.max.x - b.min.x, b.max.z - b.min.z);
     }
     if (opts.expose) lots[lots.length - 1] = { ...lots[lots.length - 1], ...opts.expose };
-    for (const c of [...CUR.children]) { CUR.remove(c); G.add(c); }
+    for (const c of [...CUR.children]) { tagScope(c); CUR.remove(c); G.add(c); }
     G.remove(CUR);
     CUR = G;
     return id;
@@ -1742,35 +1785,69 @@ export async function buildBase(scene, quality) {
   {
     const [mx, mz] = LEAK_POS;
     ZONE = 'leak';
-    const my2 = heightAt(mx, mz);
-    kSolid('machine_generator', mx, mz + 2.5, 1.4, 0.8, 'valve-housing');   // the valve housing
-    // The BOG line the leak comes from stays drawn-and-uncollided, and that is a filed open defect
-    // rather than an oversight. The valve housing stands 8.2 m off the cryo farm's tank line, so a
-    // 1.9 m pipe laid on the ground anywhere between them keeps only 2.2-2.7 m of daylight against one
-    // side or the other; laid south it reaches the street shoulder and reads as an intrusion; laid
-    // west it blocks on the tanks. A half-collided line is worse than an honest gap, because the rover
-    // stops on the near side and sails through the far one. The fix belongs to the leak district's
-    // rebuild, not to a constant here.
-    // hazard ring + red beacon on a hooded mast
-    for (let i = 0; i < 10; i++) {
-      const a = i / 10 * Math.PI * 2;
-      kitAt('stake', mx + Math.cos(a) * 5.4, my2, mz + Math.sin(a) * 5.4, a);
-    }
+    // The valve group stands 6 m up-slope of the rupture, not 2.5 m. The driven seam census
+    // (tools/cdp-seam-drive.mjs, 2026-09-25) pinned a stance in the 3.90 m of edge-to-edge room
+    // between this housing's r 1.23 disc and the cryo farm's r 2.79 keep-out: 3.9 m passes the
+    // placement rule because `CORRIDOR` is 2 × BODY_R, and hands the hull 0.35 m of daylight, which
+    // is a wall. 6 m off the skid centre is the nearest siting that holds ≥ 1.2 m of daylight against
+    // every disc measured within 16 m (worst pair 1.30, second 1.38) — solved on a 0.5 m grid, with
+    // the mission's 12 m reach and the placard both still covering it.
+    kSolid('machine_generator', mx + 1, mz + 6, 1.4, 0.8, 'valve-housing');
+    // The BOG line the leak comes from. It is drawn by `k`, and since the measured-collider pass the
+    // two pipe props here no longer sail through the rover: they contribute leak:loose70 and
+    // leak:loose71 discs of r 0.6-1.0 each, so their route is a collision decision and not only a
+    // silhouette. It is still not connected to the tank farm, and the geometry says it cannot be on
+    // the ground: the housing's measured disc (r 1.23) stands 7.9 m from the cryo farm's r 2.79 disc,
+    // which is 3.9 m of edge-to-edge room, while a pipe drum of r 1.0 needs 5.4 m from the housing and
+    // 4.2 m from the tanks to hold `CORRIDOR` against both. Laid south it reaches the street shoulder
+    // and reads as an intrusion. The honest fix is an overhead trestle from the farm's own structure,
+    // which belongs to the cryo farm's rebuild, not to a constant here.
+    // red beacon on a hooded mast, and the hazard markers that go with it
+    // There is no stake cordon here, and the arithmetic is why. A post carries an emitted disc of
+    // r 0.05 (measured off the 830 mm pin), physics pads it by BODY_R 1.6, and the corridor the audit
+    // polices is 3.2 m — so two posts must stand 2(0.05+1.6)+3.2 = 6.5 m apart to leave a rover its
+    // own width of daylight. The apron south of the housing is 11 m wide between the cryo farm's
+    // r 2.79 keep-out, the street shoulder (`streetEncroach` wants 7.55 m off the z=30 centreline)
+    // and the rock field, so at that pitch the site holds a line of at most two posts — and a line of
+    // two is not a cordon, it is two posts.
+    // What used to stand here was ten stakes on a 5.4 m radius, 3.39 m apart, and the tour fell into
+    // them on 2026-09-25: every adjacent pair reported `gap 3.29 ≥ CORRIDOR` to the placement rules —
+    // which is true, and worthless, because CORRIDOR *is* 2 × BODY_R, so passing it leaves 0.02 m of
+    // daylight and physics reads a closed fence. The west post was then refused by the collider audit
+    // against the tank farm, which opened a single 3.04 m hole in that fence: an entry with no exit,
+    // into a 7.5 m room that cannot pivot a rover with a 4.18 m turn. The scan's mouth rule
+    // (main.js, `MOUTH`) and the 0.5 m enclosure census now both name this class; the ring is what
+    // proved them.
+    // The warning the cordon was for is carried by the placard on the shoulder and the hooded beacon,
+    // which is what the mission's 12 m reach actually stands behind.
     // South-west, off the housing's own bund. Laid west it crossed the tank farm's footings — the
     // line does belong to that farm, but three blocks in the collision map is not how to say so.
-    k('pipe_straight', mx - 5, mz - 1.5, 0.2);
+    // It is now laid by `pipeRun`, i.e. as segments that touch, and it stops where the elbow starts.
+    // One prop standing 6.5 m short of the next was both the visual defect (`pipeRun`'s own note:
+    // isolated culverts, not a pipeline) and the driven one: the gap between them was the throat a
+    // rover could drive into, and the census pinned its stance at 84.3,43.6 with 0.7 m of way out.
+    pipeRun('bog-line', mx - 4, mz - 1.7, mx + 1.5, mz - 2.1, 1);
     k('pipe_corner', mx + 4.5, mz - 2.5, 2.4);
-    kitAt('mast', mx - 3.4, my2, mz - 3.4);
-    // The hooded mast the ring is there to warn about. Two primitives used to stand in for it —
+    // The hooded mast the placard is there to warn about. Two primitives used to stand in for it —
     // a red drum and a 0.9 m square cap plate under it, which read as a lantern balanced on a
     // box. The fitting's own cast mounting plate *is* the cap now, so the plate is gone and the
     // mast carries an obstruction light with a hood, struts, a clamp band and a conduit stub.
-    beaconAt(mx - 3.4, my2 + 1.85, mz - 3.4, 1.8);
-    // The placard at the road end of the ring. It warns the driver who is about to reach the
-    // hazard, so its face is aimed at the nearest street centreline instead of at the leak behind
-    // it, and the `+ PI` is what makes the aim land on the printed side: the exporter turns the
+    // It stands on the valve skid now instead of out in the apron. An 830 mm pin out in the apron is
+    // the worst obstacle the map can carry: it is nearly invisible, it takes no room itself, and it
+    // converts a lane into a wedge. Two of the five stances the driven census pinned here named it
+    // (against the BOG line at 1.26 m of edge-to-edge room, and against the housing at 5.53 m), and
+    // there is no position left in this district that is 5.6 m clear of everything at once. Beside
+    // the housing the two leave no legal position between them at all, so there is nothing to wedge.
+    const bx2 = mx + 3.5, bz2 = mz + 7.5, by2 = heightAt(bx2, bz2);
+    kitAt('mast', bx2, by2, bz2);
+    beaconAt(bx2, by2 + 1.85, bz2, 1.8);
+    // The placard at the road end of the skid. It warns the driver who is about to reach the hazard,
+    // so it stands on the *street* side of everything it warns about and its face is aimed at the
+    // nearest street centreline. It used to stand at mz + 5.6, behind the skid relative to the road
+    // it faces — a sign you have already driven past — and the stake ring it was set against is the
+    // note above. The `+ PI` is what makes the aim land on the printed side: the exporter turns the
     // authored +Y face into the app's -Z, so a bare atan2 shows the rover the sign's back legs.
-    const px0 = mx + 0.5, pz0 = mz + 5.6;
+    const px0 = mx + 0.5, pz0 = mz - 5.4;
     let roadDist = 1e9, aimX = 20, aimZ = 6;
     for (const s of STREETS) {
       const ex = s.b[0] - s.a[0], ez = s.b[1] - s.a[1];
@@ -1786,7 +1863,14 @@ export async function buildBase(scene, quality) {
     put('hazard_sign', bx, bz, 1, bRy, 0);
     // Three discs spanned across the board's own 2.24 m, not one blob at its centre: the panel is
     // the thing that stops a rover and the ground between the legs is driveable.
-    endProp({ legs: [[-0.72, 0, 0.55, 0.55], [0, 0, 0.55, 0.55], [0.72, 0, 0.55, 0.55]],
+    // The 0.62 is measured, not chosen. The plate's drawn rim sits at ±1.12 from its centre and the
+    // outer feet at ±0.72, so a foot disc has to reach hypot(0.40, 0.06) = 0.404 to own its own rim
+    // (0.62 → r 0.438). The feet I shipped before this carried 0.55 → r 0.389, which fell 1 cm short:
+    // the measurement pass then found two unshielded 3 cm slivers at the two ends, joined them because
+    // they were under its 3 m share, and covered the pair with ONE disc of r 1.12 centred on the board
+    // — 1.06 m of invisible wall in front of and behind a 12 cm plate, and the driven seam census
+    // (2026-09-25) pinned two of its five stances on that disc alone.
+    endProp({ legs: [[-0.72, 0, 0.62, 0.62], [0, 0, 0.62, 0.62], [0.72, 0, 0.62, 0.62]],
               at: [bx, bz], ry: bRy });
     infoZones.push({
       key: 'tanks', pos: [mx, mz], r: 12, tag: 'ALERT · PROPULSION LEAK',
@@ -2234,17 +2318,45 @@ export async function buildBase(scene, quality) {
     }
     const driftSand = makeDriftMaterial();
     SITES.forEach(([ax2, az2], si) => {
-      const x = ax2 + (rand() - 0.5) * 14, z = az2 + (rand() - 0.5) * 14;
+      let x = ax2 + (rand() - 0.5) * 14, z = az2 + (rand() - 0.5) * 14;
+      const cs = 0.6 + rand() * 0.35;
+      // A mineral site is a spire the rover has to be able to walk around, and four of the nine
+      // landed inside a carriageway's keep-out. `solidify` then refused the wall it had measured
+      // (the audit's `refused: road … mesh=crystal001` rows, 1.5-2.6 m into the lane) and left a
+      // solid rock standing in the road with no collision on it at all — a prop you drive through
+      // on the road you drive along. The site is the thing that is free to move, so it asks the
+      // corridor before its drift is laid down, exactly as a satellite prop does.
+      const [cw, cd] = measuredSlot('crystal', cs);
+      [x, z] = siteClear(x, z, cw, cd, 0, 14);
       const y = heightAt(x, z);
       const masked = si >= 6;
       const g4 = new THREE.Group(); g4.position.set(x, y, z);
+      // One family per site rather than a `looseNNN` this pass invented by counting: the audit names
+      // the work item after the disc's family, and "the crystal at the field lab" is a thing someone
+      // can go and look at while "loose136" is a numbering of a loop's own index.
+      g4.userData.rsbScope = `site${si}`;
+      g4.userData.rsbZone = 'samples';
       const c = cloneModel(models['crystal']);
       templateRoots.add(c);
-      c.scale.setScalar(0.6 + rand() * 0.35);
+      c.scale.setScalar(cs);
       seat(c, 0.1);
       c.traverse(o => { if (o.isMesh) o.material = M.crystal; });
       noMerge(c); g4.add(c);
       const rubble = scree(x, z, c.scale.x * 1.9, rand() * 6.28);
+      // The gravel at the spire's foot is a terrain-sampled micro-attachment, so 【B】2 allows it as
+      // geometry — and it has to leave the collider pass too, for a reason measured rather than
+      // declared: a chip is `cs = (0.055..0.165) × s` across with `s ≈ 1.1..1.8`, and it is sunk
+      // `0.35 × cs`, so its crown stands at most 0.65 × 0.27 ≈ 0.18 m over the sand beneath it —
+      // under the hull floor at RIDE 0.46. The rover drives over it, which is what gravel is for.
+      // What it did do while it stayed in the pass is arm the site against itself. `solidify` judges
+      // a unit's band against three ground samples across its *whole* box, and this one spans 2.9 m
+      // of dune, so the scatter was measured against its lowest corner, found to reach the band, and
+      // given discs — an `island:loose129#0` of r 0.08 and a `loose131#0` of r 0.63. Those are
+      // foreign families to `samples:siteN`, so `overlapsForeign` refused the spire's own walls: site 1
+      // lost two of four discs and site 2 all four it asked for, which is the audit9 `refused: block …
+      // mesh=crystal001` rows and the one `unwalled` site — a 1.9 m rock the licence had just declared
+      // un-wallable, standing where the game tells the player to drive laps.
+      rubble.userData.rsbNoSolid = true;
       // No light column: a beam riding on top of a rock is the one cue that says "video-game
       // pickup". The mineral's own glow plus the ground ring carry it, and the map does the rest.
       const pad2 = new THREE.Mesh(new THREE.RingGeometry(1.05, 1.42, 28),
@@ -2268,10 +2380,15 @@ export async function buildBase(scene, quality) {
       const rise = new THREE.Box3().setFromObject(c).max.y - heightAt(x, z);
       // A masked site starts under a drift, not under a tomb: 0.75 is deep enough to hide the crystal
       // and shallow enough that one scoured flank brings it back out inside a single crossing.
+      // `rise` is how tall the spire actually stands; `sink` is how far the drift has to pull it to be
+      // gone. They are two numbers on purpose: the hiding depth has a 0.9 m floor so a short spire
+      // still disappears, and a floor in the *height* would arm the collider ring out taller than the
+      // rock the player can see. Both are re-sampled below, after the last grader has moved the sand
+      // under this group — see the re-seat in front of `solidify()`.
       samples.push({
         id: si, near: nearZone(x, z).name, group: g4, crystal: c, ring: pad2, lens, rubble, x, z,
         taken: false, buried: masked ? 0.75 : 0, seen: !masked, buriedWarned: false,
-        seatY: c.position.y, rise: Math.max(0.9, rise), footY: rubble.position.y,
+        seatY: c.position.y, rise, sink: Math.max(0.9, rise), footY: rubble.position.y,
         spread: 0.86 + (spin / 6.28) * 0.3, yawJit: (spin - Math.PI) * 0.14,
       });
     });
@@ -2367,9 +2484,24 @@ export async function buildBase(scene, quality) {
   // the battery died the tow wrote that pose verbatim and the collision solver fired the rover out
   // of the plaza at 62 m per frame. So every pad is now re-sited against the same discs the physics
   // loop reads, before the reactor taps, UI markers and capture radius take their positions from it.
-  {
-    const BODY = 1.6;          // physics.js: min = c.r + 1.6
-    const MARGIN = 0.35;       // a pad you land on with 5 cm to spare is not a pad
+  //
+  // It is a function, not a block, because the disc set it has to clear is not finished here: the
+  // measurement pass at the end of the build (`solidify`) adds the colliders that the drawn geometry
+  // was always owed, and a pad that was legal against 360 discs is not necessarily legal against 546.
+  // That pass yields to the pad rather than moving it, because the reactor tap, its footing and its
+  // duct run are sited *beside the pad's position* further down — a pad relocated after them would
+  // leave its substation standing where nothing now triggers. So `padKeep` records, for every pad the
+  // siting pass accepts, the radius inside which no wall may be raised, in the same units `legal`
+  // below uses; `solidify` refuses candidates that fall inside one and names the offending family in
+  // `refused`, which makes "a prop is standing on a fast-travel pad" a listed defect to fix at the
+  // prop instead of a sealed interactive point the connectivity audit fails on.
+  const padKeep = [];
+  const PAD_MARGIN = 0.35;         // a pad you land on with 5 cm to spare is not a pad
+  const sitePads = () => {
+    padAudit.length = 0;
+    padKeep.length = 0;
+    const BODY = BODY_R;           // physics.js: min = c.r + BODY_R, imported not retyped
+    const MARGIN = PAD_MARGIN;
     const pf = footOf('teleport_pad');
     const rimOf = Math.max(pf.w, pf.d) / 2;
     const roomAt = (x, z, r) => {
@@ -2405,6 +2537,10 @@ export async function buildBase(scene, quality) {
       if (found) {
         m.o.position.x = tp.x = found.x;
         m.o.position.z = tp.z = found.z;
+        // The pad is found again by its own coordinates, so a move has to carry the record with it —
+        // otherwise a second siting pass cannot see the pads the first pass moved, and would report
+        // them as absent rather than as legal.
+        m.x = tp.x; m.z = tp.z;
         // The footing moves with the pad: the slab it was cut into is re-graded where the deck now
         // stands rather than the pad being lifted or dropped by whatever the new ground happens to
         // be under its centre — that centre-plus-rim-max reading is what used to leave a pad
@@ -2413,6 +2549,12 @@ export async function buildBase(scene, quality) {
           w: m.foot.w, d: m.foot.d, ry: m.foot.ry, move: true }) + m.bias;
         m.d.position.set(tp.x, m.o.position.y + 0.366 * m.s, tp.z);
       }
+      // Both halves of `legal` are the same shape — the pad's ring of room must exceed some radius,
+      // the hull's half-width plus the margin for one, the drawn rim for the other — so they collapse
+      // into one keep-out radius that `solidify` tests a candidate wall against: a disc of radius r
+      // may not have its centre within r + keep of a pad.
+      padKeep.push({ id: tp.key, x: tp.x, z: tp.z, owner: m.o,
+        keep: Math.max(BODY + MARGIN, rim) });
       padAudit.push({
         id: tp.key,
         room: +roomAt(tp.x, tp.z, BODY).toFixed(2),
@@ -2421,7 +2563,8 @@ export async function buildBase(scene, quality) {
         moved: +Math.hypot(tp.x - ox, tp.z - oz).toFixed(1),
       });
     }
-  }
+  };
+  sitePads();
 
   // ══════════ BASE GRID — one reactor tap beside every teleport pad ══════════
   // Five outer districts start blacked out and the rover's battery is the only mobile relay,
@@ -2581,7 +2724,10 @@ export async function buildBase(scene, quality) {
       const bRy = Math.atan2(bx, bz);
       beginProp(`rim-board${boards}`);
       put('hazard_sign', bx, bz, 1, bRy, 0);
-      endProp({ legs: [[-0.72, 0, 0.55, 0.55], [0, 0, 0.55, 0.55], [0.72, 0, 0.55, 0.55]],
+      // 0.62 for the same measured reason as the leak board's feet: the foot disc has to reach the
+      // plate's drawn rim at ±1.12, and a foot that stops short hands the rim slivers to `solidify`,
+      // which welds them into one r 1.12 blanket in front of the plate.
+      endProp({ legs: [[-0.72, 0, 0.62, 0.62], [0, 0, 0.62, 0.62], [0.72, 0, 0.62, 0.62]],
                 at: [bx, bz], ry: bRy });
       boards++;
     }
@@ -2591,6 +2737,295 @@ export async function buildBase(scene, quality) {
     // ground still reaches the outside, the ring has a gap in it.
     rimReport = { ...sealCheck(colliders.filter(c => c.prop.startsWith('rim:border'))), discs, boards };
   }
+
+  // ─── collision from the geometry that is actually standing there ───
+  // Every disc in `colliders` above was emitted by one of a handful of authoring helpers — `putSolid`,
+  // `lot`, `portal`, `putLamp`, `endProp`. A prop drawn by any other route (a `put()` with no footing,
+  // a `box()` strut, a template cloned straight onto the island with `G.add`) is visible, solid in the
+  // picture, and made of air to the physics. That is not a hypothetical: the first full sweep of the
+  // drawn geometry (tools/disc-audit-probe.js, 2026-09-25) counted 2 248 band faces across 51 cells the
+  // rover can drive onto at full speed, and every one of those cells sits outside the outline of every
+  // lot in the site plan — the geometry behind them had never passed through `lot()` in its life.
+  //
+  // So the last pass before the merge sweeps what is left and gives it the collision its own triangles
+  // imply. Three things keep it honest:
+  //   * the envelope is `RIDE`/`ROOF`/`BODY_R` imported from physics.js, not a copy — a face is a wall
+  //     only if it stands up, runs at least BAND_STEP vertically, and overlaps the band the hull can
+  //     reach. Floors, kerbs, girders and doorheads are therefore not walls, and the number that says
+  //     so is the one the solver enforces.
+  //   * a point already inside an existing disc's own radius is protected by that disc (physics keeps
+  //     the hull's *centre* at r + BODY_R, so nothing the skin can touch is outside the raw radius), so
+  //     the ~360 discs the helpers already emitted are the first thing consulted and are not duplicated.
+  //   * the discs come from `coverPointDiscs`, which measures each radius off the points assigned to
+  //     it and carries the resulting box as the disc's `lot`/`share`. A disc can then only ever bulge
+  //     past drawn geometry by the amount its own tiling maths had to allow, which is the claim the
+  //     probe's licensing arithmetic checks; emitting from a measured cloud is what makes it provable
+  //     rather than plausible.
+  // It runs before `mergeInto` because merging destroys the grouping: after it, one material bucket
+  // holds a hundred unrelated props and there is no way back to what moved together.
+  const CELL = 5;                     // metres of ground per measurement bucket
+  const GD = 12;                      // collider index cell, ≥ the largest authored radius
+  const solidIndex = new Map();
+  const indexAdd = c => {
+    for (let i = Math.floor((c.x - c.r) / GD); i <= Math.floor((c.x + c.r) / GD); i++) {
+      for (let j = Math.floor((c.z - c.r) / GD); j <= Math.floor((c.z + c.r) / GD); j++) {
+        const k = i + '|' + j;
+        let a = solidIndex.get(k);
+        if (!a) solidIndex.set(k, a = []);
+        a.push(c);
+      }
+    }
+  };
+  const shielded = (x, z) => {
+    const a = solidIndex.get(Math.floor(x / GD) + '|' + Math.floor(z / GD));
+    if (!a) return false;
+    for (const c of a) if (Math.hypot(x - c.x, z - c.z) <= c.r) return true;
+    return false;
+  };
+  // Two licences a candidate wall disc has to hold before it ships. Both are rules the rest of the
+  // build already enforces somewhere else, not a third opinion invented here:
+  //   * it must not stand in a carriageway — `streetEncroach` > 0 is exactly what `audit` reports as
+  //     an intrusion;
+  //   * its raw circle must not overlap a *different* prop's — `audit` calls that pair a `block`, and
+  //     two props whose clearance rings interpenetrate are what used to throw the rover from one ring
+  //     to the other every substep, i.e. the original "WASD stopped working".
+  //   * it must not raise a wall inside a teleport pad's keep-out ring — the radius `sitePads` used to
+  //     accept the pad's own spot.
+  // A face that can only be walled by breaking one of those is not a missing collider: it is two props
+  // standing inside each other, a prop out in the lane, or a prop on a fast-travel pad. Each is
+  // counted and named in `refused`, and the fix belongs at the placement site, not here.
+  // Both helpers hand back *what* the candidate collided with, not just that it did. The refusal is
+  // the last thing standing between a residual and a fix, and the fix differs by partner: a disc
+  // that was authored before this pass runs is another prop's wall, so the two really are two
+  // objects in each other and the placement is the defect; a disc this pass emitted itself is
+  // usually another mesh of the same structure, since a bare mesh laid straight on `G` has no scope
+  // stamp and so gets its own fallback family. Calling the second case a placement bug would send
+  // someone to move a paving plate that is already where the art wants it.
+  const overlapsForeign = (x, z, r, family) => {
+    for (let i = Math.floor((x - r) / GD); i <= Math.floor((x + r) / GD); i++) {
+      for (let j = Math.floor((z - r) / GD); j <= Math.floor((z + r) / GD); j++) {
+        for (const c of solidIndex.get(i + '|' + j) || []) {
+          if (discFamily(c.prop) === family) continue;
+          if (Math.hypot(x - c.x, z - c.z) < r + c.r) return c;
+        }
+      }
+    }
+    return null;
+  };
+  // A wall may not be raised inside a teleport pad's keep-out ring — but the ring protects the pad
+  // from *other* props, and a pad is not another prop to itself. Without the exemption the licence
+  // reads the pad's own geometry as an intruder standing on the pad it owns and refuses every disc
+  // it asks for, so the keep-out that keeps a fast-travel node open simultaneously leaves its three
+  // lamp posts, standing 0.9 m over the deck, with nothing in the collider set: measured on
+  // 2026-09-25 that was 16 refusal rows across exactly the seven pads (`launch:loose35`,
+  // `hub:loose8`, … — the fallback family every pad gets, because a pad placed while `CUR === G` is
+  // stamped `rsbScope: null`) and 13 of the audit's 24 drive-through cells. `own` is the pad key
+  // whose clone drew the faces being walled; a foreign prop passing `null` is still refused.
+  const padOf = new Map();
+  for (const p of padKeep) if (p.owner) padOf.set(p.owner, p.id);
+  const sealsPad = (x, z, r, own) =>
+    padKeep.find(p => p.id !== own && Math.hypot(p.x - x, p.z - z) < r + p.keep) || null;
+  // Every disc this pass stands up, keyed by the family it was measured from. A prop that keeps
+  // moving after the build — a mineral spire sinking into and rising out of its own drift — cannot be
+  // armoured by a one-shot measurement: the wall would be right in exactly one of the two states. So
+  // the mover is handed the discs that came off its own geometry and owns their life in the list.
+  const discsByFamily = new Map();
+  const solidify = () => {
+    const rep = { units: 0, swept: 0, meshes: 0, bandFaces: 0, exposed: 0, discs: 0,
+      families: 0, cells: 0, top: [], skipped: { invisible: 0, noSolid: 0, low: 0, high: 0 },
+      refused: { road: 0, block: 0, pad: 0 }, refusedNames: [], refusedAt: [],
+      blockVsEmitted: 0, blockVsAuthored: 0 };
+    // Name each refusing family once, not once per disc: the worklist is "which props stand inside
+    // each other / out in the lane", and a per-disc tally would bury it under the count.
+    // `refusedAt` is the same list located, keyed by `kind + family + cell`, because a family name
+    // alone sends someone to grep a prop that is placed at a dozen coordinates: the residual a refusal
+    // causes is pinned to one cell by the audit probe, so the refusal is reported in the judge's 10 m
+    // units — not this pass's own `CELL`, which would make the two lists unmatchable.
+    // `partner` is whichever disc or pad the licence test actually hit, or a plain string when the
+    // test measures an amount instead of an object (how far the disc reaches into a lane). A family
+    // name says "go look at a class of objects"; the partner's own `prop` says which two of them are
+    // in each other, and its `emitted` flag says who put it there — a wall this pass stood up is an
+    // identity artefact of the fallback naming, a wall authored in a `lot()` is a real placement
+    // clash. Those are different files.
+    const refuse = (kind, B, d, partner) => {
+      rep.refused[kind]++;
+      if (kind === 'block') {
+        if (partner?.emitted) rep.blockVsEmitted++; else rep.blockVsAuthored++;
+      }
+      const k = `${kind} ${B.zone}:${B.base}`;
+      if (!rep.refusedNames.includes(k)) rep.refusedNames.push(k);
+      const ck = `${Math.floor(d.x / 10) * 10},${Math.floor(d.z / 10) * 10}`;
+      let row = rep.refusedAt.find(r => r.k === k && r.cell === ck);
+      if (!row) rep.refusedAt.push(row = { k, cell: ck, n: 0, x: 0, z: 0, r: 0, mesh: B.u, against: '' });
+      row.n++;
+      if (d.r > row.r) {
+        row.r = +d.r.toFixed(2); row.x = +d.x.toFixed(1); row.z = +d.z.toFixed(1);
+        row.against = !partner ? '' : typeof partner === 'string' ? partner
+          : (partner.prop || partner.id || '?') + (partner.emitted ? '(new)' : '(authored)');
+      }
+    };
+    G.updateMatrixWorld(true);
+    for (const c of colliders) if (c.floor === undefined) indexAdd(c);
+    // The three shape tests are the judge's, restated here on purpose: tools/disc-audit-probe.js keeps
+    // its own copies for the same reason, so a predicate loosened at the emitter still loses the
+    // argument instead of quietly winning it.
+    const NY = BAND_NY, STEP = BAND_STEP;
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    const ab = new THREE.Vector3(), ac = new THREE.Vector3(), nn = new THREE.Vector3();
+    const bb = new THREE.Box3();
+    const discOf = new Map();            // family → running disc number, so one prop stays one object
+    let loose = 0;
+    for (const unit of G.children) {
+      rep.units++;
+      if (!unit.visible) { rep.skipped.invisible++; continue; }
+      // A prop that was told not to armour a wall is not a prop that failed to appear. The two read
+      // the same way in `rsbNoSolid`'s absence and a hidden-geometry bug would hide inside the count.
+      if (unit.userData.rsbNoSolid) { rep.skipped.noSolid++; continue; }
+      bb.setFromObject(unit);
+      if (bb.isEmpty()) continue;
+      // The band is measured from the ground under the face, so a structure on a graded deck is
+      // judged against its own deck. Three samples across the footprint's span catch the worst of the
+      // island's relief (the dunes run ~5 m over 100 m); `heightAt`, the analytic field, is what every
+      // placement above seated the prop on, so the two agree by construction.
+      let gmin = Infinity, gmax = -Infinity;
+      for (const gx of [bb.min.x, (bb.min.x + bb.max.x) / 2, bb.max.x]) {
+        for (const gz of [bb.min.z, (bb.min.z + bb.max.z) / 2, bb.max.z]) {
+          const gy = heightAt(gx, gz);
+          if (gy < gmin) gmin = gy;
+          if (gy > gmax) gmax = gy;
+        }
+      }
+      // Sound in both directions: a unit whose highest point is under the band's floor, or whose
+      // lowest is over its ceiling, has no wall in it at any sample point.
+      if (bb.max.y - gmin < RIDE) { rep.skipped.low++; continue; }
+      if (bb.min.y - gmax > ROOF) { rep.skipped.high++; continue; }
+      const slot = `loose${loose++}`;
+      const buckets = new Map();
+      unit.traverse(m => {
+        if (!m.isMesh || !m.visible || !m.geometry) return;
+        const pos = m.geometry.attributes?.position;
+        if (!pos) return;
+        const mats = Array.isArray(m.material) ? m.material : (m.material ? [m.material] : []);
+        // An effect sheet is drawn *through*, not against: transparent, depth-write-less, or
+        // additively blended material is light or haze, and a wall the player cannot see is exactly
+        // the defect this pass is meant to remove, not one it should add.
+        if (mats.length && mats.every(mt => mt && (mt.transparent || mt.depthWrite === false ||
+            (mt.blending !== undefined && mt.blending !== THREE.NormalBlending)))) return;
+        const idx = m.geometry.index, tri = idx ? idx.count : pos.count;
+        // Which authored thing this mesh is part of. The nearest stamped ancestor answers; a mesh
+        // with no stamp was laid straight on the island and gets a name of its own, which is the
+        // conservative direction — two unrelated props may then be audited as two objects when they
+        // are one, never as one object when they are two.
+        let scope = slot, zone = 'island', hidden = false, onPad = null;
+        for (let o = m; o && o !== G; o = o.parent) {
+          if (!o.visible) hidden = true;
+          // Asked before the scope break: the pad's clone root is the node that carries both, and a
+          // licence that never saw its holder would keep refusing the geometry it exists to free.
+          if (!onPad && padOf.has(o)) onPad = padOf.get(o);
+          if (o.userData.rsbScope !== undefined) {
+            zone = o.userData.rsbZone || 'island';
+            if (o.userData.rsbScope) scope = o.userData.rsbScope;
+            break;
+          }
+        }
+        if (hidden) return;        // a prop the picture never draws stops nothing
+        const base = scope.replace(/#\d+$/g, '');
+        rep.meshes++;
+        for (let t = 0; t + 2 < tri; t += 3) {
+          const i0 = idx ? idx.getX(t) : t, i1 = idx ? idx.getX(t + 1) : t + 1,
+                i2 = idx ? idx.getX(t + 2) : t + 2;
+          a.fromBufferAttribute(pos, i0).applyMatrix4(m.matrixWorld);
+          b.fromBufferAttribute(pos, i1).applyMatrix4(m.matrixWorld);
+          c.fromBufferAttribute(pos, i2).applyMatrix4(m.matrixWorld);
+          const lo = Math.min(a.y, b.y, c.y), hi = Math.max(a.y, b.y, c.y);
+          if (hi - lo < STEP) continue;
+          ab.subVectors(b, a); ac.subVectors(c, a);
+          nn.crossVectors(ab, ac).normalize();
+          if (Math.abs(nn.y) > NY) continue;
+          const mx = (a.x + b.x + c.x) / 3, mz = (a.z + b.z + c.z) / 3;
+          const gy = heightAt(mx, mz);
+          if (lo > gy + ROOF || hi < gy + RIDE) continue;
+          rep.bandFaces++;
+          if (shielded(mx, mz)) continue;
+          rep.exposed++;
+          const ck = base + '@' + Math.floor(mx / CELL) + ',' + Math.floor(mz / CELL);
+          let B = buckets.get(ck);
+          // `u` is the mesh that drew the face. Without it a refusal row names a family (`loose35`)
+          // that is a numbering of this pass's own invention; with it the row names the actual scene
+          // object to go and look at.
+          if (!B) buckets.set(ck, B = { base, zone, pts: [], u: m.name || unit.name || '', pad: onPad });
+          B.pts.push(mx, mz);
+        }
+      });
+      if (!buckets.size) continue;
+      rep.swept++;
+      for (const B of buckets.values()) {
+        // A disc's family is its `prop` minus the trailing `#n`, which is also what `audit` compares
+        // when it decides whether two rings belong to one rigid object — so the zone prefix has to be
+        // part of it, and the strip itself comes from plan.js rather than a second copy here.
+        const fam = `${B.zone}:${B.base}`;
+        for (const d of coverPointDiscs(B.pts, 3)) {
+          const x = +d.x.toFixed(2), z = +d.z.toFixed(2), r = +Math.max(d.r, 0.05).toFixed(2);
+          // All three licences are tested before the disc is numbered, so a refusal costs nothing but
+          // the wall: the family's disc indices stay contiguous and the face stays in `exposed` for
+          // the ruler to keep counting. The refused disc is reported with the same rounded numbers it
+          // would have shipped with, so the row can be compared against the audit's cell.
+          const D = { x, z, r };
+          const hitRoad = streetEncroach(x, z, r);
+          if (hitRoad > 0) { refuse('road', B, D, `lane ${(+hitRoad.toFixed(2))} m`); continue; }
+          const hitBlock = overlapsForeign(x, z, r, fam);
+          if (hitBlock) { refuse('block', B, D, hitBlock); continue; }
+          const hitPad = sealsPad(x, z, r, B.pad);
+          if (hitPad) { refuse('pad', B, D, hitPad); continue; }
+          const n = discOf.get(fam) || 0;
+          discOf.set(fam, n + 1);
+          const disc = { x, z, r, emitted: true,
+            prop: `${fam}#${n}`, zone: B.zone, mesh: B.u,
+            lot: { cx: x, cz: z, hw: +d.hw.toFixed(2), hd: +d.hd.toFixed(2), ry: d.ry },
+            share: { hw: +d.hw.toFixed(2), hd: +d.hd.toFixed(2) } };
+          colliders.push(disc);
+          indexAdd(disc);
+          if (!discsByFamily.has(fam)) discsByFamily.set(fam, []);
+          discsByFamily.get(fam).push(disc);
+          rep.discs++;
+        }
+        rep.cells++;
+      }
+    }
+    rep.families = discOf.size;
+    // Which authored things the pass had to stand up a wall for, worst first. A name in this list is
+    // a prop that drew geometry and never declared it, so the reading is also the worklist: the fix
+    // for the next one is a measured `lot()` at its placement site, not another disc from here.
+    rep.top = [...discOf.entries()].sort((x, y) => y[1] - x[1]).slice(0, 14)
+      .map(([k, v]) => `${k}:${v}`);
+    return rep;
+  };
+  // One datum, sampled last. A mineral site is seated where `heightAt` stood when its block ran, but
+  // the build keeps grading after that: a footing claimed later drags its `skirt` blend across the
+  // sand underneath. Site 8 measured 0.395 m *below* the finished field at its own position
+  // (`grid:tap:industry`, skirt 12 m), so its drift mound was buried, and the stored `rise` — taken
+  // from the pre-regrade ground — over-read the drawn crown by the same amount. That second half is
+  // the physics bug: the collider predicate in main.js keeps a site walled while `rise - sink × k`
+  // clears the hull floor, so the rover met a wall 0.4 m before the rock it was supposed to be
+  // avoiding. Re-seat from the finished field and re-measure the drawn box against it, so the discs
+  // below, the dressing and that predicate all read one ground.
+  for (const s of samples) {
+    const y = heightAt(s.x, s.z);
+    s.group.position.y = y;
+    s.group.updateMatrixWorld(true);
+    // The gravel foot is a sibling of the spire's group, not a child — it hangs off `G` directly — so
+    // it needs the same seat given to it on its own line, or the re-seat would lift the rock and leave
+    // its scree behind under the sand.
+    s.rubble.position.y = s.footY = y;
+    s.rise = new THREE.Box3().setFromObject(s.crystal).max.y - y;
+    s.sink = Math.max(0.9, s.rise);
+  }
+  const solidReport = solidify();
+
+  // The mineral sites take the discs their own spires drew. Each one is a prop that moves after this
+  // line — `dressSample` sinks it into its drift and scours it out again — so the wall has to be in
+  // the collider list exactly while the drawn geometry is in the rover's band, and nowhere else.
+  for (const s of samples) s.discs = discsByFamily.get(`samples:site${s.id}`) || [];
 
   // Collapse the hand-built groups and the several hundred loose struts, tiles and crates placed
   // straight onto the island. Packs placed with `put` are skipped: their template was already
@@ -2608,7 +3043,7 @@ export async function buildBase(scene, quality) {
   const flamePoint = new THREE.Vector3(SHIP_POS[0], 1.6, SHIP_POS[1]);
   return {
     group: G, colliders, infoZones, samples, sparkPoints, beacons, lightStrips, lightRings, showBeams, showBeamMats, shipGroup, launchRig, teleports, padGlow, heroLights, occluders, gridRigs, crystalMat: M.crystal,
-    plan: auditPlan, lots,
+    plan: auditPlan, lots, solidReport,
     leakPoint: new THREE.Vector3(LEAK_POS[0], heightAt(LEAK_POS[0], LEAK_POS[1]) + 1.8, LEAK_POS[1]),
     flamePoint,
     // `ZONES.*.pos` is a 2-tuple [x, z], so spreading it into a Vector3 — which the two lines above

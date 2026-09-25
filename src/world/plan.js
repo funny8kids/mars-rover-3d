@@ -44,19 +44,38 @@ export function faceOf(x, z) {
 // A rectangle is not a circle, and forcing it to be one is what made props feel like they were
 // surrounded by invisible rubber walls. Cover it with the fewest discs that still hold the outline:
 // n discs strung along the long axis, each just big enough to pass through the corners it owns.
+//
+// The share each disc owns used to be floored at 3 m, and that floor is what turned a thin object
+// into a fat wall: a 0.4 × 8.7 m gate panel tiled at one disc per 3 m is three discs of r 1.46,
+// which is 1.26 m of keep-out in front of and behind a panel you can see through, and the driven
+// seam census found a rover pinned against exactly that. The floor now follows the object's own
+// short side down to 1.2 m, because a share that thin stops being a share of the outline and starts
+// being a disc around empty ground. Coverage is not given up to get there: with share width `s` the
+// radius is hypot(s/2, S/2) ≤ 0.71·s, so every disc still passes through the corners of the strip it
+// owns, and a fat footprint (S ≥ 1.2) tiles exactly as it did — measured over the 136 lots of the
+// built map (2026-09-25): 29 lots change, all of them thin, discs 184 → 228, worst bulge past a
+// drawn outline 1.26 m → 0.38 m, and `starship`/`listening-post`/`hab-drum` untouched.
+export const SHARE_MIN = 1.2;
 export function coverDiscs(w, d, maxR = 9) {
   const L = Math.max(w, d), S = Math.min(w, d);
-  let n = Math.max(1, Math.ceil(L / Math.max(S, 3)));
+  let n = Math.max(1, Math.min(12, Math.ceil(L / Math.max(S, SHARE_MIN))));
   let r;
   do {
     r = Math.hypot(L / (2 * n), S / 2);
-    if (r <= maxR || n > 12) break;
+    if (r <= maxR || n >= 12) break;
     n++;
   } while (true);
   const out = [];
   for (let i = 0; i < n; i++) {
     const t = n === 1 ? 0 : -L / 2 + (L / n) * (i + 0.5);
-    out.push(w >= d ? { dx: t, dz: 0, r } : { dx: 0, dz: t, r });
+    // `hw`/`hd` are the disc's own share of the rectangle, as half-extents along the rectangle's
+    // axes. A reader that only has `r` cannot tell "a disc around a wide wall" from "an invisible
+    // wall", because the bulge past the drawn outline is r minus the *short* half-side — and that
+    // number is lost the moment the disc is emitted. Carrying it costs nothing and makes each disc
+    // self-auditing (tools/disc-audit-probe.js is what reads it back).
+    const wide = w >= d;
+    out.push({ dx: wide ? t : 0, dz: wide ? 0 : t, r,
+               hw: wide ? L / (2 * n) : S / 2, hd: wide ? S / 2 : L / (2 * n) });
   }
   return out;
 }
@@ -69,6 +88,193 @@ export function discLayout(w, d, cx, cz, ry = 0) {
     x: cx + p.dx * cos + p.dz * sin, z: cz - p.dx * sin + p.dz * cos, r: p.r,
   }));
 }
+
+// The same rule for a point cloud nobody drew a rectangle for: the wall faces a boulder actually
+// presents, or the risers of a stair, or a pipe run that was drawn in `put()` and therefore never
+// went through `lot()`. `coverDiscs` cannot be used because its input is a width and a depth, and
+// inventing those for an irregular silhouette is the hand-typed guess this module exists to end.
+//
+// The long axis comes from two farthest-point sweeps (the 2-approximation of the cloud's diameter)
+// and sets the frame `hw`/`hd`/`ry` are reported in — the same convention `lot()` uses, and required
+// by any consumer that tests containment, since an axis-aligned test against a rotated cloud
+// measures a different piece of ground. The axis is *not* used to place the discs, and that is the
+// whole content of this function. It used to: a chain of `k` seeds strung along the chord, each disc
+// then stretched until it reached the points nearest its seed. For a cloud that is straight that is
+// exact. For a cloud that curves or hollows, the chord is a lie — the four lamp posts of a teleport
+// deck sit 3.9 m apart on a 2.75 m circle, so the farthest pair is a diameter, the perpendicular
+// spread `W` is the other diameter, and the old budget asked for exactly one disc, which came out at
+// r 2.76 parked on the deck's centre: a collider wall through the middle of the pad the drawing does
+// not have (the audit calls the class `blanket`, and measured 31 of them across 11 families,
+// 89.5 m²). So the cloud is now cut the way it is actually built:
+//
+//   1. into connected components, joined face-to-face at one `minShare` — past that distance one
+//      disc would have to stand in the gap to speak for both, which is the defect, not the coverage;
+//   2. then within a component by a nearest-neighbour walk, budgeted by the *length of that walk*
+//      rather than by the chord's span, so a ring earns a disc per share of ring and a straight wall
+//      keeps the same count it always had (its walk is its chord);
+//   3. and each share's disc is measured, not derived — its centre is the midpoint of the share's own
+//      farthest pair and `r` reaches the share's furthest point, so a disc is only as fat as the
+//      geometry it was given. `hw`/`hd` are that point set's half-extents in the axis frame, so the
+//      bulge the disc is entitled to (`r − min(hw, hd)`) stays the tiling maths rather than a wish.
+//
+// Deterministic by construction (buffer order, strict `>`/`<` ties to the lowest index, components
+// visited in first-index order, `minShare` a constant rather than a data-derived threshold — the one
+// value the audit and this file disagree about nothing else), so it adds no draw to the placement rng
+// and cannot reshuffle a world that was already measured. Cost is O(n²) per component per bucket for
+// the walk; buckets are `CELL`-sized and the exposed cloud averaged 73 points across 148 buckets.
+export function coverPointDiscs(pts, minShare = 3) {
+  const n = pts.length / 2;
+  if (!n) return [];
+  const px = i => pts[2 * i], pz = i => pts[2 * i + 1];
+  let mx = 0, mz = 0;
+  for (let i = 0; i < n; i++) { mx += px(i); mz += pz(i); }
+  mx /= n; mz /= n;
+  let ia = 0, best = -1;
+  for (let i = 0; i < n; i++) {
+    const q = (px(i) - mx) ** 2 + (pz(i) - mz) ** 2;
+    if (q > best) { best = q; ia = i; }
+  }
+  const ax = px(ia), az = pz(ia);
+  let ib = ia; best = -1;
+  for (let i = 0; i < n; i++) {
+    const q = (px(i) - ax) ** 2 + (pz(i) - az) ** 2;
+    if (q > best) { best = q; ib = i; }
+  }
+  const L = Math.sqrt(best);
+  if (L < 1e-9) return [{ x: ax, z: az, r: 0, hw: 0, hd: 0, ry: 0 }];
+  const bx = px(ib), bz = pz(ib);
+  const ux = (bx - ax) / L, uz = (bz - az) / L;                 // unit vector along the long axis
+  const cx = (ax + bx) / 2, cz = (az + bz) / 2;                 // the cloud's midspan on that axis
+  // world → cloud basis, matching tools/disc-audit-probe.js `outsideRect`: u = x·cos ry − z·sin ry,
+  // v = x·sin ry + z·cos ry. The u axis is (ux, uz), so cos ry = ux and sin ry = −uz.
+  const ry = Math.atan2(-uz, ux);
+  const uAt = (x, z) => (x - cx) * ux + (z - cz) * uz;
+  const vAt = (x, z) => (x - cx) * uz - (z - cz) * ux;
+
+  // ─── 1. components, joined at one share ───
+  const root = Int32Array.from({ length: n }, (_, i) => i);
+  const find = i => { while (root[i] !== i) { root[i] = root[root[i]]; i = root[i]; } return i; };
+  const cellOf = new Map();
+  const gi = v => Math.floor(v / minShare);
+  for (let i = 0; i < n; i++) {
+    const key = gi(px(i)) + ':' + gi(pz(i));
+    let list = cellOf.get(key);
+    if (!list) cellOf.set(key, list = []);
+    list.push(i);
+  }
+  const reach = minShare * minShare;
+  for (let i = 0; i < n; i++) {
+    const gx = gi(px(i)), gz = gi(pz(i));
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+      const list = cellOf.get((gx + dx) + ':' + (gz + dz));
+      if (!list) continue;
+      for (const j of list) {
+        if (j === i) continue;
+        const ddx = px(j) - px(i), ddz = pz(j) - pz(i);
+        if (ddx * ddx + ddz * ddz < reach) {
+          const ra = find(i), rb = find(j);
+          if (ra !== rb) root[Math.max(ra, rb)] = Math.min(ra, rb);
+        }
+      }
+    }
+  }
+  const comps = new Map();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    let c = comps.get(r);
+    if (!c) comps.set(r, c = []);
+    c.push(i);
+  }
+
+  // ─── 2. and 3. one disc per share of walk, measured off its own points ───
+  let budget = 12;                       // the same ceiling `coverDiscs` holds a footprint to
+  const discs = [];
+  for (const g of comps.values()) {
+    const m = g.length;
+    // Greedy nearest-neighbour walk from the component's lowest-index point. `arc[s]` is how far
+    // along the drawn geometry the s-th walked point is, so a curve costs its true length.
+    const used = new Uint8Array(m), walk = new Int32Array(m), arc = new Float64Array(m);
+    walk[0] = 0; used[0] = 1;
+    for (let s = 1; s < m; s++) {
+      const ci = walk[s - 1];
+      let q = Infinity, h = -1;
+      for (let t = 0; t < m; t++) {
+        if (used[t]) continue;
+        const dx = px(g[t]) - px(g[ci]), dz = pz(g[t]) - pz(g[ci]);
+        const d = dx * dx + dz * dz;
+        if (d < q) { q = d; h = t; }
+      }
+      used[h] = 1; walk[s] = h; arc[s] = arc[s - 1] + Math.sqrt(q);
+    }
+    const P = arc[m - 1];
+    // Every component must produce at least one disc: a bucket whose wall faces went unmeasured would
+    // hand the audit an exposed, unlicensed face, which is a worse defect than overshooting the
+    // ceiling by the number of components. A bucket is `CELL`-sized, so clouds here are one or two.
+    const want = Math.ceil(P / minShare) || 1;
+    const k = Math.max(1, Math.min(budget, want));
+    budget -= k;
+    for (let s = 0; s < k; s++) {
+      // This share's points are the walk positions whose arc length falls in [s·P/k, (s+1)·P/k]. The
+      // walk is monotone in arc, so every point lands in exactly one share: no face is measured twice
+      // and none is dropped, which the chord lattice could not promise.
+      const lo = P * s / k, hi = P * (s + 1) / k;
+      const sh = [];
+      for (let t = 0; t < m; t++) if (arc[t] >= lo && arc[t] <= hi) sh.push(g[walk[t]]);
+      if (!sh.length) continue;
+      // The share's own diameter, by the same two-sweep approximation the cloud's frame used: from the
+      // first member to its farthest point, then from that point to *its* farthest point. Each sweep
+      // has a fixed anchor — a sweep that moves its anchor as it goes converges on whichever point it
+      // happened to reach last, not on the share's extent.
+      let a = 0, best = -1;
+      for (let i = 0; i < sh.length; i++) {
+        const q = (px(sh[i]) - px(sh[0])) ** 2 + (pz(sh[i]) - pz(sh[0])) ** 2;
+        if (q > best) { best = q; a = i; }
+      }
+      let b = a; best = -1;
+      for (let i = 0; i < sh.length; i++) {
+        const q = (px(sh[i]) - px(sh[a])) ** 2 + (pz(sh[i]) - pz(sh[a])) ** 2;
+        if (q > best) { best = q; b = i; }
+      }
+      // centre = midpoint of the share's farthest pair; `r` = furthest member from it. For a share
+      // along one line that is the share's own midpoint and half-length, which is what the old chain
+      // produced for a straight wall; for a share that curves, the midpoint sits on the chord and `r`
+      // is the chord's half-length plus its sagitta — measured, not a wish across it.
+      const x = (px(sh[a]) + px(sh[b])) / 2, z = (pz(sh[a]) + pz(sh[b])) / 2;
+      let r = 0, hw = 0, hd = 0;
+      const cu = uAt(x, z), cv = vAt(x, z);
+      for (const i of sh) {
+        const d = Math.hypot(px(i) - x, pz(i) - z);
+        if (d > r) r = d;
+        const au = Math.abs(uAt(px(i), pz(i)) - cu), av = Math.abs(vAt(px(i), pz(i)) - cv);
+        if (au > hw) hw = au;
+        if (av > hd) hd = av;
+      }
+      discs.push({ x, z, r, hw, hd, ry });
+    }
+  }
+  return discs;
+}
+
+
+// ─── what counts as a wall ───
+// `coverPointDiscs` above has no opinion about *which* triangles to feed it, and both emitters
+// (terrain.js `stoneMeasurement` for the scatter, props.js `solidify` for everything drawn without a
+// footing) ask the same question. Two gates say "a wheel hits this" rather than "a wheel rolls over
+// it": a face flatter than 45.6° from horizontal is a floor, tread or plate, and anything with less
+// than 12 cm of vertical run is a kerb lip, which the rover climbs. The band these are read against —
+// [ground + RIDE, ground + ROOF] — is the hull's own envelope and comes from physics.js.
+// tools/disc-audit-probe.js is the judge of the result and restates both numbers on purpose: an
+// emitter that handed the ruler its predicate could never be told it was wrong.
+export const BAND_NY = 0.7;       // |normal·up| above this is a surface you drive over, not into
+export const BAND_STEP = 0.12;    // vertical run below this is a step, not an obstacle
+
+// Which authored object a disc belongs to. A prop built from legs is named `${id}#${i}`: a sign's
+// three feet, a portal's four stanchions. They are one rigid object, so the crease between two of
+// them is not a gap the rover can be trapped in any more than the lens between two discs of one
+// building is. `audit` exempts same-family pairs; the measurement pass that emits discs has to agree
+// with it, or the two would disagree about what "the same prop" is — so the rule is written once,
+// here, and both consumers import it.
+export const discFamily = s => (s || '').replace(/#\d+$/, '');
 
 // How far one disc reaches past the kerb and its shoulder. Positive means it is standing in the road.
 export const streetEncroach = (x, z, r) => {
@@ -111,7 +317,7 @@ export function audit(items) {
   // A prop built from legs is named `${id}#${i}`: a sign's three feet, a portal's four
   // stanchions. They are one rigid object, so the crease between two of them is not a gap the
   // rover can be trapped in any more than the lens between two discs of one building is.
-  const base = s => (s || '').replace(/#\d+$/, '');
+  const base = discFamily;
   for (let i = 0; i < items.length; i++) {
     const a = items[i];
     for (const s of STREETS) {

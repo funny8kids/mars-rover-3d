@@ -4,6 +4,8 @@ import { TERRAIN, ISLAND } from '../config.js';
 import { fbm, vnoise, mulberry32, smoothstep } from '../utils/noise.js';
 import { loadModel, cloneModel } from './assets.js';
 import { RIM_ROCK } from './rim_rock.js';
+import { RIDE, ROOF } from '../vehicle/physics.js';
+import { coverPointDiscs, BAND_NY, BAND_STEP } from './plan.js';
 import { mergeInto } from './merge.js';
 
 // The dune field is one 512² tile repeated SAND_TILES× over 300 m, so at 2.2 cm per texel it carries
@@ -935,8 +937,12 @@ export function createTerrain(scene) {
 // cartoon-Earth palette sits in no Martian light, and a saturated rock is precisely the programmer
 // art the rest of this pass exists to remove. The rim kit is already forged with `rock_basalt` maps,
 // so the dunes now use it too: same stone as the rampart, one merged batch for all the basalt on the
-// island, and — because that kit's footprint *is* the disc table in rim_rock.js rather than a guess
-// at it — the scatter inherits C3 for free instead of approximating a silhouette with a box.
+// island, and the stone's silhouette is the authored one either way. What the scatter no longer
+// inherits is that table *as collision*: a footprint authored as the rampart rock's own base outline,
+// laid at local y=0, is a guess about a clone that has since been scaled 0.42..1.04 and seated on a
+// rippled surface — and a small flat cobble squashed under the hull floor ends up blocked by discs
+// standing on empty sand. tools/disc-audit-probe.js counted 21 of those phantom discs and named no
+// others. See `stoneMeasurement` below for what the discs are measured from instead.
 // Gravel's domain, which reaches over the rampart: a 0.4 m chip on the scarp is scree, and no frame
 // reads it as a floating boulder. The boulders are bounded by SAND_R below instead.
 const SCATTER_R = ISLAND.rim + 12;   // 144 m: past the crest, inside the mesh's 150 m half-width
@@ -953,6 +959,73 @@ const SAND_R = ISLAND.radius - 8;    // 110 m: the sand sheet, and the whole dom
 // Checked again after the line above landed, off the collider set the finished build exports: 30
 // stones, centres spanning r 53.3..107.1, and the widest body — centre plus its own footprint —
 // reaching 108.74, with none past 110. The old frame's artifact is gone by construction, not by luck.
+
+// ─── a scatter stone's collision is the geometry the rover's hull actually meets ───
+// The RIM_ROCK disc table stays what it was authored to be — the rampart's footprint, which the
+// kit's mesh is swept from, so disc and appearance cannot disagree there (src/world/rim_rock.js:2).
+// For a scatter clone the same table is a second, independent guess: the authored outline is laid at
+// local y = 0 whatever the clone's scale, tilt and seat end up doing, and `judge` in
+// tools/disc-audit-probe.js:338 samples 48 rim points plus the disc's own interior for drawn
+// geometry and calls a disc with none a phantom — an invisible wall. So the scatter measures the
+// transformed clone instead: the faces whose vertical run overlaps the band under their own
+// centroid, covered by discs. A stone with no band-rising face earns no disc.
+//
+// The four gates below are not new rules. They are the ruler's own tests, restated so the export
+// and the audit can never drift: probe:225 drops faces flatter than |n.y| 0.7 — those are floors
+// the hull drives over, not walls — and probe:227 drops faces under 0.12 m of vertical extent, a
+// plate's own rim, which is a step; probe:228-231 bands the face against the ground under its own
+// centroid, which is why `groundAt` is a parameter and not a constant.
+// `RIDE` and `ROOF` are imported from src/vehicle/physics.js, the file that enforces them, so the
+// export and the audit cannot drift by a retyped digit. `BAND_NY`/`BAND_STEP` come from plan.js, the
+// other emitter's host (`coverPointDiscs` lives there too), so the two passes that decide "this face
+// is a wall" cannot disagree about the shape test. tools/disc-audit-probe.js is the judge and keeps
+// its own copy deliberately — an emitter that supplies the ruler its own predicate cannot lose.
+
+// One sweep of a transformed stone returns both numbers this file needs: `pts`, the flat [x,z, …]
+// list of band-rising wall-face centroids, and `reach`, the furthest horizontal step from the
+// stone's own centre to any vertex of it. `reach` is the *drawn body*, not the collider: the sand-
+// sheet bound keeps the silhouette off the scarp and the spacing keeps the visual gap too, and a
+// collider disc set can only ever be inside it, so one number serves all three tests — and unlike
+// the authored radius it is read off the clone that was actually drawn, so a squashed cobble's
+// discs and its spacing agree all the way down to zero. Exported so the band maths and
+// `coverPointDiscs` can be run on a synthetic stone in plain node, without a browser.
+export function stoneMeasurement(o, groundAt = surfaceAt) {
+  const pts = [];
+  let reach = 0;
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const ab = new THREE.Vector3(), ac = new THREE.Vector3(), n = new THREE.Vector3();
+  o.updateMatrixWorld(true);
+  o.traverse(m => {
+    if (!m.isMesh || !m.geometry) return;
+    const pos = m.geometry.attributes?.position;
+    if (!pos) return;
+    const idx = m.geometry.index, tri = idx ? idx.count : pos.count;
+    const cx = o.position.x, cz = o.position.z;
+    for (let t = 0; t + 2 < tri; t += 3) {
+      const i0 = idx ? idx.getX(t) : t, i1 = idx ? idx.getX(t + 1) : t + 1, i2 = idx ? idx.getX(t + 2) : t + 2;
+      a.fromBufferAttribute(pos, i0).applyMatrix4(m.matrixWorld);
+      b.fromBufferAttribute(pos, i1).applyMatrix4(m.matrixWorld);
+      c.fromBufferAttribute(pos, i2).applyMatrix4(m.matrixWorld);
+      let d = Math.hypot(a.x - cx, a.z - cz); if (d > reach) reach = d;
+      d = Math.hypot(b.x - cx, b.z - cz); if (d > reach) reach = d;
+      d = Math.hypot(c.x - cx, c.z - cz); if (d > reach) reach = d;
+      const lo = Math.min(a.y, b.y, c.y), hi = Math.max(a.y, b.y, c.y);
+      if (hi - lo < BAND_STEP) continue;
+      ab.subVectors(b, a); ac.subVectors(c, a);
+      n.crossVectors(ab, ac).normalize();
+      if (Math.abs(n.y) > BAND_NY) continue;
+      const mx = (a.x + b.x + c.x) / 3, mz = (a.z + b.z + c.z) / 3;
+      const gy = groundAt(mx, mz);
+      if (lo > gy + ROOF || hi < gy + RIDE) continue;
+      pts.push(mx, mz);
+    }
+  });
+  return { pts, reach };
+}
+
+// `coverPointDiscs` lives in src/world/plan.js beside `coverDiscs`, the rectangle rule it is the
+// point-cloud form of, so the two cannot drift; it is imported above.
+
 export async function createRocks(scene, avoid = []) {
   const kit = await loadModel('rim_rock');   // already fetched by buildBase's hero list
   // A weighted bag rather than a uniform pick. Six archetypes also means six silhouettes — with the
@@ -973,7 +1046,7 @@ export async function createRocks(scene, avoid = []) {
   const group = new THREE.Group();
   group.name = 'rock-scatter';
   const placed = [], solids = [];
-  const n = new THREE.Vector3(), v = new THREE.Vector3();
+  const n = new THREE.Vector3();
   const UP = new THREE.Vector3(0, 1, 0);
   const qTilt = new THREE.Quaternion(), qYaw = new THREE.Quaternion();
   let guard = 0;
@@ -999,37 +1072,32 @@ export async function createRocks(scene, avoid = []) {
     const s = 0.42 + Math.pow(rand(), 1.6) * 0.62;
     // Y is drawn from its own range, not from s. Coupling them (±18%) meant a stone's height-to-width
     // ratio was fixed by its archetype, so the bag's flat families could only ever produce flat
-    // stones; ±37% around s lets a cobble sit up as a chip and a block slump as a slab. Purely
-    // cosmetic — the exported discs are laid at local y=0, so a Y scale cannot move the collision.
+    // stones; ±37% around s lets a cobble sit up as a chip and a block slump as a slab. No longer
+    // cosmetic in the way the old note claimed: the collision is measured off the band-rising faces
+    // of the transformed stone, so the Y scale decides whether this clone has any at all.
     const sy = s * (0.70 + rand() * 0.75);
-    // Uniform in XZ and independent in Y is the whole constraint: the exported discs are circles in
-    // the plan, so any anisotropic horizontal scale would make this table a lie again.
-    const rad = spec.discs.reduce((m, [dx, dz, dr]) =>
-      Math.max(m, Math.hypot(dx, dz) * s + dr * s), 0);
-    // The *body* sorts inside the toe, not the centre: the largest clast measured 3.32 m across, so
-    // one landing with its middle at 107 still has most of itself standing on the scarp. Rejecting
-    // here is what makes the line above a rule rather than a suggestion.
-    if (r + rad > SAND_R) continue;
-    let ok = true;
-    // What has to be spaced is the gap, not the centres: two discs 2 m apart still hold the 3.2 m
-    // body between them, and the deadlock scan calls that a slot.
-    for (const p of placed) if (Math.hypot(x - p[0], z - p[1]) < p[2] + rad + 3.6) ok = false;
-    for (const c of avoid) {
-      if (c.floor === undefined && Math.hypot(x - c.x, z - c.z) < c.r + rad + 2.6) { ok = false; break; }
-    }
-    if (!ok) continue;
-    const o = cloneModel(clast[name]);
-    o.scale.set(s, sy, s);
-    qYaw.setFromAxisAngle(UP, rand() * Math.PI * 2);
-    // Match the sole to the slope it stands on, sampled at the rock's own width — a 0.6 m chord
-    // (normalAt's) is weather noise under a 6 m clast. Surface-grid truth, not the analytic field,
-    // because the mesh is what the rover drives on and what these discs are drawn to agree with.
+    // Uniform in XZ stays the rule: the discs are circles covering the stone's own band outline, and
+    // an anisotropic horizontal scale would have them reach past the drawn silhouette along the
+    // short axis — the same rubber wall this change exists to delete, only measured instead of
+    // authored. The kit table itself is untouched; the rampart is still swept from it.
+    //
+    // The transform is built *before* the rejection tests so the tests can read it — but the yaw
+    // draw stays exactly where it was, spent only by a candidate that got this far, because every
+    // rand() call keeps its slot (a·r·name·s·sy before rejection, yaw after): a rejected candidate
+    // that spent a draw would shift every stone downstream and turn the measurements quoted
+    // throughout this file into folklore. So the pre-rejection measurement runs at yaw 0. Yaw is a
+    // rotation about the stone's own vertical axis; what it can move is the seating re-aim below
+    // (the sole vertex the aim picks changes with the rotation), not the footprint's reach from that
+    // axis, which is what both rejection tests consume — and the accepted stone is measured again
+    // after the yaw, in full, for the discs it actually exports.
     const e = Math.max(1.2, spec.reachT * s);
     n.set(
       -(surfaceAt(x + e, z) - surfaceAt(x - e, z)) / (2 * e), 1,
       -(surfaceAt(x, z + e) - surfaceAt(x, z - e)) / (2 * e)
     ).normalize();
-    o.quaternion.copy(qTilt.setFromUnitVectors(UP, n)).multiply(qYaw);
+    const o = cloneModel(clast[name]);
+    o.scale.set(s, sy, s);
+    o.quaternion.copy(qTilt.setFromUnitVectors(UP, n));
     o.position.set(x, surfaceAt(x, z), z);
     o.updateMatrixWorld(true);
     // Measured seating, not a constant: aim the lowest point of the transformed stone a little under
@@ -1043,19 +1111,56 @@ export async function createRocks(scene, avoid = []) {
     // the seating missing the ground it was aimed at either — it is a rigid sole spanning the flanks
     // of ripple dunes, which is what a metre-scale block does in the field, and the only way to
     // remove it is to deform the stone, i.e. to stop using the kit that carries the silhouette.
+    {
+      const bb = new THREE.Box3().setFromObject(o);
+      o.position.y += (surfaceAt(x, z) - 0.045 * spec.h * sy) - bb.min.y;
+      o.updateMatrixWorld(true);
+    }
+    const rad = stoneMeasurement(o).reach;
+    // The *body* sorts inside the toe, not the centre: the largest clast measured 3.32 m across, so
+    // one landing with its middle at 107 still has most of itself standing on the scarp. Rejecting
+    // here is what makes the line above a rule rather than a suggestion — and with `rad` now the
+    // drawn body's measured reach instead of the authored outline's guess at it, the rule holds for
+    // the clone that was actually drawn, including the squashed ones the outline never described.
+    if (r + rad > SAND_R) continue;
+    let ok = true;
+    // What has to be spaced is the gap, not the centres: two discs 2 m apart still hold the 3.2 m
+    // body between them, and the deadlock scan calls that a slot.
+    for (const p of placed) if (Math.hypot(x - p[0], z - p[1]) < p[2] + rad + 3.6) ok = false;
+    for (const c of avoid) {
+      if (c.floor === undefined && Math.hypot(x - c.x, z - c.z) < c.r + rad + 2.6) { ok = false; break; }
+    }
+    if (!ok) continue;
+    // The accepted stone takes its yaw — the one draw this candidate makes past the rejection tests,
+    // exactly where the old code made it — and is then transformed and seated all over again, so the
+    // transform that drew this stone is the transform that stops the rover: scale, tilt, yaw and the
+    // measured seat, in the order the clone is actually placed.
+    qYaw.setFromAxisAngle(UP, rand() * Math.PI * 2);
+    // The sole is matched to the slope it stands on, sampled at the rock's own width — a 0.6 m chord
+    // (normalAt's) is weather noise under a 6 m clast. Surface-grid truth, not the analytic field,
+    // because the mesh is what the rover drives on and what these discs are measured to agree with.
+    o.quaternion.copy(qTilt.setFromUnitVectors(UP, n)).multiply(qYaw);
+    o.position.set(x, surfaceAt(x, z), z);
+    o.updateMatrixWorld(true);
     const bb = new THREE.Box3().setFromObject(o);
     o.position.y += (surfaceAt(x, z) - 0.045 * spec.h * sy) - bb.min.y;
     o.updateMatrixWorld(true);
     group.add(o);
     placed.push([x, z, rad]);
-    // Same discipline as the rampart: the discs go through the clone's world matrix, so whatever
-    // transform drew this stone is the transform that stops the rover — scale, tilt, yaw and all.
-    // They share one `prop` name the way the rampart's four do, so grouping colliders by prop is
-    // grouping them by the boulder they belong to.
-    for (const [dx, dz, dr] of spec.discs) {
-      v.set(dx, 0, dz).applyMatrix4(o.matrixWorld);
-      solids.push({ x: +v.x.toFixed(2), z: +v.z.toFixed(2), zone: 'scatter',
-        prop: `scatter:rock#${placed.length - 1}`, r: +(dr * s).toFixed(2) });
+    // Stronger than the rampart's discipline, which transformed authored offsets: these discs *are*
+    // the clone's transformed geometry, filtered by the rover's own band and covered by
+    // `coverPointDiscs`. Whatever stands up into the hull's path is what stops the hull; what does
+    // not — the squashed-flat cobbles the ruler counted as 21 phantoms — stops nothing. They share
+    // one `prop` name per stone, so grouping colliders by prop groups them by boulder.
+    for (const d of coverPointDiscs(stoneMeasurement(o).pts)) {
+      solids.push({ x: +d.x.toFixed(2), z: +d.z.toFixed(2), zone: 'scatter',
+        prop: `scatter:rock#${placed.length - 1}`, r: +d.r.toFixed(2),
+        // The disc's own measured box, so the audit can tell "the tiling had to bulge here" from
+        // "there is an invisible wall here" — the same licence `lot()` gives a building, earned the
+        // same way: from the geometry, not from a typed number.
+        lot: { cx: +d.x.toFixed(2), cz: +d.z.toFixed(2), hw: +d.hw.toFixed(2),
+               hd: +d.hd.toFixed(2), ry: d.ry },
+        share: { hw: +d.hw.toFixed(2), hd: +d.hd.toFixed(2) } });
     }
   }
   scene.add(group);

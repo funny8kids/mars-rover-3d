@@ -6,7 +6,7 @@ import { Environment } from './world/environment.js';
 import { buildBase } from './world/props.js';
 import { surfaceAt, surfaceSlope } from './world/height.js';
 import { createRover } from './vehicle/rover.js';
-import { RoverPhysics, platformAt } from './vehicle/physics.js';
+import { RoverPhysics, platformAt, BODY_R, RIDE } from './vehicle/physics.js';
 import { ChaseCamera } from './camera/chase.js';
 import { createInput } from './input.js';
 import { createFX, updateStorm } from './fx/particles.js';
@@ -757,10 +757,37 @@ const SAND = {
 function exposure(x, z) {
   return THREE.MathUtils.clamp(-stormField.along(x, z) / SAND.WAKE, -1, 1);
 }
+// Is a site's spire standing inside the rover's band right now? Two things take it out of the band:
+// the drift it is buried under (the taller `k`, the deeper the same rock sits) and the sample having
+// been collected, which hides the group. Written as one predicate because both of them change it, in
+// two different places, and a wall with no geometry behind it is the defect — not a detail to be
+// remembered at each call site separately. Read off the *measured* crown, not the sink depth: the
+// drift's hiding depth has a 0.9 m floor so a short spire still vanishes, and a predicate borrowed
+// from it would wall a rock out taller than it stands. `rise` and `sink` are re-sampled in props.js
+// against the finished ground for the same reason — a seat taken mid-build goes stale under every
+// footing claimed afterwards, and a stale one reported this line true over a crown already at
+// 0.358 m, i.e. under the hull floor at RIDE 0.46. tools/site-wall-probe.js is the ruler.
+const siteK = s => THREE.MathUtils.smoothstep(s.buried, 0.03, 0.85);
+const siteWallUp = s => s.group.visible && s.rise - s.sink * siteK(s) > RIDE;
+// Put the site's own discs in or out of the list the solver reads, by object identity. Membership
+// rather than a flag on the disc: then the physics step, the unstick planner, the tour and seam
+// drivers and the audit probe all see the wall that is actually there without any of them having to
+// learn a new field, and a forgotten `if` cannot put the invisible ring back.
+function syncSiteWall(s) {
+  const up = siteWallUp(s);
+  if (s.wallUp === up) return;
+  s.wallUp = up;
+  for (const d of s.discs) {
+    const i = base.colliders.indexOf(d);
+    if (up && i < 0) base.colliders.push(d);
+    else if (!up && i >= 0) base.colliders.splice(i, 1);
+  }
+}
 // Put a site where its ledger says it should be: sunk into its own drift by that drift's height.
 function dressSample(s) {
-  const k = THREE.MathUtils.smoothstep(s.buried, 0.03, 0.85);
-  s.crystal.position.y = s.seatY - k * s.rise;
+  const k = siteK(s);
+  s.crystal.position.y = s.seatY - k * s.sink;
+  syncSiteWall(s);
   s.ring.material.opacity = 0.10 * (1 - k);
   s.lens.visible = s.buried > SAND.SHOW;
   // The lens mesh is authored at one front's mature deposit — a 4 m cap, 0.47 m of crest over a 0.43 m
@@ -1627,7 +1654,9 @@ function updateRace(dt) {
 // and a glide path is rejected unless every half metre of it is clear of props the rover was not
 // ALREADY touching. Control is never taken away either — the raw key set is watched separately
 // from the synthesised pedals, so tapping S or Space hands the rover straight back.
-const BODY_R = 1.6;                 // physics.js pads every collider disc by this for the body ring
+// BODY_R is imported from physics.js: the rescue planner and the physics solver must agree on how
+// far a disc reaches, and a locally-typed 1.6 would silently let the planner park the rover inside
+// a collider it thought it was avoiding.
 const rescue = {
   phase: '', t0: 0, cool: 0, tries: 0, markT: 0, markX: 0, markZ: 0, markV: 0,
   stillT: 0, stillX: 0, stillZ: 0,
@@ -2144,7 +2173,7 @@ function update(dt) {
       // front just dropped. It does not yield here — but the panel says why (see 覆沙 below), because
       // the one thing that must never happen is the game going quiet on a player parked on the objective.
       if (s.taken || s.buried >= SAND.DEAD || Math.hypot(phys.x - s.x, phys.z - s.z) >= 4.2) continue;
-      s.taken = true; s.group.visible = false; samplesTaken++;
+      s.taken = true; s.group.visible = false; syncSiteWall(s); samplesTaken++;
       missions[2].n = samplesTaken;
       renderMissions(); audio.radio('beep');
       UI.toast(t('✦ 样本 {n}/{total} 已入库').replace('{n}', samplesTaken).replace('{total}', missions[2].total));
@@ -2752,11 +2781,15 @@ window.__RSB = {
   // on for the current heading — the number that decides whether the front scours there or drops its
   // load — and `dust` is what the air currently holds over it. Together they are the whole ledger:
   // with `buried` beside them, a verification can tell whether a site went under because the physics
-  // said so or in spite of it. `total` is the mission denominator, so growth is visible in the same read.
+  // said so or in spite of it. `total` is the mission denominator, so growth is visible in the same
+  // read. `wall`/`live` are the collider half of that sentence: the discs the site owns, and how many
+  // of them are in the list the solver reads right now. A buried site with `live > 0` is an invisible
+  // wall; an emerged one with `live < discs` is a rock you drive through.
   sites: () => base.samples.map(s => ({
     id: s.id, at: [Math.round(s.x), Math.round(s.z)], site: siteName(s), buried: +s.buried.toFixed(3),
     seen: s.seen, taken: s.taken, visible: s.group.visible, p: +exposure(s.x, s.z).toFixed(2),
     dust: +stormField.local(s.x, s.z).toFixed(3), lens: s.lens.visible,
+    wall: !!s.wallUp, live: s.discs.filter(d => base.colliders.includes(d)).length, discs: s.discs.length,
     total: missions[2].total, n: samplesTaken })),
   // Set the cover on one site (or every site) by hand. Two uses: framing the buried lens and the
   // emerging crystal for a screenshot pair, and proving the collect gate and the wheel-scour are
@@ -3371,6 +3404,19 @@ window.__RSB = {
   // the raw collision set — the pin/unstick audit needs to see the cylinders the physics loop reads
   colliders: () => (base?.colliders || []).map(c => [+c.x.toFixed(2), +c.z.toFixed(2), +c.r.toFixed(2), c.floor === undefined ? 0 : +c.floor.toFixed(2)]),
   solids: () => base?.colliders,
+  // the site plan's own lot rectangles (props.js `lots`). A merged prop mesh has no name of its own,
+  // so an exposure audit that groups by mesh name reports one giant `Mesh` bucket; the lot a stray
+  // face falls inside is what names the prop it belongs to.
+  lots: () => base?.lots || [],
+  // the emitter's own census: how many drawn faces the authored discs did not already cover, and
+  // which families the pass therefore had to stand walls up for. A non-empty `top` is the worklist —
+  // each name is a prop that drew geometry without declaring it, so the real fix is a measured
+  // `lot()` at its placement site, not another disc from this pass.
+  solid: () => base?.solidReport || null,
+  // the player's own vehicle as a scene object, so an audit can exclude it by identity: the rover
+  // carries ~12 k triangles of its own, and a sweep that excludes it by proximity also hides every
+  // prop standing within that radius of wherever it happens to be parked.
+  roverRoot: () => rover?.group || null,
   plan: () => base?.plan ? base.plan() : null,
   path: () => qaTrace,
   // The unstick's own view: is the body ring buried right now, and what has the rescue done so far.
@@ -3977,12 +4023,23 @@ window.__RSB = {
 
     // ── pinch wedges: solid pairs whose slot admits the body but not a turn
     const SLOT = 2 * CLEAR + 2 * TURN;
+    // How much hull daylight makes a mouth driveable. `CORRIDOR` in the placement rules is 3.2 m,
+    // which is exactly 2*BODY_R — the number a *pair* of discs must clear is the same number the
+    // hull's own keep-out is made of, so a placement that "just passes" leaves 0.00 m of daylight
+    // and physics, which pads every disc by BODY_R, reads a wall. The bar below therefore measures
+    // daylight (metres left after both inflated keep-outs), not raw gap: 1.2 m is one hand-width of
+    // margin on each side of the hull, enough that a driver lined up with the mouth gets through and
+    // a driver who is not can still reverse out along it.
+    const MOUTH = 1.2;
     // A seam is a joint between two *different* structures that is too narrow to drive through and
     // too wide to read as a wall. The body's stances against such a pair touch both faces at once,
     // so the only way out of the bay is a reverse along the mouth's axis — which a driver arriving
-    // crooked does not have. 2*CLEAR is where that stops existing (above it, the axis itself is a
-    // standable lane); the other bound is the same structure on itself, where a crease is a corner
-    // and not a trap — see the gate barrier's note in props.js.
+    // crooked does not have. The bar used to stop at 2*CLEAR of raw gap, and that is the exact
+    // arithmetic the leak cordon slipped through: ten hazard stakes 3.39 m apart each got an emitted
+    // r 0.05 disc, every pair read `gap 3.29 ≥ CORRIDOR` and so was legal ground to the placement
+    // rules, while 3.29/2 − 1.6 = 0.045 m of daylight made the ring a closed invisible fence. Under
+    // the old bar the pair was excluded from the seam list *because* it passed the corridor, which
+    // is how a scan reads green and a soak spends 56 s pinned in one place.
     const seamCand = new Map();
     const found = new Map();
     for (let i = 0; i < solids.length; i++) {
@@ -4007,8 +4064,9 @@ window.__RSB = {
         // both inflated circles (r + CLEAR each). Those cross iff |ra−rb| ≤ d ≤ ra+rb, and where
         // they cross is precisely the stance that touches both faces.
         const ra = a.r + CLEAR, rb = b.r + CLEAR;
+        const mouth = gap / 2 - CLEAR;      // hull daylight along the line of centres
         let stance = null, pinch = 0;
-        if (gap > 2 * CLEAR) stance = [mx, mz];    // the axis itself stands free: an ordinary mouth
+        if (gap > 2 * CLEAR) { stance = [mx, mz]; pinch = 2 * mouth; }  // axis stands free: both faces bind equally there
         else if (d < Math.abs(ra - rb)) continue;  // one disc shadows the other: there is no pinch
         else {
           // The pair's cusp: where the hull touches both faces at once. It is where the pocket is,
@@ -4033,10 +4091,11 @@ window.__RSB = {
         // Two discs of ONE structure is a corner, not a joint — the `#n` suffix counts the footprint
         // discs a sign board or a substation is laid out with. A seam is where two *structures* meet.
         const root = c => cname(c).replace(/#\d+$/, '');
-        if (gap <= 2 * CLEAR && gap > 0 && root(a) !== root(b)) {
+        if (gap > 0 && mouth < MOUTH && root(a) !== root(b)) {
           const key = root(a) + '|' + root(b) + '|' + Math.round(mx / 4) + ':' + Math.round(mz / 4);
           const prev = seamCand.get(key);
           const e = { a: cname(a), b: cname(b), gap: +gap.toFixed(2),
+            daylight: +mouth.toFixed(2),
             slack: +pinch.toFixed(2),
             at: [Math.round(stance[0] * 10) / 10, Math.round(stance[1] * 10) / 10],
             axis: [+ux.toFixed(3), +uz.toFixed(3)] };
@@ -4232,12 +4291,68 @@ window.__RSB = {
     // is meant to catch. What the analytic list can promise is that ground this tight exists next to
     // a drive-reached cell; whether a driver actually gets caught in it is the driven test's job.
     const seamList = [...seamCand.values()].filter(s => nearReach(s.at[0], s.at[1]))
-      .sort((x, y) => y.gap - x.gap);
+      .sort((x, y) => y.daylight - x.daylight);
     const slivers = [];
     for (let c = 0; c < free.length; c++) if (free[c] && !reached[c]) {
       const i = (c / H) | 0, j = c % H;
       slivers.push([Math.round(GX(i)), Math.round(GZ(j))]);
     }
+
+    // ── enclosure census: every rule above blames one mouth at a time, but a cordon is a compound
+    // object — ten stakes that each pass their neighbour can still shut a room, and the room is the
+    // defect. So the built area is flooded at a resolution finer than the hull (0.5 m against the 2 m
+    // the reachability BFS quantises to; a 4.5 cm slit is invisible at 2 m, which is how the leak
+    // ring stayed off every list while a soak rover lost 56 s inside it), using physics' own keep-out
+    // — a disc's r plus CLEAR, and CLEAR is BODY_R, so this is the same wall the collision resolves
+    // against rather than a second opinion of it. Any connected ground the hull may stand on but
+    // nowhere pivot is a cup: you leave along the axis you arrived on, or not at all.
+    const EC = 0.5;
+    const EW = Math.ceil((x1 - x0) / EC) + 1, EH = Math.ceil((z1 - z0) / EC) + 1;
+    const esc = new Float32Array(EW * EH);
+    for (let i = 0; i < EW; i++) for (let j = 0; j < EH; j++) esc[i * EH + j] = clearAt(x0 + i * EC, z0 + j * EC);
+    const cid = new Int32Array(EW * EH).fill(-1);
+    const comps = [];
+    // 4-neighbour, not 8: a diagonal hop would clear a corner the hull cannot pass. What the
+    // orthogonal fill can still miss is the sagitta of a 0.5 m chord across a 1.6 m keep-out — under
+    // 2 cm — and every pocket this reports is driven before it is called a defect.
+    for (let s = 0; s < esc.length; s++) {
+      if (esc[s] < 0 || cid[s] >= 0) continue;
+      const id = comps.length, st = [s];
+      const rec = { cells: 0, pivot: 0, maxClear: -99, at: [0, 0], wx: 1e9, ex: -1e9, wz: 1e9, ez: -1e9, edge: false, pois: [] };
+      cid[s] = id;
+      while (st.length) {
+        const c = st.pop(), i = (c / EH) | 0, j = c % EH;
+        const px = x0 + i * EC, pz = z0 + j * EC;
+        rec.cells++;
+        if (esc[c] >= TURN) rec.pivot++;
+        if (esc[c] > rec.maxClear) { rec.maxClear = esc[c]; rec.at = [px, pz]; }
+        if (px < rec.wx) rec.wx = px; if (px > rec.ex) rec.ex = px;
+        if (pz < rec.wz) rec.wz = pz; if (pz > rec.ez) rec.ez = pz;
+        if (i === 0 || j === 0 || i === EW - 1 || j === EH - 1) rec.edge = true;
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const ni = i + di, nj = j + dj;
+          if (ni < 0 || nj < 0 || ni >= EW || nj >= EH) continue;
+          const n = ni * EH + nj;
+          if (esc[n] >= 0 && cid[n] < 0) { cid[n] = id; st.push(n); }
+        }
+      }
+      comps.push(rec);
+    }
+    for (const p of pois) {
+      const i = Math.round((p.x - x0) / EC), j = Math.round((p.z - z0) / EC);
+      if (i < 0 || j < 0 || i >= EW || j >= EH) continue;
+      const c = i * EH + j;
+      if (cid[c] >= 0) comps[cid[c]].pois.push(p.name);
+    }
+    // 10 m² is two hull lengths of standing room. Below that a no-pivot patch is the gap between a
+    // prop's own foot discs, and no rover fits inside one to get stuck in. A patch holding a point of
+    // interest is reported however small: the mission must not be the thing that traps you.
+    const pockets = comps.filter(r => !r.edge && r.pivot === 0 && (r.cells * EC * EC >= 10 || r.pois.length))
+      .map(r => ({ at: [Math.round(r.at[0] * 10) / 10, Math.round(r.at[1] * 10) / 10],
+        area: Math.round(r.cells * EC * EC), maxClear: +r.maxClear.toFixed(2),
+        span: [Math.round(r.ex - r.wx), Math.round(r.ez - r.wz)],
+        pois: r.pois, entered: nearReach(r.at[0], r.at[1]) }))
+      .sort((a, b) => b.area - a.area);
 
     return { cell: CELL, turn: +TURN.toFixed(2), solids: solids.length, pois: pois.length,
       grid: [W, H], configs: qt, reachedCells: reached.reduce((a, v) => a + v, 0),
@@ -4251,6 +4366,11 @@ window.__RSB = {
       // Every seam is handed over, not a window of the widest ones: the driven test is the consumer
       // now, and a census truncated at 12 silently excuses the 20 joints nobody got to check.
       seamCount: seamList.length, seams: seamList,
+      // Enclosed ground with nowhere to pivot, from the 0.5 m census. This is the field the leak
+      // cordon would have failed at even if every one of its pairs had passed the mouth bar, because
+      // a loop of legal gaps is still a room — the acceptance bar is 0 here too.
+      pocketCount: pockets.length, pockets: pockets.slice(0, 12),
+      census: { cell: EC, grid: [EW, EH], regions: comps.length },
       // "Too far to touch" is the only reachability defect a point of interest can have: the nearest
       // legal parking cell sits outside the radius the game itself needs. A marker whose centre is
       // buried in its own prop — every reactor tap IS a solid rig, and the pads carry a pedestal —

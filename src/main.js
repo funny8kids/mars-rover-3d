@@ -16,6 +16,7 @@ import { createPadBeams } from './fx/beams.js';
 import { createStageCollars } from './fx/staging.js';
 import { StormField, createStormWall, placeStormWall } from './world/storm.js';
 import { createRimVeil } from './world/rim_veil.js';
+import { createShadowBudget } from './world/shadow_budget.js';
 import { createPost } from './fx/post.js';
 import { createSkidMarks } from './fx/skids.js';
 import { GameAudio } from './audio/audio.js';
@@ -37,7 +38,7 @@ const input = createInput(canvas);
 const audio = new GameAudio();
 
 let quality, qKey, post, fx, env, sky, terrain, base, rover, phys, chase, skids;
-let stormField = null, stormWall = null, lastWind = null, rimVeil = null;
+let stormField = null, stormWall = null, lastWind = null, rimVeil = null, shadowBudget = null;
 const _viewDir = new THREE.Vector3();
 // The wall's own two poles: dust in shadow is a maroon screen, dust backlit by the sun blazes.
 // The shadow pole has to be *far* darker than the sky the wall stands against. Measured 2026-09-22:
@@ -377,6 +378,12 @@ function applyQuality() {
       }
     });
   }
+  // Who is worth a depth-map draw. Rebuilt per tier because the cut is a picture decision, and the
+  // std tier buys frame time that the hi tier can afford to spend on shadows instead.
+  shadowBudget = createShadowBudget(scene, {
+    big: quality.shadowBig, tall: quality.shadowTall,
+    near: quality.shadowNear, far: quality.shadowNear + 10, eye: camera.position,
+  });
   audio.leakPos = base.leakPoint;
   UI.setTop(env.state.clock, '晴朗', quality.label, 60);
   $('touch-ui').classList.toggle('hidden', !input.isTouch);
@@ -2468,6 +2475,9 @@ function update(dt) {
     }
   }
 
+  // Shadow casters are budgeted against the lens, not the rover: the picture is what has to pay.
+  if (shadowBudget) shadowBudget.update(camera.position);
+
   // audio — `windLoad` is the pressure the front is standing on right now: wind speed × the dust
   // fraction at the rover. It rises through `watch` before a single mote arrives, which is the
   // warning you hear with the radio off.
@@ -3385,6 +3395,13 @@ window.__RSB = {
   post: () => post,
   camera: () => camera,
   scene: () => scene,
+  // The shadow budget, as the caster counts it currently holds. A QA reader, not a control: the
+  // number that decides whether a frame fix is still there is `lit`, and it has to be readable
+  // without reaching into module scope.
+  shadowBudget: () => shadowBudget?.stats ?? null,
+  shadowReclassify: () => shadowBudget?.classify() ?? 0,
+  // Sweep the thresholds on the ruler that picked them: one page, one pinned sun, one pose.
+  shadowRetune: (opts) => shadowBudget?.retune(opts) ?? 0,
   // run one full game frame by hand — lets QA drive the sim while the tab is hidden
   frame: (dt = 1 / 60) => update(dt),
   input: () => input.inp,
@@ -3615,6 +3632,12 @@ window.__RSB = {
     // watched. Losing up to 4 s of window per seam is cheap: a 100 s chunk holds twenty-four of them,
     // and a genuine wedge files on the next one.
     s.markT = s.t; s.markX = phys.x; s.markZ = phys.z; s.windowClean = true;
+    // Re-anchor the odometer too. The rover coasts while the harness thinks between chunks, and a
+    // 1.2 s coast off a 7 m/s entry covered 8.2 m — which the hop test then filed as a teleport the
+    // sim never performed (measured: one "teleport 8.2m@50s" at exactly a chunk seam, with the cell
+    // at 0.717 and grid.dead false, i.e. nothing that could have teleported anything). A seam is the
+    // same kind of seam as the stall window's.
+    s.prevPos = [phys.x, phys.z];
     let f = 0;
     for (; f < frames && (s.loop || s.wp < s.route.length); f++) {
       const tgt = s.route[s.wp];

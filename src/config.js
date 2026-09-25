@@ -4,9 +4,22 @@
 // "make it run" or "make it look like Mars". The four-way ladder was a guess between four options
 // nobody could tell apart, and the auto-degrade below still works inside either tier — it solves
 // for pixels via renderCap, so it never needs a third button.
+// `shadowBig`/`shadowTall`/`shadowNear` are the shadow-caster budget (src/world/shadow_budget.js):
+// a prop is only worth a depth-map draw if it is fat (world radius ≥ `big` m) or TALL (world height
+// ≥ `shadowTall` m), and otherwise only within `shadowNear` m of the lens. Height is in there because
+// shadow length comes from height, not girth: a street lamp measures 6.3 m tall but only 3.65 m of
+// bounding sphere, so a radius-only rule cut the one prop whose 18 m dawn shadow is the most legible
+// stripe on the pavement. The hi numbers are measured with `node tools/cdp-frame-cost.mjs <url> 9334
+// shadow -94 -34 90` (pinned sun el=18°, 1920×1080, live frame loop): 47.1 fps / 2 265 draws with no
+// budget → 53.4 / 1 673 with it, against a 62.6 fps shadow-off ceiling. The height clause itself costs
+// 194 depth draws and reads as −1.1 fps, which is inside that arm's own round-to-round spread.
+// std cuts harder because its 1 024² map makes each surviving draw cheaper already — measured on the
+// same ruler: 47.2 fps / 1 235 depth draws with no budget → 55.2 / 286 with std's own numbers, against
+// a 62.2 fps shadow-off ceiling. Its tall=6 is not a rounding of hi's 3.5: the lamp post bodies are
+// 6.32 m, so 6 keeps exactly those stripes for 51 extra casters and 53 depth draws (−0.7 fps).
 export const QUALITIES = {
-  std: { label:'标准',  pixelRatio:1.0,  maxPixels:1.6e6, shadow:1024, particles:0.70, ssao:true, bloom:true, bloomStrength:0.74, godrays:true, envUpdateHz:2.0, stormParticles:2400 },
-  hi:  { label:'高质量', pixelRatio:1.75, maxPixels:3.6e6, shadow:3072, particles:1.50, ssao:true, bloom:true, bloomStrength:0.92, godrays:true, envUpdateHz:2.0, stormParticles:6000 },
+  std: { label:'标准',  pixelRatio:1.0,  maxPixels:1.6e6, shadow:1024, shadowBig:6, shadowTall:6, shadowNear:25, particles:0.70, ssao:true, bloom:true, bloomStrength:0.74, godrays:true, envUpdateHz:2.0, stormParticles:2400 },
+  hi:  { label:'高质量', pixelRatio:1.75, maxPixels:3.6e6, shadow:3072, shadowBig:4, shadowTall:3.5, shadowNear:35, particles:1.50, ssao:true, bloom:true, bloomStrength:0.92, godrays:true, envUpdateHz:2.0, stormParticles:6000 },
 };
 
 // Compact art-diorama layout (metres). +X east, +Z south.

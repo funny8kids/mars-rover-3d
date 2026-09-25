@@ -537,10 +537,12 @@ export async function buildBase(scene, quality) {
     });
     return n ? b : null;
   };
-  // one rectangle → the discs that hold it, placed in world space
-  const lot = (id, cx, cz, w, d, ry = 0) => {
+  // one rectangle → the discs that hold it, placed in world space. `maxR` tightens the tiling: the
+  // fewest discs that cover a long thin rectangle bulge past its ends by (r − half the short side),
+  // which is fine in open sand and wrong when the lot's own end has to stop at something.
+  const lot = (id, cx, cz, w, d, ry = 0, maxR = 9) => {
     const cos = Math.cos(ry), sin = Math.sin(ry);
-    for (const p of coverDiscs(w, d)) {
+    for (const p of coverDiscs(w, d, maxR)) {
       colliders.push({ x: cx + p.dx * cos + p.dz * sin, z: cz - p.dx * sin + p.dz * cos,
                        r: p.r, prop: `${ZONE}:${id}`, zone: ZONE });
     }
@@ -1303,7 +1305,19 @@ export async function buildBase(scene, quality) {
       // would silently re-derive the whole 71 m stack's stance from an assumption.
       rest: { booster: booster.position.clone(), upper: upper.position.clone() } };
     G.add(ship); shipGroup = ship;
-    lot('starship', px, pz, 9.2, 9.2);
+    // A vehicle that is a cylinder of one radius gets one disc, which is not what a `lot` rectangle
+    // produces: coverDiscs circumscribes the square, so the 9.2 m plot this replaces became a single
+    // r 6.51 balloon standing two metres off the engine bells it was drawn to protect. Measured off
+    // the mesh instead, with the rover as the yardstick — the triangles that intersect the slab from
+    // the deck to 3.15 m up (the rover's own roof, Box3) span 9.04 m centred on the axis and reach
+    // 4.52 m from it. Nothing of the stack exists below 1.42 m, and the hull only widens past that
+    // above the rover's roof: 4.52 m at 4 m up, 5.3 m at 8 m (the ⌀10.2 m light rings), which the
+    // rover drives under rather than into. The lot rectangle stays the measured 9.04 m for the plan
+    // census; the collider is the disc. Driven at full throttle from the east the hull now stops with
+    // its centre 6.12 m off the axis — 4.52 of disc plus the 1.6 m body ring physics adds — facing the
+    // Raptor field; the balloon parked it at 8.11 m, 2 m out on bare slab with nothing in front of it.
+    colliders.push({ x: px, z: pz, r: 4.52, prop: `${ZONE}:starship`, zone: ZONE });
+    lots.push({ id: `${ZONE}:starship`, x: px, z: pz, w: 9.04, d: 9.04 });
 
     // ── Chopstick tower, west of the ship: its six arms reach east to the hull
     // and the "RED STARBASE" board on its south face reads from the teleport pad.
@@ -1317,9 +1331,27 @@ export async function buildBase(scene, quality) {
     // the highest natural ground under the deck and batters the shoulder back at 1:3, and the tower
     // is placed at that level rather than at a sampled point plus a constant.
     put('launch_tower', tx, tz, 0.55, 0, 0, grade('chopstick-tower', tx, tz, TW, TD));
-    // The tower is a 40 m chopstick whose six arms reach out over the vehicle. Its measured box
-    // would therefore wall off the whole pad, so the lot is the two rails it actually stands on.
-    lot('chopstick-tower', px - 12.5, pz, 6.5, 6.5);
+    // The tower is a 40 m chopstick whose six arms reach out over the vehicle, so its measured box
+    // would wall off the whole pad. The collider is what the rover can actually hit: the legs and pier
+    // below its own roof, taken with the same slab predicate as the starship's disc. That field is one
+    // continuous 10.14 x 3.48 m pier centred 0.57 m west and 0.17 m south of the footing axis (8.49 x
+    // 3.38 within 0.3 m of the deck, 9.09 x 3.45 within 1.5 m) — not the two rails the old hand-typed
+    // `lot('chopstick-tower', px - 12.5, pz, 6.5, 6.5)` drew: that single r 4.6 disc left 2.6 m of the
+    // eastern pier standing in open air, raised ~3 m of phantom wall north and south of the legs, and
+    // reached 17.1 m from the pad axis.
+    // `maxR` 2 rather than the default cover, because the pier straddles the pad's edge-lighting
+    // channel: the footing runs from 6.5 m out to 16.6 m and `RING_R` is 9.5 m, so any honest cover
+    // crosses that circle and `ringClearArcs` already trims the lamp where the two meet. The default
+    // 3-disc tiling of this rectangle (r 2.43) stands on 1.90 m of the untrimmed arc and overshoots
+    // the circle by 1.12 m; six discs of r 1.93 do the same job at 0.18 m and -0.22 m, and their end
+    // caps bulge 0.19 m past the measured field instead of 0.69 m. After the change: no rover-height
+    // vertex of the tower lies outside a disc, plan() reports blocks 0 / intrusions 0, and the
+    // tower↔ship pair sits at 0.89 m — tight, not overlapping. Driven north into the pier at full
+    // throttle the hull stops at z -56.65 (the disc rim at -58.24 plus the body ring) and the rescue
+    // takes it off the face instead of leaving it pinned; the sand the old disc fenced off drives
+    // through, and the 22 m alley that alley was does not come back — the dead-lock census still
+    // reports trapCount 0 / unreachable 0.
+    lot('chopstick-tower', tx - 0.572, tz - 0.168, 10.14, 3.48, 0, 2);
     // Sited by triangle probe, not by eye. The tower's crown is a 2.58 x 2.37 m deck whose top face
     // measures y 26.61 (py + 26.01), ringed by a handrail that tops out at 29.11. The ball this
     // fitting replaces sat on the tower's own placement axis, 1.6 m east of the deck's edge, where the

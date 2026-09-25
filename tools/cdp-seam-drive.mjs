@@ -1,4 +1,5 @@
 // usage: node tools/cdp-seam-drive.mjs <url|-> [port=9333] [only=<zone-regex>] [what=seams|traps]
+//      (the two named options may appear in any order)
 //
 // The driven half of the 「碰撞体与外观不一致 / 夹缝清零」 gate (goal 【C】3, and 【A】2's
 // "可进入但不可退出").
@@ -13,23 +14,35 @@
 //
 //   released   a forward throttle gets ≥ RELEASE metres away, no rescue needed
 //   reversed   only the reverse gear (or a turn begun in reverse) got out — the soak failure's shape
-//   rescued    the body did move, but only after the unstick state machine fired ⇒ the pocket is real
-//   pinned     nothing got out inside the budget
+//   rescued    the body got out only after the unstick state machine fired ⇒ the pocket is real,
+//              and the fix is the placement, not the fail-safe (which did its job)
+//   pinned     nothing got out inside the budget, rescue included ⇒ the player is stuck for good
 //
 // Anything but `released` is a defect to re-site, and the exit code is non-zero until the whole
 // census reads `released`. The point of driving rather than measuring is that the analytic seam rule
 // cannot tell a lamp post from a hangar; the rover can.
 import fs from 'fs';
 
-const [,, urlArg, portStr, onlyArg, whatArg] = process.argv;
+// Named options are read from anywhere in argv, not from a slot. Positional slots lied once
+// (2026-09-26): `… 9334 what=traps` put the `what` token in the `only` slot, where it became a regex
+// matching no prop name, and a census of 6 traps printed "CENSUS 0 seams stances" — which reads as
+// "the trap audit found nothing" when it means "my filter matched nothing".
+const [urlArg, portStr] = process.argv.slice(2).filter(a => !a.startsWith('only=') && !a.startsWith('what='));
+const flag = name => process.argv.find(a => a.startsWith(name))?.slice(name.length);
 const port = Number(portStr || 9333);
-const only = onlyArg ? new RegExp(onlyArg.replace(/^only=/, '')) : null;
+const only = flag('only=') ? new RegExp(flag('only=')) : null;
 // `seams` (the default) is the population of two discs close enough to touch the hull at once.
 // `traps` is the other half of 【A】2's ask — "可进入但不可退出": a dead-end run the flood fill can
 // reach and the rover cannot pivot out of, which no pair rule can see because the two walls in those
 // stances are 7-11 m apart and read as a lane. Both records carry a, b, gap, at and axis, so the
 // attempt ladder below is the same rig pointed at a different stance list.
-const what = whatArg ? whatArg.replace(/^what=/, '') : 'seams';
+const what = flag('what=') || 'seams';
+if (what !== 'seams' && what !== 'traps') {
+  // `scan().<typo>` is `undefined`, and `.map` on it dies three lines later as a TypeError that reads
+  // like a broken census. Name the two populations that exist instead.
+  console.log(`WHAT_UNKNOWN ${what} — expected seams or traps`);
+  process.exit(2);
+}
 // Measured, not guessed: the gate↔ring-315 crease releases the rover at 5.79 m, but only after
 // ~7 s of *wall clock* from a dead stop while it scrapes both faces (4.8 s of sim buys 1.3 m). A
 // 3.5 s budget called that stance "pinned" — so the budget has to clear the slowest honest escape,
@@ -115,8 +128,16 @@ const stanceExpr = `(()=>{
     A: binder(x.a, x.at[0], x.at[1]), B: binder(x.b, x.at[0], x.at[1]),
   })));
 })()`;
-const rows = JSON.parse(await evaluate(stanceExpr)).filter(r => !only || only.test(`${r.a} ${r.b}`));
-console.log(`${clock()} CENSUS ${rows.length} ${what} stances, ${ATTEMPTS} ms of wall clock per attempt, release at ${RELEASE} m`);
+const all = JSON.parse(await evaluate(stanceExpr));
+const rows = only ? all.filter(r => only.test(`${r.a} ${r.b}`)) : all;
+console.log(`${clock()} CENSUS ${rows.length} ${what} stances${only ? ` (only=/${only.source}/ of ${all.length} unfiltered)` : ''}, ${ATTEMPTS} ms of wall clock per attempt, release at ${RELEASE} m`);
+// Distinguish the two ways to have nothing to drive: the census is clean (the goal of 【A】2, and it
+// has to exit 0 there) versus a filter that matched no name (not a result at all). Without this line
+// both print "0 stances".
+if (!rows.length) {
+  if (all.length) { console.log(`${clock()} EMPTY_CENSUS only=/${only.source}/ matched none of the ${all.length} ${what} stances — not a pass`); process.exit(2); }
+  console.log(`${clock()} CENSUS_EMPTY ${what} list is genuinely empty`);
+}
 
 // The attempt ladder, in the order a player would think of them. `in` is the heading that points at
 // the crease — the arrival a driver actually has when they drive into a joint crooked, which is the
@@ -128,23 +149,37 @@ const DRIVE = `(()=>{
     const ev0 = (R.unstick().events || []).length;
     await new Promise(r => setTimeout(r, 120));
     const k = R.input().keys; keys.forEach(x => k.add(x));
-    let maxV = 0, gas = 0, moved = 0, rescueSeen = null, simMs = 0;
+    let maxV = 0, pedal = 0, moved = 0, rescueSeen = null, simMs = 0;
     const t0 = performance.now();
     while (performance.now() - t0 < budgetMs) {
       await new Promise(r => setTimeout(r, 50));
       simMs = performance.now() - t0;
       const p = R.phys(), i = R.input(), u = R.unstick();
-      gas = Math.max(gas, Math.abs(i.gas) || 0);
+      // the pedal the player is actually standing on, which for a reverse attempt is inp.brake:
+      // reading gas alone made a held S key look like "no input at all" (measured 2026-09-26,
+      // see the ladder below), and an attempt that is doing something is not one that is not
+      pedal = Math.max(pedal, Math.abs(i.gas) || 0, Math.abs(i.brake) || 0);
       maxV = Math.max(maxV, Math.hypot(p.vx, p.vz));
       moved = Math.max(moved, Math.hypot(p.x - sx, p.z - sz));
-      if (u.phase) { rescueSeen = u.phase; break; }
+      // The rescue is part of the game, so breaking here used to report a stance the fail-safe
+      // SAVED as pinned — which conflates "the player is stuck for good" (【A】1's definition of
+      // 卡死: speed ~0, >2 s, keys still down) with "the pocket is real and only the machine got you
+      // out", and those have different fixes: one is the unstick state machine, the other is the
+      // placement. So keep driving with the key still down after the rescue ends, and let moved
+      // count what the whole chain paid for. The verdict still cannot come out as released when a
+      // rescue was needed — a player who needed one did not drive out — but rescued now says
+      // which of the two fixes the stance owes. Measured 2026-09-26 on the stance at (-20.2,-13.1): every
+      // forward heading stopped the attempt at 3.6-3.9 m because the rescue had fired, while the
+      // rover was still rolling; the row read reversed, which blames the gearbox for what is a lamp
+      // standing beside a wreck.
+      if (u.phase) rescueSeen = u.phase;
       if (moved >= ${RELEASE}) break;
     }
     keys.forEach(x => k.delete(x));
     await new Promise(r => setTimeout(r, 60));
     const p = R.phys();
     return { end: [+p.x.toFixed(2), +p.z.toFixed(2)], d: +Math.hypot(p.x - sx, p.z - sz).toFixed(2),
-             moved: +moved.toFixed(2), v: +p.speed.toFixed(1), maxV: +maxV.toFixed(1), gas: +gas.toFixed(2),
+             moved: +moved.toFixed(2), v: +p.speed.toFixed(1), maxV: +maxV.toFixed(1), pedal: +pedal.toFixed(2),
              simMs: Math.round(simMs), rescueSeen, evDelta: (R.unstick().events || []).length - ev0,
              touching: out.touching };
   };
@@ -163,16 +198,27 @@ for (const [i, r] of rows.entries()) {
   const outYaw = Math.atan2(ox, oz);           // phys.yaw is measured from +z towards +x
   const inYaw = outYaw + Math.PI;
   const axisYaw = Math.atan2(r.axis[0], r.axis[1]);
-  // There is no reverse-from-standstill in this game (a KeyS hold at zero speed leaves `gas` at 0 —
-  // measured), so every attempt is throttle-forward on some heading, which is also what a player
-  // reaching for a way out actually does.
+  // The ladder is every gear and heading a player has, in the order they would try them.
+  // Reverse belongs in it. The note this replaces claimed "a KeyS hold at zero speed leaves `gas` at
+  // 0", which was the rig reading the wrong field: measured 2026-09-26 on open sand at (12,-30), a
+  // KeyS hold from a dead stop puts `inp.brake` at 1.0 and the hull at vf = -2.34 m/s after 0.5 s and
+  // -6.66 m/s after 2 s — the trace read `gas: 0` the whole time because S is not the throttle.
+  // Without these rows the rig can only ever report a nose-in crease as `pinned`, and the two
+  // motor-pad stances it called pinned on 2026-09-26 had never been tried in the gear a player
+  // reaches for second. An escape found here is classified `reversed`, not `released`: getting out by
+  // changing gear is not the same as the crease never having been a trap.
   const tries = [
-    ['out',      outYaw,                ['KeyW']],
-    ['in',       inYaw,                 ['KeyW']],
-    ['in+left',  inYaw,                 ['KeyW', 'KeyA']],
-    ['in+right', inYaw,                 ['KeyW', 'KeyD']],
-    ['axis',     axisYaw,               ['KeyW']],
-    ['cross',    outYaw + Math.PI / 2,  ['KeyW']],
+    ['out',       outYaw,   ['KeyW']],
+    ['in',        inYaw,    ['KeyW']],
+    ['in+left',   inYaw,    ['KeyW', 'KeyA']],
+    ['in+right',  inYaw,    ['KeyW', 'KeyD']],
+    ['axis',      axisYaw,  ['KeyW']],
+    ['cross',     outYaw + Math.PI / 2, ['KeyW']],
+    ['back-in',   inYaw,    ['KeyS']],
+    ['back-out',  outYaw,   ['KeyS']],
+    ['back+left', inYaw,    ['KeyS', 'KeyA']],
+    ['back+right', inYaw,   ['KeyS', 'KeyD']],
+    ['back-axis', axisYaw,  ['KeyS']],
   ];
   let best = null;
   const seen = [];
@@ -181,7 +227,7 @@ for (const [i, r] of rows.entries()) {
     const res = await evaluate(
       `window.__DRV(${sx},${sz},${yaw},${JSON.stringify(keys)},${ATTEMPTS})`, 90000);
     const fwd = keys[0] === 'KeyW';
-    seen.push(`${tag}:${res.moved.toFixed(1)}m/g${res.gas.toFixed(1)}${res.rescueSeen ? '!rescue' : ''}${res.simMs >= ATTEMPTS - 200 ? '=full' : ''}`);
+    seen.push(`${tag}:${res.moved.toFixed(1)}m/p${res.pedal.toFixed(1)}${res.rescueSeen ? '!rescue' : ''}${res.simMs >= ATTEMPTS - 200 ? '=full' : ''}`);
     const got = res.moved >= RELEASE;
     if (got && (!best || (best.fwd && !fwd))) best = { tag, fwd, ...res };
     if (best && best.fwd) break;
@@ -195,11 +241,14 @@ for (const [i, r] of rows.entries()) {
 
 const tally = verdicts.reduce((m, v) => (m[v.v] = (m[v.v] || 0) + 1, m), {});
 const bad = verdicts.filter(v => v.v !== 'released');
+// An empty unfiltered census is the win condition (【A】2 "扫描结果为 0"), so it passes; the filtered
+// empty case already exited 2 above, which is what keeps this relaxation from green-lighting a typo.
+const clean = !bad.length && !exceptions && (verdicts.length || !all.length);
 console.log(`${clock()} TALLY ${JSON.stringify(tally)} of ${verdicts.length} stances`);
 console.log(`${clock()} NONRELEASED ${bad.map(v => `#${v.i} ${v.a}|${v.b} ${v.v}`).join(' ; ') || 'none'}`);
 if (exceptions) console.log(`${clock()} EXCEPTIONS ${exceptions}`);
-console.log(`${clock()} ${what.toUpperCase()}-DRIVE VERDICT ${(!bad.length && !exceptions && verdicts.length) ? 'PASS' : 'FAIL'}`);
-process.exitCode = (!bad.length && !exceptions && verdicts.length) ? 0 : 1;
+console.log(`${clock()} ${what.toUpperCase()}-DRIVE VERDICT ${clean ? 'PASS' : 'FAIL'}`);
+process.exitCode = clean ? 0 : 1;
 await send('Runtime.evaluate', { expression: `window.__QA?.resume(); 0` }).catch(() => {});
 ws.close();
 process.exit(process.exitCode);

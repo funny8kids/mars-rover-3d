@@ -206,8 +206,11 @@ node tools/cdp-run.mjs "…qa_boot.html?auto=std&audstate=hud" tools/lh-sweep-pr
 > 软渲染仍是慢动作（`dt = min(0.05, 真实Δ)`），所以修漏的 3 秒与上升段各花了几十倍墙钟时间——
 > 按海拔精细抓帧请用 `tools/cdp-launch-frames.mjs`，实测在 y=36 / 183 / 375 / 1017 / 2200 m 都拿到完整构图。
 >
-> 帧率说明：无头验证跑在 CPU 软渲染（SwiftShader）上，1280×720 / `med` 约 20–55 fps，
-> 因此「桌面 60 fps」只能在真实 GPU 上验收；软渲染只用于证明画面、交互与音频链路正确。
+> 帧率说明：帧率验收**不在**软渲染上跑。`tools/cdp-tour-audit.mjs` 有一条会拒绝执行的环境闸门：GL
+> 渲染器名匹配 `swiftshader|llvmpipe|software` 即判负，所以 60 fps 这类数字只能在真实 GPU 上取得
+> （本机为 `:9334` 的 Chrome，`--use-gl=angle --use-angle=vulkan`，读出 `ANGLE (Intel, Vulkan 1.4.335
+> (Intel(R) Iris(R) Xe Graphics (RPL-P)))`）。软渲染仍用于证明画面、交互与音频链路正确——它是慢动作
+> （`dt = min(0.05, 真实Δ)`），同一个画面只有 20–55 fps，那个数字与代码无关。
 > 软渲染掉帧时会自动触发降级提示（`已自动关闭部分特效以保证流畅`），这正是设计中的保护路径。
 
 ---
@@ -219,17 +222,36 @@ node tools/cdp-run.mjs "…qa_boot.html?auto=std&audstate=hud" tools/lh-sweep-pr
 1. **帧率证据分两类，别混着看**。
    - 软渲染（SwiftShader，`--use-gl=angle` + `swiftshader`）：`audit15` / `audit16` 与全部 soak 数字都跑在这里，
      它证明的是画面、交互、音频链路正确，**不是**性能数字。
-   - 真实 GPU：README 配图与最后一轮取帧用的调试浏览器（Edge，`--remote-debugging-port=9336`，未加任何 GL 覆写 flag）
-     经 `WEBGL_debug_renderer_info` 读出 `ANGLE (AMD, AMD Radeon(TM) 610M ... Direct3D11)`，即核显直出。
-     这台机器上 `高` 档（pixelRatio 1.5，1887×1034）HUD 实测 **22–27 FPS 并触发自动降档提示**，
-     说明降级链路在真机上确实生效；但**「桌面独显 60 FPS」这条本机没有条件验证**，
-     验收请在真机上打开 `npm run dev` 或 `dist/`，右上角状态条实时显示帧率与当前档位。
+   - 真实 GPU：**「桌面 60 fps」这条已经不在未验证清单里**——【A】4 的 5 分钟自动巡航验收就是在真实 GPU
+     浏览器上跑的，命令与读数如下。历史遗留的另一台机器（Windows / `ANGLE (AMD, Radeon 610M, Direct3D11)`，
+     `--remote-debugging-port=9336`）上 `高` 档（pixelRatio 1.5，1887×1034）HUD 实测 **22–27 FPS 并触发自动降档提示**，
+     说明降级链路在真机上确实生效；那一台核显的绝对帧率不代表本机。
+     - 尺子：`node tools/cdp-tour-audit.mjs 'http://127.0.0.1:5173/qa_boot.html?auto=hi&v=…' 9334 300 10`。
+       本机浏览器 `ANGLE (Intel, Vulkan 1.4.335 (Intel(R) Iris(R) Xe Graphics (RPL-P)))`，CPU i9-13900H，
+       渲染缓冲按 `PIN` 钉在 1920×1080 / pixelRatio 1（`innerWidth` 在 headless 下改不动，见工具注释，
+       所以闸门读的是真正参与着色的 drawing buffer）。
+     - 两跑结论（`/tmp/rsb_tour_hi.log`、`/tmp/rsb_tour_hi2.log`，逐条由报告算出，非目测）：
+       仿真 300 s / 18 000 帧连续、2 圈、1 713–1 789 m、零 retry；分区 7/7（`motor` 也占一个灯坪，
+       目标写的 6 个是分区数）、街道 24/24、交互点 22/22；卡死 0 格 / 0 帧、stall 0、输入被闸门 0 帧；
+       穿模 0 帧（车身侵入 0 m、下陷 0 m、单帧最大跨步 0.25 m）；脱困 0 次、瞬移 0 次、未捕获异常 0；
+       fps 30 个采样**最低 60、中位 63、`below55` 为 0**。
+     - 环境闸门为什么按**核心频率**而不是温度判：第一次跑被 `pkg 峰值 98 °C` 判负，而那 30 个 fps 采样
+       全部 ≥61。这台机器在 1080p 连续巡航下的工作温度就是 93–99 °C，且**最高温度落在最快的那一档**
+       （73 fps），前后半程 fps 64.5 / 63.1 而温度同为 95 °C——温度与帧率之间没有耦合，它只能说明
+       "热"，不能说明"降过频"。所以闸门换成 `scaling_cur_freq` 的跨核最大值（停核读 400 MHz，取最大
+       才是那颗在干活的核）：低于 `base_frequency`（本机 2.6 GHz）才算 throttled。验收跑实测
+       **≥4.13 GHz**（最高 5.27 GHz），即整跑都在额定加速时钟上出帧。竞争仍由 load 闸门管
+       （阈值 8；当年把帧率从 63 拖到 36 的那一次是 21.8）。
+       连续 5 分钟的热饱和恰恰是这一条想要的**最坏**工况而不是最好工况：冷机只会报得更高。
 2. **托管部署未执行**。`dist/` 已构建，且整条交互链是**跑在构建产物上**验证通过的（`npm run preview` → `http://localhost:4173/`，见上表 `audit15`，产物 `dist/assets/index-gNNNwTm4.js`），
    但 Vercel / Netlify 发布需要操作者逐步确认后才做。
-3. **KTX2 / DRACO 不适用**：场景 100% 程序化生成（零贴图、零模型文件），没有可压缩的外部资产。
-   **Web Worker 也未使用**：地形（固定 250×250 段，不随档位变化）与设施几何在加载阶段一次性构建，
-   因此运行期的优化手段是 InstancedMesh / 合并几何、按档位的粒子与 MSAA 预算、按 `envUpdateHz` 节流 CubeCamera，
-   以及视锥剔除——没有多级 LOD 网格。
+3. **KTX2 / DRACO 未启用**：这一条的理由已经变了——场景**不再是**「100% 程序化生成、零贴图零模型」，
+   `public/assets/*.glb` 是 `./assets/${name}.glb` 经 `GLTFLoader` 直读的（`src/world/assets.js:171`），
+   贴图由 `tools/blender/rsbtex.py` 锻造。没有接 DRACO/KTX2 解码器是**刻意的**：未压缩不等于瓶颈，
+   首包 gzip 169 kB 与上面 1080p 连续巡航的帧率已经给了边界，真要压是压体积不是压帧时。
+   运行期的手段是 InstancedMesh / 合并几何、阴影投射体预算（`src/world/shadow_budget.js`）、碎石场按
+   30 m 瓦片分块（A10）、按档位的粒子与 MSAA 预算、按 `envUpdateHz` 节流 CubeCamera 与视锥剔除。
+   **Web Worker 未使用**：地形（固定 250×250 段，不随档位变化）与设施几何在加载阶段一次性构建。
 4. **WebGPU 路径未实现**：当前为 WebGL2（在 Chrome / Safari / Firefox 现代版本上均可运行），
    目标是「可部署 + 可降级」优先于新后端。
 

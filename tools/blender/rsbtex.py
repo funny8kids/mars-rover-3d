@@ -445,6 +445,89 @@ def sign_face_maps(tag, w_m, h_m, title="DANGER", lines=(), pm=420.0,
     return maps, w_m, h_m
 
 
+# ─────────────────────────── a drum's oxidiser placard ───────────────────────────
+def oxidiser_placard_maps(tag="cryo_placard", w_m=0.24, h_m=0.30, pm=1000.0):
+    """The 240 × 300 mm laminate riveted to a cryo drum's shoulder: the ISO 5.1 oxidiser
+    diamond — flame over a circle, category number in the bottom vertex — over the printed
+    proper shipping name and UN number. Like `sign_face_maps` this is a graphic, not a field:
+    it is rasterised at the card's exact metres and the builder gives it planar UVs, so the
+    legend arrives legible rather than as texture soup.
+
+    The reason a placard cannot be a decal text pass: an unmarked drum is a programmer-art
+    drum. The diamond is *why* the crate reads as LOX and not as fuel, and the corner wear —
+    printed at 1:1 because that is where a card lifts — is what stops it reading as new print."""
+    w, h = int(round(w_m * pm)), int(round(h_m * pm))
+    col = Image.new("RGB", (w, h), (233, 229, 219))
+    sym = Image.new("L", (w, h), 0)                     # 255 wherever enamel is laid
+    d, ds = ImageDraw.Draw(col), ImageDraw.Draw(sym)
+    INK = (36, 33, 30)
+    YEL = (238, 199, 18)
+
+    def diamond(cx, cy, r, fill):
+        pts = [(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)]
+        d.polygon(pts, fill=fill)
+        ds.polygon(pts, fill=255 if fill == INK else 0)
+
+    # 170 mm of diamond in the top two thirds: black plate, then the yellow inset by the
+    # 9 mm border rule every placard carries.
+    DCX, DCY, DR = w / 2.0, h * 0.335, min(w * 0.44, h * 0.30)
+    diamond(DCX, DCY, DR, INK)
+    diamond(DCX, DCY, DR - 0.009 * pm, YEL)
+
+    # ── the symbol: a circle outline the flame sits over, both in the diamond's upper field ──
+    rr = 0.026 * pm
+    d.ellipse([DCX - rr, DCY + 0.018 * pm - rr, DCX + rr, DCY + 0.018 * pm + rr],
+              outline=INK, width=int(0.006 * pm))
+    ds.ellipse([DCX - rr, DCY + 0.018 * pm - rr, DCX + rr, DCY + 0.018 * pm + rr],
+               outline=255, width=int(0.006 * pm))
+    fshape = [(0.00, -0.95), (-0.44, -0.54), (-0.52, -0.02), (-0.36, 0.38), (-0.15, 0.63),
+              (-0.01, 0.81), (0.15, 1.00), (0.25, 0.72), (0.33, 0.49), (0.50, 0.20),
+              (0.55, -0.20), (0.42, -0.59), (0.17, -0.86)]
+    fs = 0.034 * pm
+    fx, fy = DCX - 0.004 * pm, DCY - 0.030 * pm
+    d.polygon([(fx + a * fs, fy - b * fs) for a, b in fshape], fill=INK)
+    ds.polygon([(fx + a * fs, fy - b * fs) for a, b in fshape], fill=255)
+
+    def word(s, cx, cy, cap_m):
+        f = ImageFont.truetype(FONT_BOLD, int(cap_m * pm))
+        d.text((cx, cy), s, font=f, fill=INK, anchor="mm")
+        ds.text((cx, cy), s, font=f, fill=255, anchor="mm")
+
+    word("5.1", DCX, DCY + DR * 0.60, 0.030)
+    word("OXYGEN, LIQUID", w / 2.0, h * 0.715, 0.021)
+    word("UN 1073", w / 2.0, h * 0.885, 0.026)
+    # corner wear: a card lifts at two opposite corners first, and the laminate under the
+    # print is bone, not steel — this is the only damage on the card and it is always there.
+    for cx_, cy_ in ((0, 0), (w - 1, h - 1)):
+        d.ellipse([cx_ - 0.030 * pm, cy_ - 0.030 * pm, cx_ + 0.030 * pm, cy_ + 0.030 * pm],
+                  fill=(196, 186, 168))
+
+    base = np.asarray(col, float) / 255.0
+    inm = np.asarray(sym, float) / 255.0
+    U, V = _mesh(w, h, pm)
+    zz = h_m / 2.0 - V                        # metres up from the card's middle
+    grit = _pnoise(w, h, int(w_m / 0.0016), int(h_m / 0.0016), 2113) - 0.5
+    chalk = _pnoise(w, h, max(2, int(w_m / 0.055)), max(2, int(h_m / 0.045)), 4407)
+    pale = 1.0 - inm
+    # UV lifts the white and the yellow toward bone and leaves the black roughly alone; the
+    # crown sees most of it, because the card stands on the drum's shoulder facing the sky.
+    crown = np.clip(0.60 + zz / (2.0 * h_m), 0.0, 1.0)
+    fade = np.clip(0.30 * crown + 0.14 * chalk, 0.0, 1.0) * (0.18 + 0.82 * pale)
+    colr = base + (base * 0.42 + 0.55 - base) * fade[..., None]
+    foot = zz + h_m / 2.0
+    creep = np.clip((0.055 + 0.030 * chalk - foot) / 0.045, 0.0, 1.0) * 0.55
+    colr = colr + (np.array([0.66, 0.56, 0.42]) - colr) * creep[..., None]
+    colr += grit[..., None] * 0.035
+    rough = np.clip(84 + pale * 26 + fade * 46 + creep * 70 + grit * 12, 55, 255)
+    edge = np.abs(inm - np.roll(inm, 1, 1)) + np.abs(inm - np.roll(inm, 1, 0))
+    edge[:2, :] = edge[-2:, :] = edge[:, :2] = edge[:, -2:] = 0.0     # the print, not its seam
+    height = np.clip(edge * 2.0, 0, 1) * 0.4 + creep * 0.2 + chalk * 0.06 + grit * 0.12 - crown * 0.05
+    maps = {"basecolor": _save(np.clip(colr * 255.0, 0, 255), tag + "_col"),
+            "rough": _save(rough, tag + "_rgh"),
+            "normal": _save(height_to_normal(height, 2.2), tag + "_nrm")}
+    return maps, w_m, h_m
+
+
 def _plates(U, V, tile, n, seed):
     """Wrapping Voronoi: the site id of the plate covering each pixel, and its distance in
     metres to that plate's boundary.
@@ -621,6 +704,14 @@ ALL = dict(PANELS, **{"steel": steel_maps, "tps": tps_maps,
        "hazard_face": lambda: sign_face_maps("hazard_face", 2.20, 1.10, title="DANGER",
                                              lines=("PROPULSION LEAK · BOG RETURN 3",
                                                     "FLAMMABLE · NO ENTRY · 5 m")),
+       # Safety-yellow enamel on a drum chime ring: same orange-peel and roll-coat pass as the
+       # rest of the painted metalwork, at the 420 mm scale of a ring seen from a metre out.
+       "drum_yellow": lambda: panel_maps(tag="drum_yellow", tint=(0.895, 0.705, 0.072),
+                                         base=252, rough_base=116, tile=0.42, pm=520,
+                                         rivet=0.019),
+       # The drum's own DOT placard, at the card's exact 240 × 300 mm: the one graphic on the
+       # crate that says why it exists, so it gets its own field and planar UVs.
+       "cryo_placard": oxidiser_placard_maps,
        # The rim rampart's basalt. 230 px/m over a 1.6 m field is 368 px: a boulder is a single
        # rounded mass, so unlike a wall of panels it needs no fine detail to read — it needs the
        # cleavage and the pits at the right scale, and the maps get stretched across it by uv_cube.

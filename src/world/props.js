@@ -69,13 +69,14 @@ export async function buildBase(scene, quality) {
   const HERO = ['habitat_dome', 'hab_link', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
     'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'reactor_tap', 'lox_stand', 'roadster', 'lamp',
     'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut', 'barrier_kit', 'flag_mast',
-    'hazard_sign', 'telemetry_board', 'feeder_pillar', 'rim_rock', 'beacon_kit', 'telescope', 'site_kit'];
+    'hazard_sign', 'telemetry_board', 'feeder_pillar', 'rim_rock', 'beacon_kit', 'telescope', 'site_kit',
+    'drum_crate'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA',
     'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
     'pipe_corner', 'satelliteDish', 'satelliteDish_detailed', 'rocket_baseB', 'rocket_finsA',
     'rover',
-    'rocket_fuelA', 'rocket_sidesA', 'rocket_topA', 'barrels', 'barrel', 'craft_speederA',
+    'rocket_fuelA', 'rocket_sidesA', 'rocket_topA', 'barrel', 'craft_speederA',
     'alien', 'desk_computer', 'terrain_roadStraight', 'rail', 'stairs',
     'supports_high', 'craterLarge'];
   const entries = [...HERO, ...KENNEY.map(K)];
@@ -688,6 +689,13 @@ export async function buildBase(scene, quality) {
       }
     }
     return [x, z];        // nothing within reach: leave it where the audit can still see it
+  };
+  // the same, for an asset authored in real metres (the hero set): `s` is the absolute scale
+  const putClear = (name, x, z, ry, s = 1, id, reach = 9) => {
+    const b = footOf(name);
+    const [cx, cz] = siteClear(x, z, b.w * s, b.d * s, ry || 0, reach);
+    putSolid(name, cx, cz, s, ry, id);
+    return id;
   };
   // place a model on ground that holds the corridor, and give it the collision its geometry occupies
   const kClear = (name, x, z, ry, sc = 1, id, reach = 9) => {
@@ -1489,10 +1497,13 @@ export async function buildBase(scene, quality) {
       // the saucer's ⌀ as a square edge and then circumscribed that, which spent the diagonal twice
       // and parked a 0.75 m invisible wall in the ring all the way around the concrete.
       lot('lox-stand', sx, sz, 2.45, 2.45);
-      // The drum crate is body-height solid, so it takes the same ruling as every other `barrels`
-      // placement (pad-drums, drum-crate, lubricant-drums): sized off the model's own measured
-      // footprint, not a constant. As `k()` it carried no collider at all and the rover drove straight
-      // through a crate of cryo drums. Its centre used to be solved by hand against the bund at
+      // The drum crate is body-height solid, so it takes the same ruling as every other drum group in
+      // the world (pad-drums, drum-crate, lubricant-drums): sized off the model's own measured
+      // footprint, not a constant. All four moved off the Kenney `barrels` striped box — a 0.55 m
+      // crate printed with four black bands, which was the last piece of programmer art at body size
+      // anywhere in the base — to `drum_crate.glb`, the welded skid built in tools/blender/build_crate.py.
+      // As `k()` this one carried no collider at all and the rover drove straight through a crate of
+      // cryo drums. Its centre used to be solved by hand against the bund at
       // `LAMP_CLEAR` = 0.3 m; that bar has since become the audit's `CORRIDOR`, which no offset this
       // side of the light ring can satisfy by arithmetic, so the crate asks for its ground instead —
       // bounded to 4 m because it belongs to this pipe run and must not wander off the pad.
@@ -1532,7 +1543,7 @@ export async function buildBase(scene, quality) {
         lot(`lox-stand#${n}`, sx + dx, sz + dz, side, side);
       // Sited after the trestle feet exist rather than before them: placement order is clearance
       // order, and the crate's nearest neighbour on this pad is the terminal drum the line ends on.
-      kClear('barrels', sx - 3.5, sz + 0.9, 0.5, 1, 'lox-drums', 4);
+      putClear('drum_crate', sx - 3.5, sz + 0.9, 0.5, 1, 'lox-drums', 4);
       sparkPoints.push({ x: sx, y: sy + 2.4, z: sz, rate: 0.22 });
     }
     kSolid('machine_generatorLarge', px - 8, pz - 10, 1.9, 0.35, 'pad-diesel');
@@ -1541,7 +1552,7 @@ export async function buildBase(scene, quality) {
     // footprint, so its discs overlapped the stack by 2 m and the crease between them had no legal
     // position in it. It is sited by `kClear` now, so the search that used to be done once by hand is
     // re-run against whatever the district has committed when this line is reached.
-    kClear('barrels', px + 12, pz + 19, 0.7, 0.5, 'pad-drums');
+    putClear('drum_crate', px + 12, pz + 19, 0.7, 0.5, 'pad-drums');
 
     // pad wash ring for the light show — guaranteed in-frame from the trigger distance
     const wash = new THREE.Mesh(new THREE.TorusGeometry(13.5, 0.22, 8, 56), M.shipLightRing.clone());
@@ -1673,7 +1684,7 @@ export async function buildBase(scene, quality) {
       k('pipe_straight', ix + 10 - 6 * i, iz - 4 + 6 * i, 0.75, 0.9 + i * 0.1);
     }
     k('pipe_corner', ix + 6, iz - 10, 0.4);
-    kSolid('barrels', ix - 13, iz + 6, 2.0, 1.1, 'drum-crate');   // crate of drums by the rail
+    putSolid('drum_crate', ix - 13, iz + 6, 1.1, 2.0, 'drum-crate');   // crate of drums by the rail
     k('rover', ix - 1, iz + 3, 1.8);                   // parked work rover
     putDeck('teleport_pad', ix - 3, iz + 20, 1.05, 0, -0.08);
     teleports.push({ key: 'industry', name: ZONES.industry.name, x: ix - 3, z: iz + 20 });
@@ -1864,7 +1875,7 @@ export async function buildBase(scene, quality) {
     // now sited from the corridor the audit judges, at the offset they were drawn for.
     kClear('machine_wireless', mx + 6.5, mz - 2.5, 0, 1.15, 'charge-mast');
     kClear('desk_computer', mx + 1.6, mz + 6.8, 0.6, 1.5, 'pit-desk');
-    kClear('barrels', mx + 5.6, mz + 4.2, 1.2, 1.3, 'lubricant-drums');
+    putClear('drum_crate', mx + 5.6, mz + 4.2, 1.2, 1.28, 'lubricant-drums');
     const [ux2, uz2] = siteClear(mx - 6.4, mz + 1.4, 2.2, 3.4, 1.1);
     k('craft_speederA', ux2, uz2, 1.1, 1.35);
     lot('utility-speeder', ux2, uz2, 2.2, 3.4, 1.1);

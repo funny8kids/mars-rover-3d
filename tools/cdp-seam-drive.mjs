@@ -1,4 +1,4 @@
-// usage: node tools/cdp-seam-drive.mjs <url|-> [port=9333] [only=<zone-regex>]
+// usage: node tools/cdp-seam-drive.mjs <url|-> [port=9333] [only=<zone-regex>] [what=seams|traps]
 //
 // The driven half of the 「碰撞体与外观不一致 / 夹缝清零」 gate (goal 【C】3, and 【A】2's
 // "可进入但不可退出").
@@ -21,9 +21,15 @@
 // cannot tell a lamp post from a hangar; the rover can.
 import fs from 'fs';
 
-const [,, urlArg, portStr, onlyArg] = process.argv;
+const [,, urlArg, portStr, onlyArg, whatArg] = process.argv;
 const port = Number(portStr || 9333);
 const only = onlyArg ? new RegExp(onlyArg.replace(/^only=/, '')) : null;
+// `seams` (the default) is the population of two discs close enough to touch the hull at once.
+// `traps` is the other half of 【A】2's ask — "可进入但不可退出": a dead-end run the flood fill can
+// reach and the rover cannot pivot out of, which no pair rule can see because the two walls in those
+// stances are 7-11 m apart and read as a lane. Both records carry a, b, gap, at and axis, so the
+// attempt ladder below is the same rig pointed at a different stance list.
+const what = whatArg ? whatArg.replace(/^what=/, '') : 'seams';
 // Measured, not guessed: the gate↔ring-315 crease releases the rover at 5.79 m, but only after
 // ~7 s of *wall clock* from a dead stop while it scrapes both faces (4.8 s of sim buys 1.3 m). A
 // 3.5 s budget called that stance "pinned" — so the budget has to clear the slowest honest escape,
@@ -104,13 +110,13 @@ const stanceExpr = `(()=>{
     }
     return best ? [best.x, best.z, best.r, +bd.toFixed(2)] : null;
   };
-  return JSON.stringify(R.scan().seams.map(x => ({
+  return JSON.stringify(R.scan().${what}.map(x => ({
     a: x.a, b: x.b, gap: x.gap, at: x.at, axis: x.axis,
     A: binder(x.a, x.at[0], x.at[1]), B: binder(x.b, x.at[0], x.at[1]),
   })));
 })()`;
 const rows = JSON.parse(await evaluate(stanceExpr)).filter(r => !only || only.test(`${r.a} ${r.b}`));
-console.log(`${clock()} CENSUS ${rows.length} seam stances, ${ATTEMPTS} ms of wall clock per attempt, release at ${RELEASE} m`);
+console.log(`${clock()} CENSUS ${rows.length} ${what} stances, ${ATTEMPTS} ms of wall clock per attempt, release at ${RELEASE} m`);
 
 // The attempt ladder, in the order a player would think of them. `in` is the heading that points at
 // the crease — the arrival a driver actually has when they drive into a joint crooked, which is the
@@ -192,7 +198,7 @@ const bad = verdicts.filter(v => v.v !== 'released');
 console.log(`${clock()} TALLY ${JSON.stringify(tally)} of ${verdicts.length} stances`);
 console.log(`${clock()} NONRELEASED ${bad.map(v => `#${v.i} ${v.a}|${v.b} ${v.v}`).join(' ; ') || 'none'}`);
 if (exceptions) console.log(`${clock()} EXCEPTIONS ${exceptions}`);
-console.log(`${clock()} SEAM-DRIVE VERDICT ${(!bad.length && !exceptions && verdicts.length) ? 'PASS' : 'FAIL'}`);
+console.log(`${clock()} ${what.toUpperCase()}-DRIVE VERDICT ${(!bad.length && !exceptions && verdicts.length) ? 'PASS' : 'FAIL'}`);
 process.exitCode = (!bad.length && !exceptions && verdicts.length) ? 0 : 1;
 await send('Runtime.evaluate', { expression: `window.__QA?.resume(); 0` }).catch(() => {});
 ws.close();

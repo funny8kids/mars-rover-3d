@@ -1,5 +1,5 @@
 # Builds public/assets/gantry_service.glb — a substation portal gantry.
-# Runs headless:  blender -b --noaudio -P tools/blender/build_gantry.py
+# Runs headless:  blender -b -P tools/blender/build_gantry.py   (Blender 5.2 has no --noaudio)
 # bmesh-only by design: modifier_apply / origin_set are unreliable in Blender 5.2 headless.
 import bpy, bmesh, math, os
 from mathutils import Matrix, Vector, Euler
@@ -279,7 +279,10 @@ for i in range(11):
     box(1.05, 0.05, 0.24, x, -2.20, DECK - 0.30, 'alu_bright')      # side 2
     box(0.05, 0.72, 0.24, x, -2.55, DECK - 0.30, 'panel_grey')      # transverse web
 for r, mz, off in ((0.11, 'orange', -2.72), (0.09, 'dark', -2.55), (0.075, 'copper', -2.38)):
-    cyl(r, r, 13.0, 0, off, DECK - 0.34, mz, 10, rz=math.pi / 2)
+    # `ry`, not `rz`: `cyl` builds a cone on the Z axis, so a Z rotation spins it about itself and it
+    # stays upright — a 13 m mast standing at the deck edge with its foot 1.88 m over the sand. The
+    # exporter measured that as a wall in the portal's drive-through bay (seam `launch:cargo-umbilical#3`).
+    cyl(r, r, 13.0, 0, off, DECK - 0.34, mz, 10, ry=math.pi / 2)
 for i in range(7):
     torus(0.16, 0.035, -5.4 + i * 1.8, -2.55, DECK - 0.34, 'dark', 12, 6, ry=math.pi / 2)
 for i in range(5):                                                  # drops into the switchgear
@@ -289,7 +292,9 @@ for i in range(5):                                                  # drops into
 
 # 9 ── pipe rack along the leeward girder ──────────────────────────────────
 for r, off, mz in ((0.16, 1.05, 'alu_bright'), (0.13, 1.55, 'hull_white'), (0.09, 1.98, 'copper')):
-    cyl(r, r, 12.6, 0, off + 0.55, TOP + 1.30, mz, 12, rz=math.pi / 2)
+    # same axis rule as the conduits above: the clamp rings at §9 are already turned to ring an
+    # X-direction pipe, and the 12.6 m length is the girder's own span — only the pipe was upright.
+    cyl(r, r, 12.6, 0, off + 0.55, TOP + 1.30, mz, 12, ry=math.pi / 2)
 for i in range(7):
     x = -5.4 + i * 1.8
     box(0.10, 1.60, 0.10, x, 1.85, TOP + 1.30, 'struct')            # pipe shoe

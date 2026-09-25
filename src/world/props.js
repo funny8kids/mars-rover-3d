@@ -679,21 +679,35 @@ export async function buildBase(scene, quality) {
   // with a 50 m hole where one post refused to fit is a worse defect than a post 3 m down the kerb,
   // and the alternative — a pole standing inside another structure's clearance — is the defect this
   // whole pass exists to end.
+  // Of the places that fit, the *widest* is chosen. Taking the first fit is what put the hub's two
+  // east ring posts 4.61 m apart (0.70 m of hull daylight, pinned on the driven census) when the
+  // candidate 1 m the other way held the 6.67 m beat the ring was laid for: a slide is a search, and
+  // a search that stops at the first answer is not choosing, it is accepting.
+  const drumGap = (x, z, s, ry) => {
+    let worst = Infinity;
+    for (const o of lampDrum(x, z, s, ry))
+      for (const q of colliders) {
+        if (q.floor !== undefined) continue;
+        worst = Math.min(worst, Math.hypot(q.x - o.x, q.z - o.z) - q.r - o.r);
+      }
+    return worst;
+  };
   const putLamp = (id, x, z, s, ry, along = null) => {
     if (!lampFits(x, z, s, ry)) {
-      let found = null;
+      let found = null, best = -Infinity;
       // Capped at 2 m, which is an eighth of the avenue's own post spacing: a slide that long is still
       // the same rhythm on the kerb, and a longer one is a different post standing somewhere else. The
       // first version of this allowed 8 m and moved a south-street lamp 5.5 m, which parked it dead
       // centre in the spaceport gate's drive-through lane — clear of every collider, wrong in the
       // picture, and the reason the cap is a number rather than a comment.
       if (along) {
-        for (let n = 1; n <= 4 && !found; n++) {
+        for (let n = 1; n <= 4; n++)
           for (const t of n % 2 ? [n * 0.5, -n * 0.5] : [-n * 0.5, n * 0.5]) {
             const cx = x + along[0] * t, cz = z + along[1] * t;
-            if (lampFits(cx, cz, s, ry)) { found = [cx, cz]; break; }
+            if (!lampFits(cx, cz, s, ry)) continue;
+            const g = drumGap(cx, cz, s, ry);
+            if (g > best) { best = g; found = [cx, cz]; }
           }
-        }
       }
       if (!found) return false;
       x = found[0]; z = found[1];
@@ -721,7 +735,7 @@ export async function buildBase(scene, quality) {
     }
     return best;
   };
-  const corridorBreak = (x, z, w, d, ry) => {
+  const corridorBreak = (x, z, w, d, ry, need = CORRIDOR) => {
     for (const p of discLayout(w, d, x, z, ry)) {
       if (streetEncroach(p.x, p.z, p.r) > 0) return offStreet(p.x, p.z);
       let worst = Infinity, off = null;
@@ -731,19 +745,19 @@ export async function buildBase(scene, quality) {
         if (g < worst) { worst = g; off = q; }
       }
       // the disc that is in the way names the way out of it
-      if (worst < CORRIDOR) return [p.x - off.x, p.z - off.z];
+      if (worst < need) return [p.x - off.x, p.z - off.z];
     }
     return null;
   };
-  const siteClear = (x, z, w, d, ry = 0, reach = 9) => {
-    const block = corridorBreak(x, z, w, d, ry);
+  const siteClear = (x, z, w, d, ry = 0, reach = 9, need = CORRIDOR) => {
+    const block = corridorBreak(x, z, w, d, ry, need);
     if (!block) return [x, z];
     const away = Math.atan2(block[1], block[0]);
     for (let r = 0.5; r <= reach; r += 0.5) {
       for (let k = 0; k <= 16; k++) {
         const th = away + (k % 2 ? Math.ceil(k / 2) : -k / 2) * (Math.PI / 8);
         const cx = x + Math.cos(th) * r, cz = z + Math.sin(th) * r;
-        if (!corridorBreak(cx, cz, w, d, ry)) return [cx, cz];
+        if (!corridorBreak(cx, cz, w, d, ry, need)) return [cx, cz];
       }
     }
     return [x, z];        // nothing within reach: leave it where the audit can still see it
@@ -778,6 +792,24 @@ export async function buildBase(scene, quality) {
     putSolid(name, cx, cz, s, ry, id);
     return id;
   };
+  // ─── thin furniture is sited against the mouth, not the corridor ───
+  // `CORRIDOR` is 2 × BODY_R, so a pair of props that clears it leaves the hull no daylight at all, and
+  // a pair of 0.4 m drums standing 4.3 m apart is then a crease a rover can drive into and cannot turn
+  // inside. That is not hypothetical: the hub plaza's barrels, its crew and its lamp ring measured as
+  // 8 of the 10 stances the driven census pinned there (2026-09-25), and neither the audit's same-family
+  // exemption nor the seam census's `root(a) !== root(b)` rule can see them, because the two walls of
+  // those creases belong to one drawn object each. Small furniture is the side of that seam that can
+  // move, so it is walked out to ground that holds `MOUTH` of hull daylight — moved, not refused: a
+  // refusal leaves a hole in a run, which the hub's light ring showed is the worse defect.
+  const MOUTH_GAP = 2 * (MOUTH + BODY_R);
+  const putMouth = (name, x, z, s, ry, dy = -0.05, reach = 14) => {
+    const b = footOf(name);
+    const [cx, cz] = siteClear(x, z, b.w * s, b.d * s, ry || 0, reach, MOUTH_GAP);
+    put(name, cx, cz, s, ry, dy);
+    return [cx, cz];
+  };
+  const kMouth = (name, x, z, ry, sc = 1, dy = -0.05) =>
+    putMouth(name, x, z, S * sc, ry, dy);
   // A gantry portal is four stanchions carrying a girder. The bay under it is driveable ground, so
   // the collision is the feet and nothing else — a disc on the centre would wall off the very space
   // the portal is built to enclose, and one oversized disc per foot eats 3.2 m of daylight each.
@@ -1111,10 +1143,8 @@ export async function buildBase(scene, quality) {
       flag.position.set(hx + 6.85, mastY + 6.35, hz + 4); flag.castShadow = true; flag.receiveShadow = true;
       G.add(flag);
     }
-    k('barrel', hx - 6, hz + 6, 0.4); k('barrel', hx + 7, hz - 5, 1.2);
     putDeck('teleport_pad', hx - 8.5, hz + 11, 1.25, 0, -0.08);
     teleports.push({ key: 'hub', name: ZONES.hub.name, x: hx - 8.5, z: hz + 11 });
-    put('astronaut', hx + 3, hz + 6, 1, 2.4, -0.02);   // the Blender EMU: 1.85 m, real metres
     // The plaza's service quad used to be drawn here with no collider at all, so the rover drove
     // through it. Giving it the collision its body actually has made it a 3.5 × 3.7 m object, and
     // there is no bay on the plaza's own ring that holds the corridor: sited at (10, 1) it came to
@@ -1217,26 +1247,40 @@ export async function buildBase(scene, quality) {
       // laid at 0.20·π on a 7 m brim: a 4.33 m chord, 3.27 m of raw gap, which clears `CORRIDOR` by
       // 0.07 m and leaves the hull 0.03 m of daylight. The driven census (2026-09-25,
       // tools/cdp-seam-drive.mjs only=hub) pinned 11 of the hub's 13 stances on these creases; the
-      // same arithmetic is what the leak cordon's ten stakes died of. So the pitch comes from the rule
-      // and the sweep widens to keep all four lights.
+      // same arithmetic is what the leak cordon's ten stakes died of.
+      // The bearings are then chosen, not enumerated. `putLamp` slides a refused post along its own
+      // run, and a slide can only see what is standing when it runs — so a post could open its gap to
+      // the machines and close it on the next lamp, which is not committed yet. Measured: the
+      // widest-gap slide moved the east post 1 m and took its crease from 4.61 m to 3.77 m. So the beat
+      // is enforced here against every bearing already taken (which makes it order-independent: a later
+      // post cannot come closer than the beat to an earlier one either), and the slide is switched off.
       const LAMP_R = Math.hypot(LAMP_BASE[1], LAMP_BASE[2]) / 2 * 1.25;
-      const BRIM = 7;
-      const STEP = 2 * Math.asin(Math.min(1, (2 * (MOUTH + BODY_R) + 2 * LAMP_R) / (2 * BRIM)));
+      const BRIM = 7, ARC0 = 0.03 * Math.PI, ARC1 = 0.97 * Math.PI;
+      const PITCH = 2 * (MOUTH + BODY_R) + 2 * LAMP_R;
+      const chosen = [];
       for (let i = 0; i < 4; i++) {
-        const a = 0.03 * Math.PI + i * STEP;
-        const lx = hx + Math.cos(a) * BRIM, lz = hz + Math.sin(a) * BRIM;
-        // A 5.7 m mast landing 1.8 m off the pad centre grew straight up through the teleport disc
-        // and hid the markings from the approach. Fast-travel nodes keep their own clear envelope.
-        if (Math.hypot(lx - (hx - 8.5), lz - (hz + 11)) < 5.4) continue;
-        // The slide is left on, and it costs: measured on this build the two east posts cannot stand
-        // on their beat at all (a service-quad pin at 0.36 m and the flag mast at 2.73 m, then
-        // `hub:loose9` overlapping by 0.60 m), so they slide ~1 m off it and their crease comes back
-        // to 0.70 m of hull daylight instead of the 1.2 the rule asks for. The reason the ring cannot
-        // be laid clean is not the ring: it is the plaza's own pin field — `hub:loose0` (12 discs of
-        // 0.05-0.67 m) and `hub:loose9` stand scattered over the ground the rover drives on, and they
-        // are what 7 of the hub's 13 pinned stances name. Clearing that field is the next item; a
-        // plaza with two lamps missing in the meantime is the worse trade, so the lights stay.
-        putLamp(`lamp-ring-${i}`, lx, lz, 1.25, a, [-Math.sin(a), Math.cos(a)]);
+        let pick = null;
+        // ±2° steps out to ±27° of arc — 3.3 m, the most that is still the same rhythm on the brim.
+        for (let n = 0; n <= 13 && pick === null; n++)
+          for (const sgn of n ? [1, -1] : [0]) {
+            const a = ARC0 + i * (ARC1 - ARC0) / 3 + sgn * n * 0.035;
+            if (a < ARC0 - 1e-9 || a > ARC1 + 1e-9) continue;
+            const lx = hx + Math.cos(a) * BRIM, lz = hz + Math.sin(a) * BRIM;
+            // A 5.7 m mast landing 1.8 m off the pad centre grew straight up through the teleport disc
+            // and hid the markings from the approach. Fast-travel nodes keep their own clear envelope.
+            if (Math.hypot(lx - (hx - 8.5), lz - (hz + 11)) < 5.4) continue;
+            // The beat is measured between drum centres, not between the sites on the brim: a drum is
+            // set 0.114·s off its model origin along its own face, and at 1.25 scale that offset is
+            // enough to turn a 6.67 m site chord into a 6.48 m drum pair — 1.14 m of daylight against
+            // the 1.2 the rule asks for, which is the whole margin this rule exists to hold.
+            const here = lampDrum(lx, lz, 1.25, a)[0];
+            if (chosen.some(c => Math.hypot(c.x - here.x, c.z - here.z) + 1e-9 < PITCH)) continue;
+            if (!lampFits(lx, lz, 1.25, a)) continue;
+            pick = [lx, lz, a, here]; break;
+          }
+        if (!pick) continue;
+        chosen.push(pick[3]);
+        putLamp(`lamp-ring-${i}`, pick[0], pick[1], 1.25, pick[2], null);
       }
       for (const sgn of [-1, 1]) {
         // Outboard of the gate's own legs, not between them: the pylons' discs reach to x 6.66 and a
@@ -1244,6 +1288,16 @@ export async function buildBase(scene, quality) {
         // pair frames the portal from outside instead of standing in its opening.
         putLamp(`gate-lamp-${sgn}`, hx + sgn * 10.5, hz - 19.5, 1.15, sgn > 0 ? -1.57 : 1.57, [sgn, 0]);
       }
+      // The plaza's small furniture is placed last, and sited rather than typed. It used to stand where
+      // it looked right — two barrel groups at (−6,6) and (7,−5) and the EMU at (3,6), all inside the
+      // lamp ring's 7 m brim — and the driven census named those three objects in 8 of the hub's 10
+      // pinned stances: a barrel group measures into six or seven 0.16-0.67 m discs, and two of them
+      // 4.3 m apart is a crease the hull fits into and does not turn in. Siting them after the ring and
+      // the machines means the search sees the plaza the rover sees, and `MOUTH_GAP` means it will not
+      // settle for a beat that leaves the hull no daylight.
+      kMouth('barrel', hx - 6, hz + 6, 0.4);
+      kMouth('barrel', hx + 7, hz - 5, 1.2);
+      putMouth('astronaut', hx + 3, hz + 6, 1, 2.4, -0.02);   // the Blender EMU: 1.85 m, real metres
     }
     infoZones.push({
       key: 'hub', pos: [hx, hz], r: 22, tag: 'RED STARBASE · CENTRAL PLAZA',

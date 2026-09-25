@@ -24,7 +24,7 @@ import { UI, fmtTime } from './ui.js';
 import { createMapChart } from './ui/chart.js';
 import { mountTelemetry } from './ui/telemetry.js';
 import { t, getLang, mountLangButton, onChange } from './i18n.js';
-import { STREETS } from './world/plan.js';
+import { STREETS, MOUTH } from './world/plan.js';
 
 const $ = id => document.getElementById(id);
 const canvas = $('scene');
@@ -4023,14 +4023,11 @@ window.__RSB = {
 
     // ── pinch wedges: solid pairs whose slot admits the body but not a turn
     const SLOT = 2 * CLEAR + 2 * TURN;
-    // How much hull daylight makes a mouth driveable. `CORRIDOR` in the placement rules is 3.2 m,
-    // which is exactly 2*BODY_R — the number a *pair* of discs must clear is the same number the
-    // hull's own keep-out is made of, so a placement that "just passes" leaves 0.00 m of daylight
-    // and physics, which pads every disc by BODY_R, reads a wall. The bar below therefore measures
-    // daylight (metres left after both inflated keep-outs), not raw gap: 1.2 m is one hand-width of
-    // margin on each side of the hull, enough that a driver lined up with the mouth gets through and
-    // a driver who is not can still reverse out along it.
-    const MOUTH = 1.2;
+    // How much hull daylight makes a mouth driveable is `MOUTH`, in src/world/plan.js — the file that
+    // also owns `CORRIDOR`, because the two have to be read against each other: CORRIDOR is 2*BODY_R,
+    // so a pair that merely clears it leaves the hull no daylight at all, and the placement rules that
+    // lay runs of posts need the same number this scan judges seams by. A second copy here would be a
+    // second host for a number whose whole job is to be agreed about.
     // A seam is a joint between two *different* structures that is too narrow to drive through and
     // too wide to read as a wall. The body's stances against such a pair touch both faces at once,
     // so the only way out of the bay is a reverse along the mouth's axis — which a driver arriving

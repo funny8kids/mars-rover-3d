@@ -15,6 +15,17 @@ export const PAVEMENT = 1.5;     // graded shoulder beyond the trafficable width
 export const SETBACK = 4;        // first wall sits this far past the shoulder
 export const CORRIDOR = 3.2;     // the rover needs this much daylight between two footprints
 
+// CORRIDOR is 2 × BODY_R, which is the same number the hull's own keep-out is made of — so a pair of
+// footprints that "just passes" CORRIDOR leaves 0.00 m of daylight, and physics (which pads every
+// disc by BODY_R) reads a wall. MOUTH is what a *drivable* gap really needs, measured in daylight
+// rather than in raw gap: 1.2 m is one hand-width of margin on each side of the hull, enough that a
+// driver lined up with the mouth gets through and a driver who is not can still walk out along it.
+// The number is not a taste call: it is the bar the driven census settled (a stance at 1.17 m of
+// daylight pinned the rover, one at 4.0 m released it), and it lives here because two consumers have
+// to agree on it — `scan()` in main.js, which reports seams, and the placement rules in props.js,
+// which must not build a run of posts the scan will then call a fence.
+export const MOUTH = 1.2;
+
 // A 3x3 lattice of 60 m blocks with two avenues and two streets crossing between them. Every
 // district owns one cell, so districts cannot overlap each other no matter how their interiors are
 // composed, and the street grid is legible from orbit — which is the whole point of a base plan.

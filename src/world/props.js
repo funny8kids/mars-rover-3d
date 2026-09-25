@@ -6,7 +6,7 @@ import { loadModel, cloneModel } from './assets.js';
 import { mergeInto, noMerge } from './merge.js';
 import { applySurfaceDetail } from './surface_detail.js';
 import { makeDriftMaterial } from './terrain.js';
-import { coverDiscs, discLayout, streetEncroach, STREETS, STREET_HW, CORRIDOR, audit, sealCheck,
+import { coverDiscs, discLayout, streetEncroach, STREETS, STREET_HW, CORRIDOR, MOUTH, audit, sealCheck,
   coverPointDiscs, BAND_NY, BAND_STEP, discFamily } from './plan.js';
 import { RIDE, BODY_R, ROOF } from '../vehicle/physics.js';
 import { UNIT_BEAM, shaftMaterial } from '../fx/beams.js';
@@ -650,6 +650,12 @@ export async function buildBase(scene, quality) {
   // wedge into; that is backwards. The wedge is the space between the two *inflated* bodies, and it
   // exists for any pair under 2 × BODY_R apart, which is exactly `CORRIDOR`.
   const LAMP_CLEAR = CORRIDOR;
+  // A wider bar was tried for post-against-post pairs (`2·(MOUTH + BODY_R)`, the mouth the scan judges
+  // a seam by) and it is the wrong instrument: measured on the build it dropped two of the hub plaza's
+  // four ring lights, moved a gate lamp 1.5 m off its axis, and opened one pocket the previous build
+  // did not have, because a refusal is a hole in a run. The ring's own pitch is where the hub's wedges
+  // came from, and that is set from `MOUTH` at the layout site, where the geometry being laid out is
+  // known — see the hub's lamp ring below.
   const lampDrum = (x, z, s, ry) => {
     const [ox, w, d] = LAMP_BASE, c = Math.cos(ry), si = Math.sin(ry);
     return discLayout(w * s, d * s, x + ox * s * c, z - ox * s * si, ry);
@@ -1204,12 +1210,32 @@ export async function buildBase(scene, quality) {
       // every approach lane unobstructed. Four, not five: the fifth stood at (-5.9, -4.1), and 12.6 m
       // due south of it is the spaceport gate's own west leg, which together with a street lamp made a
       // 15 m blind run the scan reports as a trap.
+      // Post pitch is set by the mouth the rover needs, not by the rhythm of the arc. Two drums of r
+      // LAMP_R standing `c` apart leave `c − 2·LAMP_R` of raw gap, and physics holds the hull's centre
+      // BODY_R off each face, so the channel through the crease is `c − 2·(LAMP_R + BODY_R)` wide — and
+      // `scan()` files that crease as a seam unless it is at least 2·MOUTH across. The ring used to be
+      // laid at 0.20·π on a 7 m brim: a 4.33 m chord, 3.27 m of raw gap, which clears `CORRIDOR` by
+      // 0.07 m and leaves the hull 0.03 m of daylight. The driven census (2026-09-25,
+      // tools/cdp-seam-drive.mjs only=hub) pinned 11 of the hub's 13 stances on these creases; the
+      // same arithmetic is what the leak cordon's ten stakes died of. So the pitch comes from the rule
+      // and the sweep widens to keep all four lights.
+      const LAMP_R = Math.hypot(LAMP_BASE[1], LAMP_BASE[2]) / 2 * 1.25;
+      const BRIM = 7;
+      const STEP = 2 * Math.asin(Math.min(1, (2 * (MOUTH + BODY_R) + 2 * LAMP_R) / (2 * BRIM)));
       for (let i = 0; i < 4; i++) {
-        const a = (0.30 + i * 0.20) * Math.PI;
-        const lx = hx + Math.cos(a) * 7, lz = hz + Math.sin(a) * 7;
+        const a = 0.03 * Math.PI + i * STEP;
+        const lx = hx + Math.cos(a) * BRIM, lz = hz + Math.sin(a) * BRIM;
         // A 5.7 m mast landing 1.8 m off the pad centre grew straight up through the teleport disc
         // and hid the markings from the approach. Fast-travel nodes keep their own clear envelope.
         if (Math.hypot(lx - (hx - 8.5), lz - (hz + 11)) < 5.4) continue;
+        // The slide is left on, and it costs: measured on this build the two east posts cannot stand
+        // on their beat at all (a service-quad pin at 0.36 m and the flag mast at 2.73 m, then
+        // `hub:loose9` overlapping by 0.60 m), so they slide ~1 m off it and their crease comes back
+        // to 0.70 m of hull daylight instead of the 1.2 the rule asks for. The reason the ring cannot
+        // be laid clean is not the ring: it is the plaza's own pin field — `hub:loose0` (12 discs of
+        // 0.05-0.67 m) and `hub:loose9` stand scattered over the ground the rover drives on, and they
+        // are what 7 of the hub's 13 pinned stances name. Clearing that field is the next item; a
+        // plaza with two lamps missing in the meantime is the worse trade, so the lights stay.
         putLamp(`lamp-ring-${i}`, lx, lz, 1.25, a, [-Math.sin(a), Math.cos(a)]);
       }
       for (const sgn of [-1, 1]) {

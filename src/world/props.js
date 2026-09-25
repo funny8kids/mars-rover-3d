@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { heightAt, claimLot, resetLots } from './height.js';
+import { heightAt, claimLot, lotAt, resetLots } from './height.js';
 import { ZONES, SHIP_POS, LEAK_POS, RIM } from '../config.js';
 import { mulberry32, vnoise } from '../utils/noise.js';
 import { loadModel, cloneModel } from './assets.js';
@@ -356,9 +356,51 @@ export async function buildBase(scene, quality) {
       d.position.set(x, o.position.y + 0.366 * s, z);
       noMerge(d);
       G.add(d);
-      padMeshes.push({ o, d, s, bias: seat, x, z, foot, lotId: `${ZONE}:${lid}` });
+      padMeshes.push({ o, d, s, bias: seat, x, z, foot, zone: ZONE, lotId: `${ZONE}:${lid}` });
     }
     return o;
+  };
+
+  // ── the pad's emitter posts are solid, and until now they were solid *invisibly* ──
+  // `build_showcase.py:990` stands three 0.16 × 0.16 m posts on a 2.42 m ring at i·τ/3 + π/6. The GLTF
+  // import mirrors the authored plane, so in world xz they measure at −30° + i·120° off the pad's own
+  // centre — verified on every outer pad on 2026-09-26 (launch ring 2.666 at −29.9/90/−150.1, habitat
+  // 2.540, comms 2.420, motor 2.542, each at −30/90/−150; the ring is exactly 2.42·s and the discs
+  // exactly 0.11, which is the box's own half-diagonal). They are not in `colliders` when the districts
+  // are dressed: `solidify()` measures them off the drawn geometry at the end of the build. So a prop
+  // sited beside a pad chose its ground against a wall it could not see, and a pad relocated by
+  // `sitePads()` walked its posts into furniture that had already been cleared. The driven census
+  // caught both shapes on 2026-09-26, and in each case it was the fail-safe, not the driver, that
+  // emptied the crease: the motor-pool workbench stood 2.34 m from the pad's east post (1.49 m of
+  // mouth, at 3.7,-52.8) and the crew-rover's cradle rail 2.90 m from its south-west post (2.50 m of
+  // mouth, at -0.7,-52.8). Both posts are the pad's own hardware, which is why the census named the
+  // stances after a `looseNN` family rather than after anything anybody wrote in a district.
+  // These are siting blockers only. The physics gets its discs from the geometry, and a second copy in
+  // `colliders` would double them — and give a post a wall that stops moving when the pad does.
+  const PAD_POST_RING = 2.42, PAD_POST_R = 0.11;
+  const padPost = (p, i) => {
+    const a = -Math.PI / 6 - p.foot.ry + i * (Math.PI * 2 / 3);
+    return { x: p.x + Math.cos(a) * PAD_POST_RING * p.s, z: p.z + Math.sin(a) * PAD_POST_RING * p.s,
+      r: PAD_POST_R, prop: `${p.zone}:pad-post` };
+  };
+  // The one question every siting helper asks, asked once: of everything standing at that ground —
+  // authored discs, and the three posts of every pad placed so far — which is the tightest, and how
+  // much daylight does it leave? `off` names the object, because the disc that is in the way is the
+  // one that says where the way out is.
+  const tightestAgainst = (x, z, r) => {
+    let gap = Infinity, off = null;
+    for (const q of colliders) {
+      if (q.floor !== undefined) continue;
+      const g = Math.hypot(q.x - x, q.z - z) - q.r - r;
+      if (g < gap) { gap = g; off = q; }
+    }
+    for (const p of padMeshes)
+      for (let i = 0; i < 3; i++) {
+        const q = padPost(p, i);
+        const g = Math.hypot(q.x - x, q.z - z) - q.r - r;
+        if (g < gap) { gap = g; off = q; }
+      }
+    return { gap, off };
   };
 
   // The Blender deck is a clean lathe surface, and a clean 6.5 m disc on a dust planet is a lie:
@@ -668,10 +710,7 @@ export async function buildBase(scene, quality) {
   const lampFits = (x, z, s, ry) => {
     for (const o of lampDrum(x, z, s, ry)) {
       if (streetEncroach(o.x, o.z, o.r) > 0) return false;
-      for (const q of colliders) {
-        if (q.floor !== undefined) continue;
-        if (Math.hypot(q.x - o.x, q.z - o.z) - q.r - o.r < LAMP_CLEAR) return false;
-      }
+      if (tightestAgainst(o.x, o.z, o.r).gap < LAMP_CLEAR) return false;
     }
     return true;
   };
@@ -686,10 +725,7 @@ export async function buildBase(scene, quality) {
   const drumGap = (x, z, s, ry) => {
     let worst = Infinity;
     for (const o of lampDrum(x, z, s, ry))
-      for (const q of colliders) {
-        if (q.floor !== undefined) continue;
-        worst = Math.min(worst, Math.hypot(q.x - o.x, q.z - o.z) - q.r - o.r);
-      }
+      worst = Math.min(worst, tightestAgainst(o.x, o.z, o.r).gap);
     return worst;
   };
   const putLamp = (id, x, z, s, ry, along = null) => {
@@ -738,14 +774,9 @@ export async function buildBase(scene, quality) {
   const corridorBreak = (x, z, w, d, ry, need = CORRIDOR) => {
     for (const p of discLayout(w, d, x, z, ry)) {
       if (streetEncroach(p.x, p.z, p.r) > 0) return offStreet(p.x, p.z);
-      let worst = Infinity, off = null;
-      for (const q of colliders) {
-        if (q.floor !== undefined) continue;
-        const g = Math.hypot(q.x - p.x, q.z - p.z) - q.r - p.r;
-        if (g < worst) { worst = g; off = q; }
-      }
+      const { gap, off } = tightestAgainst(p.x, p.z, p.r);
       // the disc that is in the way names the way out of it
-      if (worst < need) return [p.x - off.x, p.z - off.z];
+      if (gap < need) return [p.x - off.x, p.z - off.z];
     }
     return null;
   };
@@ -923,7 +954,25 @@ export async function buildBase(scene, quality) {
       // A 24 m blank slab in the middle of the player's arrival shot was the loudest "nothing has
       // been modelled here" in the base. A plaza is paved: inset panels with shadowed seams, a
       // landing disc, a hazard ring and flush studs that light up at night.
-      const bb = deckBox(k('platform_large', hx, hz, 0, 1.9));
+      // A plaza is ground, and ground is the one thing the site pass has to be able to see. The slab
+      // used to be laid straight onto the natural sand with the usual −0.05, and since it is 0.66 m
+      // thick it stood as a raised dais that claims no footing: measured 2026-09-26 its lid drew at
+      // y 1.21 while `heightAt` and the terrain mesh both read 0.60 under it. That single missing
+      // datum produced both of the hub's last two pinned seams and the wrong picture behind them —
+      // the tap's 6.5 m footing was sited *through* the dais (deck 0.60, so the substation's lower
+      // 0.61 m is inside a wall), the flag mast's boot likewise, and the slab's twelve perimeter
+      // discs walled the plaza into an island whose interior the deadlock census nevertheless kept
+      // choosing stances in, because a 2D oracle cannot tell a room from a courtyard.
+      // So the slab now takes a graded footing like every building in the base and is seated with its
+      // lid on that deck. Flush paving is also what the collision pass then owes it: a rim face whose
+      // top is at grade is under the 0.46 m ride height, so `solidify` skips the whole unit and the
+      // ground the player can drive on and the ground the physics can drive on are the same 13 m.
+      const slab = k('platform_large', hx, hz, 0, 1.9);
+      const laid = deckBox(slab);
+      const thick = laid.max.y - laid.min.y;
+      const deck = grade('plaza', hx, hz, laid.max.x - laid.min.x, laid.max.z - laid.min.z, 0);
+      slab.position.y = deck - thick;
+      const bb = deckBox(slab);
       const top = bb.max.y, x0 = bb.min.x + 0.55, x1 = bb.max.x - 0.55;
       const z0 = bb.min.z + 0.55, z1 = bb.max.z - 0.55;
       const cw = (x1 - x0) / 6, cd = (z1 - z0) / 6;
@@ -1143,8 +1192,14 @@ export async function buildBase(scene, quality) {
       flag.position.set(hx + 6.85, mastY + 6.35, hz + 4); flag.castShadow = true; flag.receiveShadow = true;
       G.add(flag);
     }
-    putDeck('teleport_pad', hx - 8.5, hz + 11, 1.25, 0, -0.08);
-    teleports.push({ key: 'hub', name: ZONES.hub.name, x: hx - 8.5, z: hz + 11 });
+    // The pad is authored where the siting pass would put it, not merely where it looks right, and the
+    // reason is a dependency: the lamp ring below sites its bearings against this pad's keep-out, and a
+    // pad that moves after the ring is dressed invalidates every bearing the ring chose. Measured
+    // 2026-09-26: authored at (−8.5, +11) the siting pass moved it 2.0 m to (−6.77, +9.98) because the
+    // authored spot encroached a carriageway, and the ring had already spent its north-west bearing on
+    // the old position — which is how a lamp drum came to stand 3.08 m from the pad's rim hardware.
+    putDeck('teleport_pad', hx - 6.77, hz + 9.98, 1.25, 0, -0.08);
+    teleports.push({ key: 'hub', name: ZONES.hub.name, x: hx - 6.77, z: hz + 9.98 });
     // The plaza's service quad used to be drawn here with no collider at all, so the rover drove
     // through it. Giving it the collision its body actually has made it a 3.5 × 3.7 m object, and
     // there is no bay on the plaza's own ring that holds the corridor: sited at (10, 1) it came to
@@ -1204,11 +1259,18 @@ export async function buildBase(scene, quality) {
           const over = Math.max(...ds.map(o => streetEncroach(o.x, o.z, o.r)));
           if (over > 0) { x -= Math.cos(a) * over; z -= Math.sin(a) * over; continue; }
           let clash = 0;
-          for (const c of colliders) {
-            if (c.floor !== undefined) continue;
-            for (const o of ds)
-              clash = Math.max(clash, CORRIDOR - (Math.hypot(c.x - o.x, c.z - o.z) - c.r - o.r));
-          }
+          // `tightestAgainst`, not a `colliders` loop: the hub pad is authored 40 lines above this
+          // ring, so its three emitter posts are ground truth for a ring building by now, and the
+          // census found `hub:ring-135` standing 2.65 m of raw gap from the pad's south-west post —
+          // a mouth of −0.55 m, i.e. a wall the 3.2 m hull cannot pass, with the post on one side and
+          // the building's own 1.88 m disc on the other. The cruise wedged the rover in it at
+          // (−8.9, 10.1) and the unstick, not the driver, got it out (2026-09-26, rescues 4/1).
+          // Barred with MOUTH_GAP, not CORRIDOR: with CORRIDOR the ring settled `hub:ring-315` 3.20 m
+          // from `hub:spaceport-gate#1` — mouth 0.0, no daylight — and the driven census kept stance #0
+          // at (12.6,−15) while the cruise logged its two rescues at pos (9,−19) on the same crease
+          // (2026-09-26). A ring building is 1.88 m across, so "clears the corridor" here means the
+          // hull exactly fills the gap it is allowed to leave.
+          for (const o of ds) clash = Math.max(clash, MOUTH_GAP - tightestAgainst(o.x, o.z, o.r).gap);
           if (clash <= 0) break;
           // Outward is the natural way clear of a neighbour, but on the hub ring "outward" is also
           // the way into the street — so both exits are tested and the kerb line wins: a building
@@ -1257,6 +1319,20 @@ export async function buildBase(scene, quality) {
       const LAMP_R = Math.hypot(LAMP_BASE[1], LAMP_BASE[2]) / 2 * 1.25;
       const BRIM = 7, ARC0 = 0.03 * Math.PI, ARC1 = 0.97 * Math.PI;
       const PITCH = 2 * (MOUTH + BODY_R) + 2 * LAMP_R;
+      // The pad's keep-out is measured from its rim hardware, not from its centre. At 1.25 scale the
+      // emitter posts of `teleport_pad` stand 3.00 and 3.03 m off the hub pad's centre — matching
+      // `PAD_POST_RING · s` — and its third post reads 3.15 m out with a disc of r 0.43 instead of
+      // 0.11, i.e. that one swallowed a second piece of rim hardware in the measurement pass (task
+      // #94). Both numbers are the hub's own: read out of the built scene on 2026-09-26 at (−6.8, 13.0),
+      // (−9.4, 8.4) and (−3.9, 8.7). The old test asked only that a drum land 5.4 m from the pad
+      // *centre*, which is 0.9 m less than the reach of the pad's own rim ring once physics pads it by
+      // BODY_R; a drum that passed it still stood 3.08 m from that post, and with the plaza's corner
+      // needle 3.37 m beyond that the three faces bound at once and the 3.2 m hull has nowhere to
+      // turn. The driven census pinned stance (−6.3, 8.2) on exactly that tripod. Below is the same
+      // both-bind arithmetic the census uses, solved for the drum.
+      const hubPad = teleports.find(t => t.key === 'hub');
+      const PAD_RIM = 3.15, PAD_POST = 0.43;
+      const PAD_KEEP = PAD_RIM + PAD_POST + 2 * BODY_R + LAMP_R;
       const chosen = [];
       for (let i = 0; i < 4; i++) {
         let pick = null;
@@ -1266,9 +1342,9 @@ export async function buildBase(scene, quality) {
             const a = ARC0 + i * (ARC1 - ARC0) / 3 + sgn * n * 0.035;
             if (a < ARC0 - 1e-9 || a > ARC1 + 1e-9) continue;
             const lx = hx + Math.cos(a) * BRIM, lz = hz + Math.sin(a) * BRIM;
-            // A 5.7 m mast landing 1.8 m off the pad centre grew straight up through the teleport disc
-            // and hid the markings from the approach. Fast-travel nodes keep their own clear envelope.
-            if (Math.hypot(lx - (hx - 8.5), lz - (hz + 11)) < 5.4) continue;
+            // Fast-travel nodes keep their own clear envelope: no drum may stand inside the pad's
+            // rim ring once both discs are padded by the hull's half-width.
+            if (hubPad && Math.hypot(lx - hubPad.x, lz - hubPad.z) < PAD_KEEP) continue;
             // The beat is measured between drum centres, not between the sites on the brim: a drum is
             // set 0.114·s off its model origin along its own face, and at 1.25 scale that offset is
             // enough to turn a 6.67 m site chord into a 6.48 m drum pair — 1.14 m of daylight against
@@ -2052,6 +2128,19 @@ export async function buildBase(scene, quality) {
     // survey needed.
     const pit = (x, z) => heightAt(x, z);
 
+    // ── the fast-travel node, laid first ──
+    // Order is not decoration here. Every siting helper in this district asks the geometry that exists
+    // *at the moment it runs*, and the pad is solid from the instant `putDeck` registers its record:
+    // three emitter posts on a 2.42·s ring, standing 0.42–0.98 m over the deck, i.e. squarely in the
+    // band the hull can reach. Placed last, the pad's posts were invisible to everything sited before
+    // them, and the driven census found two motor-pool stances where the unstick state machine, not
+    // the driver, emptied the crease (2026-09-26: `rescued` 2/56 — the workbench 1.49 m of raw gap
+    // from a post, and the crew-rover cradle rail 2.50 m). Both are gone once the pad is on the ground
+    // first; see `padPost` for the posts themselves.
+    putDeck('teleport_pad', mx + 1.5, mz + 8.5, 1.05, 0, -0.08);
+    const motorPad = padMeshes[padMeshes.length - 1];
+    teleports.push({ key: 'motor', name: ZONES.motor.name, x: motorPad.x, z: motorPad.z });
+
     // ── the crew rover, parked nose-out on its cradle at the mouth of the bay ──
     // It used to stand *between* the portal's four stanchions, and that is not a garage: the posts are
     // 3.4 m apart and the hull is 3.2 m across, so every one of the four creases came to 1.83 m of
@@ -2113,8 +2202,6 @@ export async function buildBase(scene, quality) {
       const cx2 = mx + dx, cz2 = mz + dz;
       kitAt('cone', cx2, pit(cx2, cz2), cz2);
     }
-    putDeck('teleport_pad', mx + 1.5, mz + 8.5, 1.05, 0, -0.08);
-    teleports.push({ key: 'motor', name: ZONES.motor.name, x: mx + 1.5, z: mz + 8.5 });
     infoZones.push({
       key: 'motor', pos: [mx, mz], r: 22, tag: 'MOTOR POOL · CREW ROVER BAY',
       name: '载人车车库', params: ['载人火星车 ×1（加压舱 2.4 m³）', 'Optimus 作业机器人 ×2', '舱外活动最远行程 12 km'],
@@ -2480,6 +2567,11 @@ export async function buildBase(scene, quality) {
   }
 
   // ══════════ ROAD SETTING — street furniture on the terrain's own carriageway ══════════
+  // The avenue's posts are *measured* here and *placed* after the measurement pass at the end of the
+  // build, because a lamp that cannot move is one thing and a lamp that can slide is another: the
+  // walls it has to keep off are not all in `colliders` yet when this block runs. See the note on
+  // `siteStreetLamps` below.
+  let siteStreetLamps = null;
   {
     // The road used to be painted along hand-picked zone-to-zone lines, which is why the carriageway
     // you could see did not match the carriageway the terrain shader flattened. Now the same STREETS
@@ -2493,6 +2585,7 @@ export async function buildBase(scene, quality) {
     // street read as pasted-down cards rather than ground. One street, one representation.
     const TILE = S * 1.7;                       // spacing of the lamp posts along the lane
     ZONE = 'road';       // the lamps below are the street's own furniture, not any district's
+    const slots = [];
     for (const [si, s] of STREETS.entries()) {
       const dx = s.b[0] - s.a[0], dz = s.b[1] - s.a[1], l = Math.hypot(dx, dz);
       const yaw = Math.atan2(dx, dz);
@@ -2504,11 +2597,43 @@ export async function buildBase(scene, quality) {
           // lamps stand on the shoulder, clear of the trafficable width but inside the setback
           const ox = dz / l * 8.2, oz = -dx / l * 8.2;
           const side = (i % 6 < 3) ? 1 : -1;
-          putLamp(`lamp-${si}-${i}`, x + ox * side, z + oz * side, 1.05,
-                  yaw + (side > 0 ? Math.PI / 2 : -Math.PI / 2), [dx / l, dz / l]);
+          slots.push({ id: `lamp-${si}-${i}`, x, z, ox, oz, side,
+                       yaw, along: [dx / l, dz / l] });
         }
       }
     }
+    // Placed after `solidify()`, and the reason is a build-order bug the driven census caught: a lamp
+    // tests itself against `colliders` before the walls drawn by the measurement pass exist, so the
+    // post is dressed against a world it will not meet. Measured 2026-09-26 on 30 avenue lamps — two
+    // of them standing inside a band wall's clearance: `road:lamp-0-13` at (−21.80,−11.88) held 0.44 m
+    // of daylight against the watch deck's own perimeter railing, and `road:lamp-1-1` at (38.20,−83.88)
+    // held 0.37 m against a mineral site's spire foot. Both offenders are the small discs the census
+    // files under the pair's `looseNN` family, whose numbers move with build order — the two lamp
+    // positions above are the stable half of the reading. CORRIDOR asks for 3.2 m, and the stance the
+    // census parked between the lamp and the railing is the one place on the avenue where a driver has
+    // to give up forward gear.
+    //
+    // Deferring the placement — rather than deleting the railing or moving a district landmark — is
+    // the direction that fixes the class: the lamp is the object with a licence to move (it slides
+    // along its own run), so it is the object that has to be sited against the finished wall list.
+    // A post whose slot is taken by structure now crosses to the opposite shoulder before it refuses,
+    // because an empty kerb is a visible hole in the avenue and the carriageway has the same rhythm on
+    // both sides. `holes` lists what still refused, so a gap in the run is a reported defect rather
+    // than a `return false` nobody reads — `__RSB.solid().lampRun` carries it.
+    siteStreetLamps = () => {
+      ZONE = 'road';
+      const holes = [], crossed = [];
+      for (const p of slots) {
+        const ry = a => p.yaw + (a > 0 ? Math.PI / 2 : -Math.PI / 2);
+        if (putLamp(p.id, p.x + p.ox * p.side, p.z + p.oz * p.side, 1.05, ry(p.side), p.along)) continue;
+        if (putLamp(p.id, p.x - p.ox * p.side, p.z - p.oz * p.side, 1.05, ry(-p.side), p.along)) {
+          crossed.push(p.id);
+          continue;
+        }
+        holes.push(p.id);
+      }
+      return { slots: slots.length, placed: slots.length - holes.length, crossed, holes };
+    };
     // The kit's road is a pale peach ribbon with a large tile texture on it. Under a peach sky it had
     // no value separation from the dunes, and laid across the dark sintered deck it read as bathroom
     // tiling — the single brightest thing in every driving frame. A service road is compacted
@@ -2596,12 +2721,45 @@ export async function buildBase(scene, quality) {
     // node must not sit in a carriageway.
     const legal = (x, z, rim) => roomAt(x, z, BODY) >= MARGIN
       && roomAt(x, z, rim) >= 0 && streetEncroach(x, z, rim) <= 0;
+    // The three emitter posts stand 2.42·s *outside* the pad's centre, so the two tests above, which
+    // are both measured from the centre, do not describe them: a wall can stand in the annulus between
+    // the post ring and the drawn rim and be perfectly legal, and the hull then has a crease with a
+    // lamp post that only appears once `solidify()` measures the post. Reading first, no gate yet —
+    // this says how much daylight each pad's posts actually hold against the discs authored before
+    // this pass, in the same units `roomAt` reports.
+    // Measured against `colliders` only, never `tightestAgainst`: the pad's own record is what is
+    // being moved, so its posts are in that list and would read as the tightest thing standing at the
+    // spot it is being asked to move to.
+    const postRoom = (x, z, s, ry, zone) => {
+      const stand = { x, z, s, foot: { ry }, zone };
+      let m = Infinity, who = null;
+      for (let i = 0; i < 3; i++) {
+        const q = padPost(stand, i);
+        for (const c of colliders) {
+          if (c.floor !== undefined) continue;
+          const g = Math.hypot(c.x - q.x, c.z - q.z) - c.r - PAD_POST_R;
+          if (g < m) { m = g; who = c; }
+        }
+      }
+      return { gap: m, who: who && `${who.prop || who.name || 'disc'}@${who.x.toFixed(1)},${who.z.toFixed(1)}r${who.r.toFixed(1)}` };
+    };
     for (const tp of teleports) {
       const m = padMeshes.find(p => p.x === tp.x && p.z === tp.z);
       if (!m) continue;
       const ox = tp.x, oz = tp.z, rim = rimOf * m.s;
       let found = null;
-      if (!legal(ox, oz, rim)) {
+      // Two bars, one search. `legal` is the pad's *centre*: body room, rim room, no carriageway.
+      // `postRoom` is its three emitter posts, which stand 2.42·s outside that centre and are the half
+      // the centre tests cannot see. Either one short and the pad goes looking for a spot; both of them
+      // are measured at the candidate too, so a search that ends up no wider is not taken — the pad
+      // that cannot be improved stays at its authored coordinates and `postRoom`/`postVs` name the
+      // district prop that has to move instead. That is the other half of the same order problem:
+      // industry's yard mast (props.js:1900) and the science shards (:2097) are both dressed before
+      // their pad is laid, so on those two the pad is the object with a licence to move, while the
+      // hub's machine ring (:1282) is dressed after its pad and is the one that has to keep off.
+      const authoredLegal = legal(ox, oz, rim);
+      const postShort = postRoom(ox, oz, m.s, m.foot.ry, tp.key).gap < CORRIDOR;
+      if (!authoredLegal || postShort) {
         // Nearest legal approach first — the authored spot encodes the district's arrival line, and
         // a pad moved 9 m sideways still beats one moved 9 m behind a hangar.
         for (let rr = 0.5; rr <= 9 && !found; rr += 0.5) {
@@ -2609,9 +2767,16 @@ export async function buildBase(scene, quality) {
           for (let i = 0; i < 24; i++) {
             const a = i * Math.PI / 12;
             const x = ox + Math.sin(a) * rr, z = oz + Math.cos(a) * rr;
-            if (legal(x, z, rim)) cands.push({ x, z, body: roomAt(x, z, BODY) });
+            if (!legal(x, z, rim)) continue;
+            cands.push({ x, z, body: roomAt(x, z, BODY), post: postRoom(x, z, m.s, m.foot.ry, tp.key).gap });
           }
-          if (cands.length) found = cands.sort((p, q) => q.body - p.body)[0];
+          // Of the spots the old bar accepts, take the one whose emitter posts hold the corridor; a
+          // pad that satisfies the centre tests but parks a post against a dome is exactly the crease
+          // the driven census reads. Only when no ring spot does is the body room the tiebreak, and
+          // then `postRoom` is the reading that names the prop to move.
+          const wide = cands.filter(c => c.post >= CORRIDOR);
+          const pool = wide.length ? wide : (authoredLegal ? [] : cands);
+          if (pool.length) found = pool.sort((p, q) => q.post - p.post || q.body - p.body)[0];
         }
       }
       if (found) {
@@ -2635,10 +2800,13 @@ export async function buildBase(scene, quality) {
       // may not have its centre within r + keep of a pad.
       padKeep.push({ id: tp.key, x: tp.x, z: tp.z, owner: m.o,
         keep: Math.max(BODY + MARGIN, rim) });
+      const pr = postRoom(tp.x, tp.z, m.s, m.foot.ry, tp.key);
       padAudit.push({
         id: tp.key,
         room: +roomAt(tp.x, tp.z, BODY).toFixed(2),
         rimRoom: +roomAt(tp.x, tp.z, rim).toFixed(2),
+        postRoom: +pr.gap.toFixed(2),
+        postVs: pr.who,
         road: +streetEncroach(tp.x, tp.z, rim).toFixed(2),
         moved: +Math.hypot(tp.x - ox, tp.z - oz).toFixed(1),
       });
@@ -2669,7 +2837,7 @@ export async function buildBase(scene, quality) {
     // ring by one body width, so every point inside the trigger circle stays drivable.
     const TAP_STANDOFF = 3.9 + 1.84 + 1.6;
     const siteFor = (px, pz, away, w, d, minR = 0) => {
-      const legal = [], best = [];
+      const legal = [], best = [], apron = [];
       for (const rr of [3.9, 5.0, 6.3, 7.8, 9.5, 11.5]) {
         if (rr < minR) continue;
         for (let i = 0; i < 16; i++) {
@@ -2677,18 +2845,27 @@ export async function buildBase(scene, quality) {
           const x = px + Math.sin(b) * rr, z = pz + Math.cos(b) * rr;
           const ds = discLayout(w, d, x, z, b);
           if (ds.some(o => streetEncroach(o.x, o.z, o.r) > 0)) continue;
+          // A building does not stand in another building's apron. This is the same authority the
+          // carriageway test above uses, applied to graded ground: a lot is a cut somebody made and
+          // owns, and until the plaza claimed a footing of its own the tap had no way to know a 13 m
+          // slab was sitting where it wanted to stand — it measured clear of every *collider* in the
+          // district and still drove its 6.5 m footing through a dais. The test reads the candidate's
+          // own footprint discs, so a tap may stand beside its pad; it is the apron it must keep out
+          // of, not the neighbour. Apron sites rank last rather than out, because the alternative
+          // fallback is the pad's own centre and that is worse for the player, not better.
+          const onApron = ds.some(o => { const l = lotAt(o.x, o.z); return l && l.sd < 0; });
           let clear = Infinity;
           for (const c of colliders) {
             if (c.floor !== undefined) continue;
             for (const o of ds) clear = Math.min(clear, Math.hypot(c.x - o.x, c.z - o.z) - c.r - o.r);
           }
-          (clear >= CORRIDOR ? legal : best).push({ x, z, yaw: b, rr, clear });
+          (onApron ? apron : clear >= CORRIDOR ? legal : best).push({ x, z, yaw: b, rr, clear });
         }
       }
       // Hugging the pad beats a wide but distant lot — the tap is meant to be seen from the pad —
       // so legal sites rank by radius first. If the district owns every one of the 96 candidates the
       // emptiest loser is used, which is never as bad as the blind 4.4 m offset it replaced.
-      const pick = (legal.length ? legal : best).sort((p, q) => p.rr - q.rr || q.clear - p.clear)[0];
+      const pick = (legal.length ? legal : best.length ? best : apron).sort((p, q) => p.rr - q.rr || q.clear - p.clear)[0];
       return pick || { x: px, z: pz, yaw: away };
     };
     for (const tp of teleports) {
@@ -3101,6 +3278,11 @@ export async function buildBase(scene, quality) {
     s.sink = Math.max(0.9, s.rise);
   }
   const solidReport = solidify();
+
+  // The avenue's posts are dressed now that every wall the deck, the spires and the gantries drew is
+  // in the list they are tested against. Must run before the merge below: a `put` clone is skipped by
+  // it on purpose, and a lamp added afterwards would not be shaded into the same pass.
+  solidReport.lampRun = siteStreetLamps();
 
   // The mineral sites take the discs their own spires drew. Each one is a prop that moves after this
   // line — `dressSample` sinks it into its drift and scours it out again — so the wall has to be in

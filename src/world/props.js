@@ -2234,29 +2234,42 @@ export async function buildBase(scene, quality) {
   {
     const [wx, wz] = ZONES.watch.pos;
     ZONE = 'watch';
-    const wy = Math.max(...Array.from({ length: 24 }, (_, i) => {
-      const a = i / 24 * 6.283, rr = (i % 3) / 2 * 7;
-      return heightAt(wx + Math.cos(a) * rr, wz + Math.sin(a) * rr);
-    }));
+    const [lpx, lpz] = ZONES.launch.pos;
+    // Azimuth the crowd looks down, and the opposite side of the deck where the seating sits.
+    const face = Math.atan2(lpx - wx, lpz - wz);
+    const back = face + Math.PI;
     // The deck's wearing surface, measured off its own asset rather than guessed: the cast drum is
     // DECK_TOP = 1.00 m in `build_watch_deck.py` and the wear plate laid over it finishes 0.08
     // higher, so the crowd stands 1.08 m above the datum the model is placed at. The old constant
     // said 0.5, which put every foot hung off it — this board's plinth, and the band the chase
     // camera flies over — half a metre inside the concrete.
+    // What it did not have was a foundation of its own. `wy` used to be `Math.max` of 24 samples over
+    // a 7 m ring — the highest ground the drum could be standing on anywhere under it, which is the
+    // "靠 dy 常数凑" the site pass exists to remove — and because the deck joined `G` without
+    // `tagScope`, `solidify` inventoried it as `island:loose98`: 43 discs of r ≤ 1.43 over a
+    // 13.8 × 12.9 m cloud, with no `lot()` for the roads, set-backs and keep-outs to see. Measured
+    // 2026-09-26 on 2fd80ac: 20 of the 28 seams inside 26 m of the hub have a `looseNNN` partner, and
+    // the pair the acceptance tour wedged into at (−21.3,−8.3) is one of those invented discs
+    // (`island:loose98#30`, 8 m off the deck's own centre, against `hub:ring-gantry-180#1` at
+    // −0.69 m of hull daylight). The drum now stands on a pad its own footprint measures and defends.
+    const deckFoot = footOf('watch_deck');
+    const wy = grade('watch-deck', wx, wz, deckFoot.w, deckFoot.d, face);
     const deckTop = wy + 1.08;
-    const [lpx, lpz] = ZONES.launch.pos;
-    // Azimuth the crowd looks down, and the opposite side of the deck where the seating sits.
-    const face = Math.atan2(lpx - wx, lpz - wz);
-    const back = face + Math.PI;
     // The whole grandstand is one Blender asset now: a cast drum with its form joints, four
     // stepped tiers of woven seats, a canopy on tapered columns, a two-rail fence, bollard
     // lamps and the broadcast camera — 270-odd bevelled parts welded into eleven buffers, with
     // precast-concrete and woven-vinyl fields carrying the millimetre detail.
     const deck = cloneModel(models.watch_deck);
-    deck.position.set(wx, wy, wz);          // the asset's own datum is the ground under the drum
+    deck.position.set(wx, wy, wz);          // the asset's own datum is the pad under the drum
     deck.rotation.y = face;                 // its local +Y is the pad
+    // Named, so the audit's work item is "the watch deck" rather than an invented `loose98`, and given
+    // the lot its own footprint measures — the thing that lets the road set-backs and the district
+    // keep-outs see a 14 m building where they previously saw nothing.
+    deck.userData.rsbScope = 'watch-deck';
+    deck.userData.rsbZone = ZONE;
     deck.traverse(shade);
     G.add(deck);
+    lot('watch-deck', wx, wz, deckFoot.w, deckFoot.d, face);
 
     // seats facing the pad + telemetry board angled back at the crowd
     k('stairs', wx - 3.5, wz + 2, -2.24, 0.9);

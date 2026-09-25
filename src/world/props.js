@@ -733,10 +733,17 @@ export async function buildBase(scene, quality) {
   // the collision is the feet and nothing else — a disc on the centre would wall off the very space
   // the portal is built to enclose, and one oversized disc per foot eats 3.2 m of daylight each.
   const GANTRY_FEET = [[-5.6, -1.9], [5.6, -1.9], [-5.6, 1.9], [5.6, 1.9]];
+  // The two end bays, measured off the export rather than typed: everything that stands between the
+  // ground and the rover's roof at either end of the span. `GANTRY_FEET` gave each corner a
+  // 1.5 × 1.5 m disc, but the asset carries a cast end rack — measured at x 5.03..6.75, z ±3.05,
+  // y up to 0.99 on both ends — so a metre of concrete stood in the player's path at every portal in
+  // the base while the collision map knew only about the posts. The band between the two ends stays
+  // open ground, which is the whole point of a portal.
+  const GANTRY_ENDS = [[5.89, 0, 1.72, 6.10], [-5.89, 0, 1.72, 6.10]];
   const portal = (id, x, z, s, ry) => {
     beginProp(id);
     put('gantry_service', x, z, s, ry, 0);
-    endProp({ legs: GANTRY_FEET.map(([a, b]) => [a * s, b * s, 1.5, 1.5]), at: [x, z], ry });
+    endProp({ legs: GANTRY_ENDS.map(([a, b, w, d]) => [a * s, b * s, w * s, d * s]), at: [x, z], ry });
   };
   const beginProp = id => { CUR = new THREE.Group(); CUR.name = id; G.add(CUR); return CUR; };
   // opts: w/d/ry override the measurement; legs [[dx,dz,w,d],...] replaces it entirely (a prop you

@@ -3893,6 +3893,18 @@ window.__RSB = {
       const tgt = s.route[s.wp];
       const recovering = s.t < s.recoverUntil;
       const holding = s.t < s.holdUntil;
+      // A park is a stop, not a direction. `physics.js` reads the brake as a service brake only
+      // while the hull still rolls forward (`inp.brake > 0.05 && vf > 0.6`); below that line the same
+      // pedal is reverse thrust, so a "parked" rover holding a buried brake is a rover driving
+      // backwards into whatever stands behind it. Measured 2026-09-26 at `pad:launch`: 89.4 s of
+      // dwell at 0.1-0.4 m/s against the pad's own discs, 17 rescues in 120 s (`no-net-progress`,
+      // every one of them blaming `launch:pad1#0` / `#1`), and the point sampled 4.4 m off its
+      // 3.9 m circle — the rover the audit scored as parked was never parked. So the pedal is
+      // lifted at the same line physics lifts it, and from there the static hold
+      // (`!gas && !brake && speed < 1.4`, physics.js) owns the standstill. The watchdog keeps
+      // counting a held brake as a push: for a player, brake-down-and-not-moving IS the wedge.
+      const parkBrake = () =>
+        (phys.vx * Math.sin(phys.yaw) + phys.vz * Math.cos(phys.yaw) > 0.6 ? 1 : 0);
       if (recovering) {
         input.inp.gas = 0;
         input.inp.brake = 1;                    // back out, swinging toward whichever side is open
@@ -3900,8 +3912,8 @@ window.__RSB = {
         const openRight = rangeOf(phys.x, phys.z, phys.yaw + Math.PI / 2);
         s.turnDir = openLeft >= openRight ? 1 : -1;
         input.inp.steer = s.turnDir;
-      } else if (holding) {                     // parked: brake on, hands off the wheel
-        input.inp.gas = 0; input.inp.brake = 1; input.inp.steer = 0;
+      } else if (holding) {                     // parked: service brake to a standstill, then no pedal
+        input.inp.gas = 0; input.inp.brake = parkBrake(); input.inp.steer = 0;
       } else {
         input.inp.brake = 0;
         // The last approach is a parking manoeuvre, not an avoidance problem. Every pad and every
@@ -4055,7 +4067,7 @@ window.__RSB = {
       // reached" — so `keepPower` tops the cell up every quarter-second for the whole run. The
       // 5-minute full-route regression is deliberately NOT given this: it drains for real.
       if (opts.keepPower && s.runFrames % 15 === 0) { grid.battery = 1; grid.dead = false; grid.lowWarned = false; }
-      input.inp.brake = (recovering || holding) ? 1 : 0;   // read() re-derives pedals from the key set
+      input.inp.brake = recovering || (holding && parkBrake()) ? 1 : 0;   // read() re-derives pedals from the key set
       const step = Math.hypot(phys.x - before[0], phys.z - before[1]);
       // A frame that starts with the rover here and ends 50 m down the map is not driving, and the
       // sim owns exactly one legitimate way to do it: the teleport network, which force-homes the
@@ -4201,8 +4213,9 @@ window.__RSB = {
         if (phys.speed < 2.5) p.dwell += dt;
       }
       // A fly-through only proves the road exists. `pause` parks the rover inside the trigger circle
-      // with the brake on — the state a player actually has to reach to work a pad or lift a sample —
-      // and it turns the dwell column into measured standing time instead of one frame of a pass.
+      // — braked to a standstill, then off both pedals, which is the state a player is actually in
+      // when the pad prompt or the sample lift is offered — and it turns the dwell column into
+      // measured standing time instead of one frame of a pass.
       const arrived = tgt.lapBest <= tgt.r || s.t - tgt.since > (opts.grace ?? 25);
       if (arrived && tgt.legT === 0) tgt.legT = s.t - (tgt.since ?? s.t);
       // A leg that ends on the clock instead of on the trigger circle needs its steering history in

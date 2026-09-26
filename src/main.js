@@ -3934,6 +3934,7 @@ window.__RSB = {
     // One question per waypoint, with a clock of its own: can this circle be entered from where the
     // rover stands now, and if not, from where could it be?
     const findWayIn = tgt => {
+      const prevStage = tgt.stage;
       tgt.park = parkSpot(tgt);
       tgt.stage = tgt.park ? null : stageSpot(tgt);
       if (tgt.stage && !tgt.stage.park) tgt.stage = null;
@@ -3943,6 +3944,13 @@ window.__RSB = {
       // Where the stance sits, measured off the pad: `near` wants `min(16, r+7)`, so a stance ring
       // further out than that is one the driver can aim at all leg and never be allowed to use.
       if (tgt.stage) tgt.stageD = Math.hypot(tgt.stage.x - tgt.x, tgt.stage.z - tgt.z);
+      // `stageN` counts searches, not changes of mind, so this is the second half of the reading: a
+      // leg that re-reads the apron every 0.34 s and gets the *same* stance back is steady, and one
+      // that gets a different coordinate each time has its aim turned by the search rather than by
+      // the road. The counter costs nothing and the whole lap measured zero (no `f` column in
+      // tools/logs/tour-300-slowlegs.log), so the slow legs are not hunting for a stance.
+      if (tgt.stage && prevStage && (prevStage.x !== tgt.stage.x || prevStage.z !== tgt.stage.z))
+        tgt.stageFlip = (tgt.stageFlip || 0) + 1;
     };
 
     input.inp.keys.add('KeyW');
@@ -4179,6 +4187,14 @@ window.__RSB = {
         // (tools/logs/tour-300-align.log) the six other pad legs kept their dwell and the route closed
         // a full circle for the first time — districts 7/7, streets 23/24, points 21/22.
         const align = Math.cos(Math.min(Math.abs(err), Math.PI / 2));
+        // Tried and withdrawn on the same day as the census that motivated it: capping the cruise
+        // branch by `dNow` as well, on the argument that the hand-over at `min(16, r+7)` = 10.9 m
+        // arrives before the 18 m a 11 m/s stop needs. Measured on the whole lap
+        // (tools/logs/tour-300-brakecap.log) it is a *worse* lap: `pad:motor` 14.4 → 24.7 s,
+        // `tap:habitat` 14.8 → 22.7 s, districts 7/7 → 6/7, and the first `no-net-progress` wedge of
+        // the run at the motor pad. That is the same failure the worst-ray cap above died of: arriving
+        // slower does not avoid the pocket, it lets the rover crawl into it. The overshoot is real but
+        // it is a bearing problem, not a pedal problem.
         const room = parking && !blind ? Math.min(see, b.r * align)
           : toStage ? Math.min(see, Math.hypot(tgt.stage.x - phys.x, tgt.stage.z - phys.z) + 3)
           : see;
@@ -4378,6 +4394,18 @@ window.__RSB = {
       // measured standing time instead of one frame of a pass.
       const arrived = tgt.lapBest <= tgt.r || s.t - tgt.since > (opts.grace ?? 25);
       if (arrived && tgt.legT === 0) tgt.legT = s.t - (tgt.since ?? s.t);
+      // A leg that *arrives* after ten seconds is where the lap's clock actually goes, and the capture
+      // below cannot see it because it triggers on a miss. Same window, same columns, filed under its
+      // own name so a slow leg and a failed leg can never be read as each other. It is anchored to the
+      // frame `legT` is written: `arrived` stays true through the 1.5 s hold, so testing the live
+      // elapsed time instead let an 8.7 s leg cross the ten-second threshold at the end of its own stop
+      // and file itself as slow — the hold is not driving.
+      if (arrived && opts.traceAll && !tgt.slowTrail && tgt.legT >= 10) {
+        const legBack = Math.round(tgt.legT / 0.25);
+        tgt.slowTrail = s.dec.map(r => r.join(','));
+        tgt.slowXZ = s.trace.slice(Math.max(0, s.trace.length - legBack))
+          .filter((_, i) => i % 4 === 0);
+      }
       // A leg that ends on the clock instead of on the trigger circle needs its steering history in
       // the report, not only its closest approach: `pad:hub 12.8m aimed` says the road stopped short
       // but not whether the planner was blind, grinding against a wall, or re-routing. `s.samples`
@@ -4502,6 +4530,14 @@ window.__RSB = {
                      ? ` [t,x,z,dNow,parking,blind,lane,parkX,parkZ,stageX,stageZ,spd,gas,range,err] ` +
                        p.decTrails.map(tr => tr.join(' ; ')).join(' || ')
                      : '')),
+              // `slow` is the same window for the legs that *arrived* late. `abandon` cannot answer
+              // where the lap's clock went when the answer is "nowhere, it just took 14 s to get
+              // there", and at 300 s for 47 waypoints that tail of ten-seconds-per-leg is what keeps
+              // the last two street nodes out of the coverage count.
+              slow: s.spots.filter(p => p.slowTrail)
+                .map(p => `${p.name} ${p.legT.toFixed(1)}s @${p.x},${p.z} r${p.r} xz ${JSON.stringify(p.slowXZ || [])}` +
+                  ` [t,x,z,dNow,parking,blind,lane,parkX,parkZ,stageX,stageZ,spd,gas,range,err] ` +
+                  p.slowTrail.join(' ; ')),
                // The clock ledger, in the order the tour drove it: seconds spent on each leg, then the
                // share of that leg the parking controller held, then how many frames the handover fired
                // outside the clean circle. A coverage miss with no clock against it is only half a
@@ -4517,7 +4553,8 @@ window.__RSB = {
                    // stance stands off the pad centre (the last one found). Together they say whether
                    // the hand-over was reached and whether `near` could ever have permitted it.
                    (p.stageBest === undefined ? '' : 'g' + p.stageBest.toFixed(1)) +
-                   (p.stageD === undefined ? '' : 's' + p.stageD.toFixed(1)) : ''}`).join(' '),
+                   (p.stageD === undefined ? '' : 's' + p.stageD.toFixed(1)) +
+                   (p.stageFlip ? 'f' + p.stageFlip : '') : ''}`).join(' '),
                // [t,x,z,dNow,parking,blind,lane,parkX,parkZ,stageX,stageZ,speed,gas,range,aimErr] every
                // other frame for the 4 s before each rescue. Only filled on a leg run (`traceAll`),
                // which is the only run that asks the question.

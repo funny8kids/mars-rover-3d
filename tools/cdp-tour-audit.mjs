@@ -156,7 +156,15 @@ const CENSUS = `(async()=>{
 })()`;
 let report = null, calls = 0;
 const fpsAt = [];
-for (let t = 0; t < SECONDS + CHUNK; t += CHUNK) {
+// The loop counts the simulation's clock, not the number of CDP calls. A chunk delivers at most
+// `CHUNK` of sim and *less* when the frame rate cannot pay for it inside one call: measured
+// 2026-09-27 on the same build, chunks fell 60/60/60/60/45/15 at 103→74 fps and 60/60/45/45/45/30 at
+// 82→61 fps. Six calls therefore stopped the second tour at 285 s and it printed `streets 21/24` for
+// a map that had just covered 23/24 — a ruler that stops short cannot judge a bar written in seconds.
+// The cap keeps a sim that genuinely cannot advance from spinning forever.
+const CALL_CAP = Math.ceil(SECONDS / CHUNK * 3) + 1;
+for (; calls < CALL_CAP; calls++) {
+  const lastT = report ? report.simSeconds : -1;
   // `keepPower` is not a way of hiding a failure: the run that produced the first FAIL here logged
   // six `teleported … batt0.38`, and those are the game's *designed* dead-battery recovery warp
   // (main.js teleports to hub when the cell empties), not a stuck-glitch escape hatch. The bar asks
@@ -178,7 +186,6 @@ for (let t = 0; t < SECONDS + CHUNK; t += CHUNK) {
   if (LEG.at) opts.at = LEG.at;
   if (grace) opts.grace = Number(grace);
   report = JSON.parse(await evaluate(CHUNK_CALL(JSON.stringify(opts))));
-  calls++;
   // The frequency has to be caught *inside* the render window, not after it: `scaling_cur_freq` is a
   // live reading, and in the gap between the window closing and the next evaluate the browser's main
   // thread is parked, so the peak would be sampled at an idle clock. Polled at 200 ms and reduced to
@@ -207,11 +214,17 @@ for (let t = 0; t < SECONDS + CHUNK; t += CHUNK) {
   const cen = JSON.parse(await evaluate(CENSUS));
   const st = cen.storm ? `${cen.storm.phase}:${Math.round(cen.storm.intensity * 100)}%` : 'none';
   fpsAt.push({ at: report.simSeconds, x: pos[0], z: pos[1], yawDeg: pose[3], fps, rescue, ...cen, ...e });
-  console.log(`chunk ${calls} sim=${report.simSeconds}s m=${report.metres} wp=${report.coverage.driven}/${report.coverage.of}` +
+  console.log(`chunk ${calls + 1} sim=${report.simSeconds}s m=${report.metres} wp=${report.coverage.driven}/${report.coverage.of}` +
     ` fps=${fps} buf=${cen.buf} draws=${cen.draws} tris=${cen.tris} storm=${st} ${envText(e)}` +
     ` pos=${pos[0]},${pos[1]} stuck=${report.stuckPockets} pen=${report.clip.bodyPenMax}` +
     ` sink=${report.clip.sinkMax} rescues=${report.rescues}${rescue ? ' ' + rescue : ''}`);
   if (report.done) break;
+  if (report.simSeconds <= lastT) {
+    // A call that advanced nothing means the sim is not coming back, and looping on it would hang the
+    // audit rather than report it. Say which of the two the run stopped as.
+    console.log(`! chunk ${calls + 1} advanced 0 s of sim at ${report.simSeconds}s — stopping the loop`);
+    break;
+  }
 }
 
 const c = report.coverage;

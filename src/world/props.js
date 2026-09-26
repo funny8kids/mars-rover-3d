@@ -1488,7 +1488,17 @@ export async function buildBase(scene, quality) {
       // the machines means the search sees the plaza the rover sees, and `MOUTH_GAP` means it will not
       // settle for a beat that leaves the hull no daylight.
       kMouth('barrel', hx - 6, hz + 6, 0.4);
-      kMouth('barrel', hx + 7, hz - 5, 1.2);
+      // The east barrel draws a 0.70 × 0.61 m octagonal drum (barrel.glb's 0.20 × 0.174 template
+      // at the diorama scale 3.5), but its collision used to come out of the face sweep as emitted
+      // pins — the census measured the named one at r 0.29, a needle inside its own drum whose
+      // corners stood uncovered (only face midpoints are sampled, and the band starts at ride
+      // height 0.46 of a 0.88 m barrel). Same fix as the utility speeder's `measuredSlot` + `lot`
+      // pair below (props.js:2327): write the measured rect at the stance the siting pass walked —
+      // which already tested this full rect against every standing disc for MOUTH_GAP daylight
+      // (props.js:929) — and the emitter leaves the now-shielded faces alone (props.js:3289).
+      const [bbx, bbz] = kMouth('barrel', hx + 7, hz - 5, 1.2);
+      const [bbw, bbd] = measuredSlot('barrel', S);
+      lot('barrel-east', bbx, bbz, bbw, bbd, 1.2);
       putMouth('astronaut', hx + 3, hz + 6, 1, 2.4, -0.02);   // the Blender EMU: 1.85 m, real metres
     }
     infoZones.push({

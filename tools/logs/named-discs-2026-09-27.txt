@@ -1,0 +1,82 @@
+READY http://127.0.0.1:5173/qa_boot.html?auto=std&v=named1
+"{
+ "total": 694,
+ "barrel": [
+  {
+   "name": "hub:barrel-east",
+   "x": 7,
+   "z": -5,
+   "r": 0.463,
+   "zone": "hub",
+   "lot": true
+  },
+  {
+   "name": "hub:barrel@-0.9,-2.6#0",
+   "x": -0.9,
+   "z": -2.6,
+   "r": 0.31,
+   "zone": "hub",
+   "lot": true
+  },
+  {
+   "name": "storm:barrel@-51.0,4.0#0",
+   "x": -51,
+   "z": 4,
+   "r": 0.31,
+   "zone": "storm",
+   "lot": true
+  },
+  {
+   "name": "storm:barrel@-49.0,1.0#0",
+   "x": -49,
+   "z": 1,
+   "r": 0.31,
+   "zone": "storm",
+   "lot": true
+  }
+ ],
+ "pad0": [
+  {
+   "name": "hub:pad0#0",
+   "x": -3.91,
+   "z": 8.65,
+   "r": 0.43,
+   "zone": "hub",
+   "lot": true
+  },
+  {
+   "name": "hub:pad0#1",
+   "x": -9.39,
+   "z": 8.45,
+   "r": 0.13,
+   "zone": "hub",
+   "lot": true
+  },
+  {
+   "name": "hub:pad0#2",
+   "x": -6.77,
+   "z": 12.98,
+   "r": 0.13,
+   "zone": "hub",
+   "lot": true
+  }
+ ],
+ "lampRing": [
+  {
+   "name": "hub:lamp-ring-1",
+   "x": 2.37,
+   "z": 6.7,
+   "r": 0.535,
+   "zone": "hub",
+   "lot": true
+  },
+  {
+   "name": "hub:lamp-ring-3",
+   "x": -6.83,
+   "z": 0.67,
+   "r": 0.535,
+   "zone": "hub",
+   "lot": true
+  }
+ ]
+}"

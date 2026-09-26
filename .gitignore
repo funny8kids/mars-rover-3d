@@ -2,6 +2,12 @@ node_modules/
 dist/
 shots/
 *.log
+# `*.log` above silently swallowed the other direction too: src/*.js comments cite
+# tools/logs/tour-*.log as the evidence for the numbers they state, and the ignore rule meant a
+# fresh checkout had no such file — the citation was checkable only on the machine that measured it.
+# The evidence directory is exactly the place where a log IS the deliverable, so it is un-ignored by
+# name; stray logs anywhere else stay ignored.
+!tools/logs/*.log
 .DS_Store
 Thumbs.db
 .vscode/

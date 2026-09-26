@@ -294,11 +294,95 @@ def tube_simple(name, r1, r2, d, loc, m, rot=(0, 0, 0), verts=20, par=None, br=0
 cone = tube_simple
 
 
+def canon_polys(o):
+    """Reorder a mesh's polygons into an order that depends only on their
+    geometry, so two rebuilds of the same numbers stop disagreeing about the
+    index buffer. What it does not pin is named below — that claim is bounded
+    on purpose, because the sentence this one replaces ("cannot come out
+    differently") was measured false on the day it was written.
+
+    Why this exists: `bpy.ops.mesh.primitive_uv_sphere_add` does not emit its
+    face list in a repeatable order. Measured 2026-09-27 on this box
+    (/snap/bin/blender, 5.2.2 LTS) — see tools/logs/repro-uv-sphere-2026-09-27.log:
+    two creations with the same arguments gave the same 114 vertices in the
+    same order and the same 126 faces as a multiset, but the faces come out
+    shuffled every call; five consecutive calls in ONE process gave 5 distinct
+    orders in the 14x9 minimal repro, and 4 then 5 in the 20x12 profile. Every
+    other primitive the builders use (ico sphere, torus, cylinder, cone, cube,
+    plane) was order-stable across the same test, and `bmesh.ops.create_uvsphere`
+    shuffles too, so it is the UV-sphere polygon emission itself, not the
+    operator wrapper.
+
+    What that costs a build: the glTF exporter writes the index buffer in face
+    order, so every asset containing a `ball()` re-exports with permuted triangle
+    indices, and the loop-ordered TEXCOORD_0 array with them. Measured the same
+    day on the unchanged launch_tower script: two builds, same 4 710 656 bytes,
+    differing in 10 593 index bytes plus 98 UV bytes, rc=0 both times — so two
+    builds of one source were not comparable and no re-run was evidence of
+    anything. With this function applied the index bytes come out identical and
+    66 UV bytes of <=4 ULP drift remain; that residue is
+    `bmesh.ops.bevel(clamp_overlap=True)` interpolating in loop order, which
+    canon_polys cannot pin and no builder-side fix is claimed for.
+
+    An earlier figure here ("22 441 bytes across 222 runs") is gone rather than
+    softened: it compared the shipped launch_tower.glb to a rebuild, and the log
+    section 3 shows that shipped asset is stale by *content* against the current
+    script (129 456 verts vs 129 450, different JSON), so the number mixed two
+    causes and cannot be re-derived.
+
+    Order is keyed on the face's own rounded centroid, vertex count, material
+    slot and vertex coords, so it is a function of the numbers only; winding,
+    coordinates, UV values, smooth flags and slots are carried over verbatim.
+    Runs at creation time, before smooth_angle() bakes custom normals onto the
+    joined mesh, so there is no per-loop normal state to lose.
+    """
+    me = o.data
+    co = [tuple(v.co) for v in me.vertices]
+    uvsrc = me.uv_layers.active.data if me.uv_layers else None
+    rows = []
+    for p in me.polygons:
+        loops = [tuple(uvsrc[l].uv) for l in
+                 range(p.loop_start, p.loop_start + p.loop_total)] if uvsrc else None
+        vs = tuple(p.vertices)
+        n = len(vs)
+        key = (round(sum(co[v][0] for v in vs) / n, 6),
+               round(sum(co[v][1] for v in vs) / n, 6),
+               round(sum(co[v][2] for v in vs) / n, 6),
+               n, p.material_index,
+               tuple(tuple(round(c, 6) for c in co[v]) for v in vs))
+        rows.append((key, p.use_smooth, p.material_index, vs, loops))
+    rows.sort(key=lambda r: r[0])
+    old_name = me.name
+    new = bpy.data.meshes.new(old_name + "~canon")
+    new.from_pydata(co, [], [r[3] for r in rows])
+    new.update()
+    for m in me.materials:
+        new.materials.append(m)
+    for i, p in enumerate(new.polygons):
+        p.use_smooth = rows[i][1]
+        if p.material_index != rows[i][2]:
+            p.material_index = rows[i][2]
+    if rows[0][4] is not None:
+        nl = new.uv_layers.new(name=me.uv_layers.active.name)
+        li = 0
+        for row in rows:
+            for uv in row[4]:
+                nl.data[li].uv = uv
+                li += 1
+    o.data = new
+    bpy.data.meshes.remove(me)
+    # the data-block keeps its original name, so a mesh that later becomes the
+    # join's first object still names its glTF mesh the same thing it did before
+    new.name = old_name
+    return o
+
+
 def ball(name, r, loc, m, segs=20, par=None):
     bpy.ops.mesh.primitive_uv_sphere_add(radius=r, location=loc, segments=segs,
                                          ring_count=segs // 2 + 2)
     o = act(bpy.context.object)
     o.name = name
+    canon_polys(o)
     bpy.ops.object.shade_smooth()
     o.data.materials.append(m)
     parent(o, par)

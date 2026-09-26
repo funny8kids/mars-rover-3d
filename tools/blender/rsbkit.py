@@ -7,7 +7,7 @@
 # cylinder), so a part cannot be off-surface unless its radius is wrong.
 #
 # Import from a builder:  from rsbkit import *
-import bpy, bmesh, math, os
+import bpy, bmesh, math, os, time
 from mathutils import Vector
 
 TAU = math.tau
@@ -374,14 +374,52 @@ def purge():
 
 
 def export(root, fname):
+    # Exit-code contract (audit 2026-09-26, task #95/4): this is the export path for every
+    # single-asset builder in the kit, and it had three ways to fail while leaving
+    # `blender --background` at rc=0 — which is indistinguishable from a green build:
+    #   1. the gltf operator raises (measured: a read-only OUT makes it die in
+    #      io_scene_gltf2/io/exp/export.py:85 on `open(path,"wb")` with PermissionError;
+    #      blender prints the traceback and still quits 0, no EXPORTED line),
+    #   2. it returns something other than {'FINISHED'},
+    #   3. it leaves a missing, empty or stale file on disk (a leftover from an earlier run).
+    # All three now land in one named line and exit non-zero by hand, in the same shape as
+    # BASE_V2_* and RIMROCK_*:
+    #   RSBKIT_EXPORT_FAILED   asset=<fname> exporter_rc=<rc> reason=<raised|missing|empty|
+    #                          stale> file=<path> bytes=<n> fresh=<bool>
+    path = os.path.join(OUT, fname)
+    # Two seconds of slack: some filesystems stamp mtimes to the whole second.
+    t_start = time.time() - 2.0
     bpy.ops.object.select_all(action='DESELECT')
     root.select_set(True)
     for o in root.children_recursive:
         if o.type in {'MESH', 'EMPTY'}:
             o.select_set(True)
-    bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, fname), export_format='GLB',
-                              use_selection=True, export_yup=True, export_apply=True)
-    print("EXPORTED", fname, os.path.getsize(os.path.join(OUT, fname)))
+    rc, reason = None, ""
+    try:
+        rc = bpy.ops.export_scene.gltf(filepath=path, export_format='GLB',
+                                       use_selection=True, export_yup=True, export_apply=True)
+    except BaseException as e:
+        # Measured on 5.2.2 LTS: an unwritable target does NOT return {'CANCELLED'} — the
+        # exporter raises, and bpy wraps the whole addon traceback in one RuntimeError whose
+        # last line is a useless "Location: rsbkit.py". The real cause is the line above it.
+        msg = str(e)
+        lines = [l for l in msg.splitlines() if l.strip() and not l.startswith("Location:")]
+        reason = "raised %s: %s" % (type(e).__name__, lines[-1].strip() if lines else msg[:200])
+    size, fresh = -1, False
+    if not reason:
+        try:
+            size = os.path.getsize(path)
+            fresh = os.path.getmtime(path) >= t_start
+        except OSError:
+            reason = "missing"
+    if reason or rc != {'FINISHED'} or size <= 0 or not fresh:
+        if not reason:
+            reason = "empty" if size <= 0 else "stale"
+        print("RSBKIT_EXPORT_FAILED asset=%s exporter_rc=%s reason=%s file=%s bytes=%d fresh=%s"
+              % (fname, sorted(rc) if isinstance(rc, (set, frozenset)) else rc,
+                 reason, path, size, fresh))
+        raise SystemExit(1)
+    print("EXPORTED", fname, size)
 
 
 # ────────────────────── surface-conforming detail ──────────────────────

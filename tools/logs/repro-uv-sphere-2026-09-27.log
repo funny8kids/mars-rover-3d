@@ -1,0 +1,122 @@
+tools/logs/repro-uv-sphere-2026-09-27.log
+================================================================================
+Evidence for the canon_polys() comment in tools/blender/build_base_v2.py and
+for the rebuild-parity test that was queue #95 item "Blender 构建脚本复现性清零".
+All numbers below were produced on THIS box by the commands echoed in this
+file, 2026-09-27, in /tmp scratch copies only (repo public/ never written).
+
+Machine/toolchain:
+  blender = /snap/bin/blender -> Blender 5.2.2 LTS
+            (hash d13f752e3b9c, build 2026-09-15 01:34:58)
+  python  = system python3 running tools/glb_repro_pair.py
+
+--------------------------------------------------------------------------------
+1. MECHANISM: primitive_uv_sphere_add shuffles its face order per call.
+--------------------------------------------------------------------------------
+Probe: 5 consecutive bpy.ops.mesh.primitive_uv_sphere_add(radius=1, loc=origin)
+calls in ONE `blender --background --python` process; per call we hash
+(a) vertex coords in vertex order, (b) polygon vertex-indices in polygon order,
+(c) the polygon list as a sorted multiset.
+
+segments=14 ring_count=9   -> verts=114 faces=126   (the minimal repro quoted
+  in the comment) face-order hashes over 5 calls:
+    ed3695e7f3a77ecc a33708822030f706 26781a4d9d8581cb e92ff2e20c1d6fe8
+    11cebe858f126118                          -> 5 distinct orders / 5 calls
+segments=20 ring_count=12  (the ball() default profile) verts=222 faces=240:
+  first run: 4 distinct orders / 5 calls, second run: 5 / 5
+  (66c659d00a02891d b26f658eb37f4cd2 3e96979289320867 3e96979289320867
+   18770e3e6e81bcd8)
+In every case: vertex coords identical in vertex order, and the face multiset
+identical; ONLY the emission order of the polygons moves.
+
+Same test, 5 calls each, order-STABLE (1 distinct order / 5):
+  primitive_ico_sphere_add(subdivisions=2)  8309d39b935cd8c8 x5
+  primitive_torus_add(32x8)                 b09c7afc029757db x5
+  primitive_cylinder_add(20)                6e9b005281930af2 x5
+  primitive_cone_add(20)                    6e9b005281930af2 x5
+  primitive_cube_add(size=2)                e1d691c918ec5ccb x5
+  primitive_plane_add(size=2)               5a3e8669f334916f x5
+
+bmesh.ops.create_uvsphere(u_segments=20, v_segments=12) shuffles too:
+  5 calls -> 5 distinct polygon orders. So it is the UV-sphere polygon
+  emission itself, not the operator wrapper.
+
+Repro:  blender --background --python <probe with the loops above>
+(the probe scripts live in /tmp/rsb95/uv_repro*.py of the measuring session;
+ the exact call parameters are stated inline and are deterministic to rerun).
+
+--------------------------------------------------------------------------------
+2. PARITY: launch_tower built TWICE at HEAD vs TWICE with canon_polys().
+--------------------------------------------------------------------------------
+Command shape (run from the repo root; asset arg must be the builder's real
+stage path, build_base_v2 exports to OUT=/tmp/rsb_stage3, not public/):
+
+  python3 tools/glb_repro_pair.py /tmp/rsb_stage3/launch_tower.glb -- \
+      blender --background --python <copy>/tools/blender/build_base_v2.py -- launch_tower
+
+<copy> = /tmp/rsb95/head (git archive of HEAD tools/blender) and
+         /tmp/rsb95/work (working tree incl. canon_polys). rc per run = 0.
+
+AT HEAD (canon_polys absent) — two builds of the SAME script byte-DIFFER:
+  run1 4710656 B sha256 a42df235ec0557e6cc6ed5034c3f9af25e735bbd2e08e1626ed268d391bf1855
+  run2 4710656 B sha256 f0a939e414b70398c0ffb1e1ecb45dd84426e2bf3746a37cf1a9d49bb6171765
+  JSON chunk equal; differing bytes: SCALAR/ELEMENT_BUFFER (triangle indices)
+  10593 + VEC2 TEXCOORD 98 (<=4 ULP).  -> REPRO_PAIR_INDEX_DRIFT, pair rc=1
+
+WITH canon_polys APPLIED — index drift GONE, but still not byte-identical:
+  run1 4710656 B sha256 982febb45123f918e28b40001e9b8a62cf2e3bfbfef0d89e4905fd62ddd7a185
+  run2 4710656 B sha256 05f1ebcaabc242c34e988854b7ae5aa425c7ddd1f853c9df00bafd9383671306
+  JSON equal; differing bytes: VEC2 TEXCOORD only, 66 (<=4 ULP), indices
+  byte-identical.  -> REPRO_PAIR_FLOAT_DRIFT, pair rc=3
+  The residual is the bmesh.ops.bevel(clamp_overlap=True) UV-interpolation
+  order documented in tools/glb_repro_pair.py header; canon_polys cannot pin
+  it and no builder-side fix for it is claimed.
+
+--------------------------------------------------------------------------------
+3. GEOMETRY: canon_polys moves buffer bytes only, not the shape.
+--------------------------------------------------------------------------------
+head run1.glb vs canon run1.glb: JSON chunks byte-EQUAL; only SCALAR index
+accessors (29508 B) and VEC2 TEXCOORD (248 B) differ; POSITION and NORMAL
+accessors byte-identical; winding preserved (canon sorts whole vertex-index
+tuples verbatim).
+
+head/canon rebuilds vs the IN-REPO public/assets/launch_tower.glb (4710836 B):
+  shipped: tris=91636 verts=129456 JSON sha dd67fdd6341077e5
+  rebuild: tris=91636 verts=129450 JSON sha 9ed4b35801769fef
+  POSITION bbox identical: min [-10.81873,-2.535,-3.135] max [9.9,51.82,3.8]
+  (exporter y-up space). The shipped asset therefore predates the current
+  script by a real content delta (6 verts, different JSON) that is present in
+  BOTH HEAD rebuilds and is NOT caused by canon_polys. A regenerated
+  launch_tower.glb is needed either way; with canon_polys the regeneration is
+  at least reproducible up to the 66-byte UV float drift.
+
+--------------------------------------------------------------------------------
+4. RSBKIT EXPORT rc CONTRACT — the four failure polarities, measured.
+--------------------------------------------------------------------------------
+Builders ran from /tmp copies so rsbkit.OUT pointed at /tmp/rsb95/*/public/assets.
+  control   blender --background --python work/.../build_crate.py
+            -> "EXPORTED drum_crate.glb 1883108", rc=0
+  raised    rsbkit.OUT -> dir chmod 500: exporter raises PermissionError from
+            io_scene_gltf2/io/exp/export.py:85 (`file = open(...,"wb")`),
+            caught by export():
+            RSBKIT_EXPORT_FAILED asset=raised.glb exporter_rc=None
+            reason=raised RuntimeError: PermissionError: [Errno 13] ...
+            bytes=-1 fresh=False   -> rc=1
+  stale     pre-existing 143 B file, mtime set 120 s back, gltf op monkey-
+            patched to return {'FINISHED'} without writing:
+            RSBKIT_EXPORT_FAILED asset=probe.glb exporter_rc=['FINISHED']
+            reason=stale bytes=143 fresh=False              -> rc=1
+  missing   same no-op exporter, no file planted:
+            ... reason=missing bytes=-1 fresh=False          -> rc=1
+  empty     same no-op exporter, 0-byte file planted:
+            ... reason=empty bytes=0 fresh=True              -> rc=1
+(Without the fix every one of the four RED cases left rc=0 with either a
+ silent pass or a bare traceback.)
+
+Note on one figure quoted in the canon_polys comment that this file does NOT
+back: "22 441 bytes across 222 buffer runs" is the earlier session's campaign
+and could not be re-derived on 2026-09-27, because the shipped asset is stale
+by content (section 3), not only by buffer order. The same failure class is
+reproduced above at the same order of magnitude: two HEAD runs of the same
+script differ by 10 593 index bytes + 98 UV bytes, and a HEAD rebuild differs
+from the shipped asset's buffers at SCALAR/TEXCOORD level only in order.

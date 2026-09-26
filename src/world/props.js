@@ -1740,6 +1740,11 @@ export async function buildBase(scene, quality) {
     ship.position.set(px, py + 2.9, pz);
     ship.add(stack);
     const RING_HUES = [0x3fd9ff, 0xff8a3c, 0xa05cff, 0x3fffc9, 0xff4d6d, 0xffd166];
+    // RETAINED RUNTIME PRIMITIVE — the light-show stripes, not hull hardware: a 100 mm emissive bead
+    // whose tube just meets the r 5.1 barrel (major r = SHIP_R + 0.1), invisible outside the show until
+    // `lightRings` flips visibility, strobed through its own cloned material, and parented by
+    // `y < STAGE_H` to whichever stage body separates at staging — no ring baked into the single
+    // starship_stack mesh could ride that split.
     const ringGeo = new THREE.TorusGeometry(SHIP_R + 0.1, 0.1, 6, 40);
     for (const [i, f] of [0.05, 0.18, 0.33, 0.5, 0.68, 0.88].entries()) {
       const y = f * SHIP_H;
@@ -3060,6 +3065,10 @@ export async function buildBase(scene, quality) {
       }
 
       const coreMat = new THREE.MeshStandardMaterial({ color: 0x101a1f, emissive: 0x4fe2ff, emissiveIntensity: 0, roughness: 0.2, metalness: 0.1 });
+      // RETAINED RUNTIME PRIMITIVE — the grid readout, not a fitting: main.js's tick spins this rotor
+      // at `dt*(0.4 + power*2.6)` and scales emissive 0.10→2.1×nightF per frame (both drop as the film
+      // coats it), and a regular octahedron is already the exact silhouette of a faceted crystal —
+      // ⌀1.24 m of eight flat faces — so a Blender pass would model nothing the drive is not saying.
       const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.62, 0), coreMat);
       core.position.y = 5.85; core.castShadow = true; noMerge(core); rig.add(core);
       const plateMat = new THREE.MeshBasicMaterial({ color: 0x4fe2ff, transparent: true, opacity: 0, alphaMap: lightPool(), blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });

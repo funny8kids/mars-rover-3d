@@ -257,6 +257,23 @@ node tools/cdp-run.mjs "…qa_boot.html?auto=std&audstate=hud" tools/lh-sweep-pr
 
 ---
 
+## 源码级闸门（会拒绝执行的那两道）
+
+仓库没有 CI，`.git/hooks` 里只有 `post-checkout` 与 `post-commit`（钩子不进仓库，换台机器就不存在），
+所以判据不能只印在自己的 stdout 上等有人去看——它必须坐在**执行写入的那条命令**上。写入口只有一个：
+`bash tools/sync_dist.sh`，它把 `index.html` / `src` / `vendor` / `public/assets`（排除 `web` 源库）同步进
+发布用的 `dist/`。两道闸跑在同一条命令里，红了就 `exit 1` 且不碰 `dist/`：
+
+- `node tools/primitive_census.mjs --check` —— 【B】1「不许再用手绘图元堆场景」的普查。口径：`src/**/*.js`
+  里每一条仍在执行的 `new THREE.<X>Geometry(` 调用，要么在调用上方带上 `RETAINED RUNTIME PRIMITIVE` 并把
+  理由写在自己身上（048f582 定的规则：例外要落在现场），要么挂在工具内一张写明票号的豁免上；两者皆无即
+  UNMARKED（`CHECK_RC=1`）。豁免反向也有闸：被豁免的那一处若已消失或已经补上标记，即豁免过期（`CHECK_RC=2`）。
+  四道对照（绿跑真写入 / 抹标记必红且不写产物 / 给挂票处补标记必判过期 / 注释里引用调用不得进分母而真调用必须进）
+  与逐条读数在 `tools/logs/primitive-census-2026-09-27.txt`；不符时以重跑该命令为准。
+- `node tools/audit_double_sided.mjs --check` —— `src/world/assets.js` 的 `SHEETS` 表（哪些 GLB 材质允许背面
+  剔除）必须还对着 `public/assets` 里逐网格量出来的边界边拓扑；表与新资产不一致即红。它原先只有一句写在
+  `assets.js` 注释里的「入库前记得跑」，现在有了同一个不记得也会停的落点。
+
 ## 实现备忘（三处非显然的设计）
 
 - **地形与物理同源**：`surfaceAt(x,z)` 在 250×250 段网格上做精确三角插值，地形网格、车辆物理、相机、碰撞体、传送、计时门全部读它，所以不会出现「视觉上在地面、物理上在地下」。基地「场平」按半径 +58 m、道路按半宽 4~5 倍缓坡过渡到 +1 m 基准，园区内的原始沙丘起伏再压向该基准（只保留 18%）——否则平地基准会落在低 45 m 的沙丘洼地里，任务路线上出现 75° 陡坎。陨石坑深度按 `min(depth, 0.13·r)` 收敛，因为碗壁最陡处在坑缘，深而小的坑会做成 35° 竖壁，车滑下去时姿态被 23° 限位钳住且爬不出来。

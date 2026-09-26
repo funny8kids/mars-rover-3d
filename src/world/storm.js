@@ -508,6 +508,11 @@ void main(){
   gl_FragColor = vec4(mix(mix(uTint, uGlow, lit), uFogCol, ext * 0.72), a);
 }`,
   });
+  // RETAINED RUNTIME PRIMITIVE — a sampling grid for a volume, not a surface: the 88 × 22 subdivisions
+  // exist so the vertex shader has vertices to tumble (the tumbling is positional, so a coarse quad
+  // would fold at the creases), the plane is `frustumCulled:false` because it has to stay drawn when the
+  // camera is *inside* its own bbox, and `renderOrder 4` puts it over the world it eats. The front of a
+  // dust storm has no silhouette to bake; it has an optical depth, and that is what this draws.
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(WALL_SPAN, WALL_TALL, 88, 22), mat);
   mesh.frustumCulled = false;
   mesh.renderOrder = 4;

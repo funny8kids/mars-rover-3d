@@ -19,6 +19,10 @@ export function createSkidMarks(scene) {
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;
 
+  // RETAINED RUNTIME PRIMITIVE — the island's paint layer, not an object: one quad flat over all 320 m
+  // of playable ground, `polygonOffset −4` under everything, `depthWrite:false`, `frustumCulled:false`,
+  // and its only content is the canvas the four wheels stamp into (re-uploaded every third frame,
+  // mipmaps off for the reason in the header). There is no silhouette to bake — the drawing is texture.
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(WORLD, WORLD).rotateX(-Math.PI / 2),
     new THREE.MeshBasicMaterial({

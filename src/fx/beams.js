@@ -20,6 +20,10 @@ import * as THREE from 'three';
 
 // One unit shaft: lens at local y = 0, far end at y = 1, radius 1 there and a twentieth of that at
 // the lens, so the caller scales it in metres. Open-ended — a capped cone would show its own lid.
+// RETAINED RUNTIME PRIMITIVE — a unit cone, not a part: the callers hand it metres (`scale.set` off each
+// flood lens' own bore) and the vertex shader does the shaping — grazing falloff at the silhouette,
+// brightening toward the lens, run-out instead of a cap — so there is no authored profile for a Blender
+// pass to supply, and every shaft in the base is posed off a lens position read out of a GLB node.
 export const UNIT_BEAM = new THREE.CylinderGeometry(1, 0.05, 1, 22, 14, true);
 UNIT_BEAM.translate(0, 0.5, 0);
 

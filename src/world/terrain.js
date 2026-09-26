@@ -790,6 +790,10 @@ const ROCKFACE = new THREE.Color(0.104, 0.088, 0.080);  // ledge dusted by the s
 
 export function createTerrain(scene) {
   const { size, seg } = TERRAIN;
+  // RETAINED RUNTIME PRIMITIVE — this is the planet, not a prop: `seg × seg` of lattice, displaced from
+  // the same analytic field `heightAt` reads and painted per vertex (the colours/decks/rocks/nodes
+  // arrays below), then re-surveyed once the site plan has cut every footing. A GLB cannot be the thing
+  // the whole base is seated on.
   const geo = new THREE.PlaneGeometry(size, size, seg, seg);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
@@ -1205,6 +1209,10 @@ export function createStones(scene, count = 3600) {
   // position, not by the loop index, so both detail levels carve the same stone at facet density
   // 80 and 20 — swapping them at a distance boundary changes the silhouette's smoothness only.
   const chip = detail => {
+    // RETAINED RUNTIME PRIMITIVE — a cut, not a model: the jitter is driven off each vertex's own
+    // position (`vnoise(x·2.7, z·2.7)`), so `chip(1)` and `chip(0)` carve the *same* stone at two facet
+    // densities and the 30 m LOD swap changes silhouette smoothness only. Two shipped rocks would be
+    // two silhouettes repeating across 3 600 instances, which is the tell this is built to avoid.
     const g = new THREE.IcosahedronGeometry(1, detail);
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {

@@ -41,6 +41,8 @@ export class ParticlePool {
     const pos = new Float32Array(count * 3);
     const life = new Float32Array(count).fill(1);
     const size = new Float32Array(count);
+    // RETAINED RUNTIME PRIMITIVE — an attribute carrier, not a shape: no faces at all, just `position`
+    // +`aLife`+`aSize` written by the pool every frame and drawn as points by the vertex shader.
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('aLife', new THREE.BufferAttribute(life, 1));

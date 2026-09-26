@@ -76,6 +76,10 @@ function veilGeometry(groundAt, radius, tall) {
       idx[o++] = a; idx[o++] = c; idx[o++] = d;
     }
   }
+  // RETAINED RUNTIME PRIMITIVE — a lofted curtain, not a prop: 257 columns × 13 rows, each column seated
+  // on `groundAt(x, z)` of the rim it wraps and sunk SINK 1.9 m under its own ground line to hide the
+  // 0.74 m chord between lattice samples. The shape is a function of the finished terrain, so an asset
+  // would be a ring that floats where the dune moved.
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));

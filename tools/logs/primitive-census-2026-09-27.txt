@@ -1,0 +1,83 @@
+RED STARBASE —— 【B】1 手绘图元普查（primitive census）取证
+生成时间：2026-09-27T06:20:09+08:00
+
+口径：src/**/*.js 里每一条仍在执行（非注释行）的 new THREE.<X>Geometry( 调用，逐条判它有没有
+把「为什么不换 Blender/GLB」写在自己身上（调用上方 10 行内的 RETAINED RUNTIME PRIMITIVE 标记），
+或者挂着一张还没兑的票（工具内的 EXEMPT 表）。两种都不满足即 UNMARKED，--check 为此返回 1；
+已挂票的那一条若反过来被标记了或已消失，即豁免过期，返回 2。
+
+命令：
+  node tools/primitive_census.mjs --check      # stderr 打印 CHECK_RC，退出码即判据
+  bash tools/sync_dist.sh                      # 消费它的写侧：红了就不写 dist/
+
+以下为整跑读数（stdout + stderr 合并）：
+primitive census — 2026-09-27 — /home/dominic-jamil/GIthub_Code/mars-rover-3d
+command: node tools/primitive_census.mjs --check   (its exit code is not in this file; the run that produced these lines printed CHECK_RC on stderr)
+
+total live hand-built geometry call sites: 28
+  marked   23
+  exempt   5   (#105, #101, #104)
+  UNMARKED 0
+
+per file (call sites):
+   16  src/world/props.js
+    2  src/main.js
+    2  src/world/terrain.js
+    1  src/fx/beams.js
+    1  src/fx/particles.js
+    1  src/fx/plume.js
+    1  src/fx/skids.js
+    1  src/fx/staging.js
+    1  src/world/rim_veil.js
+    1  src/world/sky.js
+    1  src/world/storm.js
+
+exempt:
+  src/main.js:404 TorusGeometry  → the race-gate rings [#105] after #75 releases src/main.js
+  src/main.js:1464 TorusGeometry  → shockWave, one ring per event [#105] after #75 releases src/main.js
+  src/world/props.js:1309 PlaneGeometry  → the plaza flag cloth [#101] #101 (a Blender cloth asset, not an excuse)
+  src/world/props.js:2038 CylinderGeometry  → the five light-show searchlights [#104] #104 (move them onto fx/beams.js; needs main.js:2280 off `.opacity`)
+  src/world/sky.js:207 SphereGeometry  → the sky dome volume [#105] after #75 releases src/world/sky.js
+
+marked (the exception written on the thing it excuses):
+  src/fx/beams.js:27 CylinderGeometry
+  src/fx/particles.js:46 BufferGeometry
+  src/fx/plume.js:30 CylinderGeometry
+  src/fx/skids.js:27 PlaneGeometry
+  src/fx/staging.js:35 TorusGeometry
+  src/world/props.js:476 CircleGeometry
+  src/world/props.js:604 IcosahedronGeometry
+  src/world/props.js:645 CylinderGeometry
+  src/world/props.js:1189 CircleGeometry
+  src/world/props.js:1246 PlaneGeometry
+  src/world/props.js:1755 RingGeometry
+  src/world/props.js:1775 CylinderGeometry
+  src/world/props.js:1851 TorusGeometry
+  src/world/props.js:2022 TorusGeometry
+  src/world/props.js:2545 PlaneGeometry
+  src/world/props.js:2736 BufferGeometry
+  src/world/props.js:2801 RingGeometry
+  src/world/props.js:3193 OctahedronGeometry
+  src/world/props.js:3202 CircleGeometry
+  src/world/rim_veil.js:83 BufferGeometry
+  src/world/storm.js:516 PlaneGeometry
+  src/world/terrain.js:797 PlaneGeometry
+  src/world/terrain.js:1216 IcosahedronGeometry
+
+stale exemptions: 0
+
+VERDICT PASS
+CHECK_RC=0
+对照矩阵（同一跑，生成时间 2026-09-27T06:20:40+08:00）
+
+C1 绿跑（未改动）: CENSUS_RC=0 DS_RC=0
+   SYNC_RC=0, 写入目标文件数=520, 含 web 源库=NO
+C2 抹掉一条 RETAINED 标记 → 必须红且不写产物
+   CENSUS_RC=1 SYNC_RC=1 拒绝语=1 目标文件数=0 还原=一致
+C3 给已挂票（#104）的调用补上标记 → 豁免必须过期
+   CHECK_RC=2（期望 2）1 stale exemption 还原=一致
+C4 分母口径：注释里引用一条调用不得进分母、真调用必须进
+   基线=28 加注释后=28（期望 28）加真调用后=29（期望 29）还原=一致
+
+C5 四道对照跑完、两份源文件还原后的终读：CHECK_RC=0（期望 0），git diff 对 beams.js/props.js 的行数=73
+（本文件里的每个数都由上面这四道对照当场产出；不符时以重跑为准：node tools/primitive_census.mjs --check）

@@ -22,6 +22,11 @@ import * as THREE from 'three';
 
 // One unit jet: mouth at local y = 0, tip at y = 1, radius 1 at the tip and a quarter of that at the
 // throat, so the caller scales it in metres. Open-ended — a capped cone would show its own lid.
+// RETAINED RUNTIME PRIMITIVE — a unit jet, not a part: posed off the engine bell it comes out of and
+// re-scaled in metres every frame — each shell's length is `r * (4.0 + 4.2 * power)` off the throttle
+// the guidance is already running — with the mouth-to-tip flare and the shock-disk ripple (`disk`, from
+// `uDisks`) both done in the shader. A baked nozzle mesh could not answer a throttle value, and this
+// one is driven by one.
 const UNIT_JET = new THREE.CylinderGeometry(1, 0.26, 1, 30, 26, true);
 UNIT_JET.translate(0, 0.5, 0);
 

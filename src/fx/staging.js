@@ -27,6 +27,11 @@ const TAU = Math.PI * 2;
 // independently. That decoupling is the point of the file — scaling a torus instead is exactly how the
 // ring it replaces ended up 9.87 m thick. The radii below are therefore not the shape of anything;
 // only the segment counts matter (160 around the vehicle, 14 around the band).
+// RETAINED RUNTIME PRIMITIVE — a parameter grid, not a shape: only its segment counts are used (160
+// around the vehicle, 14 around the band), because every vertex is re-derived from `uv` in the vertex
+// shader in metres. That is the whole point of the file — the collar's radius and its tube thickness
+// have to move independently, and scaling a torus is exactly how the ring this replaced fattened its
+// tube from 0.35 m to 9.87 m while it grew.
 const GRID = new THREE.TorusGeometry(1, 0.17, 14, 160);
 
 const NOISE = `

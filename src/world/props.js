@@ -469,6 +469,10 @@ export async function buildBase(scene, quality) {
   // band so the dark bowl in the middle still shows through.
   const PAD_MARKS = ['HUB 01', 'PAD ONE 02', 'SETTLE 03', 'INDUSTRY 04', 'COMMS 05', 'SCIENCE 06'];
   let padSeq = 0;
+  // RETAINED RUNTIME PRIMITIVE — paint, not a part: it is put on the pad's own asset (`tagScope` at the
+  // `teleport_pad` branch, props.js:411) as a flush decal — `rotation.x = -PI/2`, 366 mm above that
+  // asset's deck, `noMerge`, no collider, per-pad canvas drawn once at load — so a Blender pass would
+  // author a silhouette that does not exist; the only thing here to make is the stencil.
   const padMarkGeo = new THREE.CircleGeometry(2.52, 64);
   const padMarkMat = (label, seed) => {
     const cv = document.createElement('canvas');
@@ -592,6 +596,11 @@ export async function buildBase(scene, quality) {
   // mineral fractures into angular chips, and the pile buries the base of the growth. One wide flat
   // collar mesh was the first attempt and it read as a paper mat — the rubble has to be individual
   // stones, each half-sunk into whatever the surface is actually doing under it.
+  // RETAINED RUNTIME PRIMITIVE — scree, not a fitting: one icosahedron pushed out by its own
+  // vertex-position noise (below, once), then scattered by `scree()` — 16 chips per crystal, each at a
+  // random bearing and radius, each Y-scaled 0.6–1.1 and seated on `heightAt`, the analytic field that
+  // already knows every footing claimed up to this line. A shipped pile would be a fixed pile: it
+  // cannot answer a deck cut under it after the asset was authored.
   const chipGeo = new THREE.IcosahedronGeometry(1, 0);
   {
     const cp = chipGeo.attributes.position;
@@ -622,11 +631,16 @@ export async function buildBase(scene, quality) {
     }
     (parent || CUR).add(grp); return grp;
   };
-  const box = (w, h, d, mat, x, y, z, parent) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-    m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
-    (parent || CUR).add(tagScope(m)); return m;
-  };
+  // The cuboid emitter stood here until this pass. Its last callers were the fourteen duct sections that
+  // became `pipe_kit` (see the note at the feed runs), and nothing in the base calls it now — the count
+  // and the surviving cylinder emitter's single caller are recorded in
+  // tools/logs/primitive-census-2026-09-27.txt, not here, because a comment that spells the pattern it
+  // claims to count feeds the very search that checks it. Deleting it is what makes 【B】1's "no
+  // hand-drawn solids" claim a fact a search can check rather than a promise.
+  // RETAINED RUNTIME PRIMITIVE — the cylinder emitter has exactly one call site left, the beacon kit's
+  // load failure in `beaconAt`: a base whose night markers have gone dark is a safety regression, not a
+  // missing detail, so the fallback is a plain drum on purpose. Kept for that one caller, not as a way
+  // to build props.
   const cyl = (rt, rb, h, mat, x, y, z, seg = 18, parent) => {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
     m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
@@ -1169,6 +1183,9 @@ export async function buildBase(scene, quality) {
           transparent: true, depthWrite: false, roughness: 0.88, metalness: 0,
           polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
         });
+        // RETAINED RUNTIME PRIMITIVE — the deck's painted stamp: a level plate (rotation.x = −π/2) at
+        // the plaza lid + 0.196 m, polygonOffset −3, `noMerge`, no collider, whose entire content is the
+        // canvas ring and "H" — geometry the GLB of the paving underneath cannot carry.
         const disc = new THREE.Mesh(new THREE.CircleGeometry(3.48, 48), mark);
         disc.rotation.x = -Math.PI / 2;
         disc.position.set(hx, top + 0.196, hz);
@@ -1222,6 +1239,10 @@ export async function buildBase(scene, quality) {
           roughness: 0.52, metalness: 0.08, side: THREE.FrontSide,
         });
         for (const sgn of [-1, 1]) {
+          // RETAINED RUNTIME PRIMITIVE — the lettering, not the board: `spaceport_gate.glb` supplies the
+          // beam and both mounting faces, and this is the painted canvas that bolts to them (FrontSide,
+          // one per face so the name is never mirrored, emissive from the same texture at 0.42). Baking
+          // "RED STARBASE" into a mesh would put the text where the texture already is.
           const p = new THREE.Mesh(new THREE.PlaneGeometry(12.6, 1.86), face);
           p.position.set(gx, beamY + 1.4, gz + sgn * 1.34);
           p.rotation.y = sgn > 0 ? 0 : Math.PI;
@@ -1727,6 +1748,10 @@ export async function buildBase(scene, quality) {
       // `RingGeometry` fans out from +x toward +y in its own plane; tipping it by π/2 about x makes the
       // theta angle the world's atan2(z, x), which is the angle `a` is measured in throughout here.
       const band = (width, y, mat) => {
+        // RETAINED RUNTIME PRIMITIVE — a painted arc, 200 mm wide and 10 mm above the deck: the segment
+        // count is derived from the span it is handed (`segs` above, one per half metre of run), so the
+        // mesh is a function of where the lamp ring sits, not a shape; and being coplanar with the pad
+        // it has no profile, no interior and nothing to cast.
         const b = new THREE.Mesh(new THREE.RingGeometry(RING_R - width / 2, RING_R + width / 2, segs, 1, a0, span), mat);
         b.rotation.x = Math.PI / 2; b.position.set(px, y, pz); G.add(b);
       };
@@ -1743,6 +1768,9 @@ export async function buildBase(scene, quality) {
       // `CylinderGeometry` walks its angle as (sin θ, cos θ) while every bearing here is (cos a, sin a),
       // so the arc is handed over mirrored rather than by rotating the mesh — no constant `ry` fixes a
       // change of handedness. θ = π/2 − a, so a runs a0…a1 as θ runs π/2 − a1…π/2 − a0.
+      // RETAINED RUNTIME PRIMITIVE — a 60 mm kerb standing 40 mm proud of the deck, cut to an arc the
+      // siting pass only knows at run time (`segs` from the measured span, θ handed over mirrored so the
+      // bearing matches every other angle in this file). An asset could not be re-cut per site.
       const kerb = new THREE.Mesh(
         new THREE.CylinderGeometry(RING_R, RING_R, 0.060, segs, 1, true, Math.PI / 2 - a1, span), lensMat);
       kerb.position.set(px, py + 0.040, pz); G.add(kerb);
@@ -1987,6 +2015,10 @@ export async function buildBase(scene, quality) {
     putClear('drum_crate', px + 12, pz + 19, 0.7, 0.5, 'pad-drums');
 
     // pad wash ring for the light show — guaranteed in-frame from the trigger distance
+    // RETAINED RUNTIME PRIMITIVE — the pad's wash ring is a light, not hardware: 220 mm of tube at r 13.5
+    // lying under `lightRings` (visible = false until main.js's show flips it, strobed through its own
+    // clone of `shipLightRing`), so there is no surface here to bake — only a radius chosen to stay in
+    // frame from the trigger distance.
     const wash = new THREE.Mesh(new THREE.TorusGeometry(13.5, 0.22, 8, 56), M.shipLightRing.clone());
     wash.material.color.setHex(0x9ff0ff); wash.material.emissive.setHex(0x2fbfe0);
     wash.rotation.x = Math.PI / 2; wash.position.set(px, py + 0.5, pz); wash.visible = false; noMerge(wash); G.add(wash);
@@ -1997,6 +2029,12 @@ export async function buildBase(scene, quality) {
     showBeams.position.set(px, 0, pz);
     for (let i = 0; i < 5; i++) {
       const a = i / 5 * Math.PI * 2 + 0.6;
+      // NOT a retained primitive — the census names it as an offender (#104). This is the shape
+      // `fx/beams.js` was written to kill: a 12-segment open cone on a `MeshBasicMaterial` whose opacity
+      // is the only thing driven, so at 56 m it draws its own straight rim and, being DoubleSide and
+      // additive, stacks its two walls into a brighter seam down the middle. The five tap shafts got the
+      // shader version; these five did not, and the fix needs main.js's `showBeamMats` writes moved from
+      // `.opacity` to the material's `uLevel` uniform — which is in the file #75 has open.
       const bm = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 2.6, 56, 12, 1, true), new THREE.MeshBasicMaterial({
         color: [0x8fd4ff, 0xffb066, 0xc79cff, 0x8fffe0, 0xff9ab0][i], transparent: true, opacity: 0,
         blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
@@ -2501,6 +2539,9 @@ export async function buildBase(scene, quality) {
       map: screenTex, emissiveMap: screenTex, emissive: 0xffffff, emissiveIntensity: 1.05,
       roughness: 0.34, metalness: 0,
     });
+    // RETAINED RUNTIME PRIMITIVE — the display aperture; the full reason is on the texture it carries,
+    // above at `screenTex`. Named again here so the census (`tools/primitive_census.mjs`) can find it
+    // from the call, which is where the rule says the exception has to live.
     const screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.55), screenMat);
     // The bay's own coordinates, read off the builder: the aperture is cut at z = 2.69 m and its
     // floor left at Blender y = 0.02, which the Y-up export turns into app z = -0.02. The glass
@@ -2686,6 +2727,12 @@ export async function buildBase(scene, quality) {
           idx.push(a, b, c, b, d, c);              // windings face +y, which is up
         }
       }
+      // RETAINED RUNTIME PRIMITIVE — a deflation, not a prop: the lattice (14 rings × 44 sectors, plus a
+      // 3-ring apron skirt) is built from the lobe set it is handed — three low harmonics off a private
+      // `mulberry32` stream, so every cap in the base is a different footprint of the same wind, with a
+      // cos^1.55 crown feathered by `vnoise` — and it carries its own metres because main.js's sand
+      // ledger grows and shrinks this same landform every frame. Baked into a GLB it would be one shape
+      // repeated, and it would stop moving.
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geo.setIndex(idx);
@@ -2748,6 +2795,9 @@ export async function buildBase(scene, quality) {
       rubble.userData.rsbNoSolid = true;
       // No light column: a beam riding on top of a rock is the one cue that says "video-game
       // pickup". The mineral's own glow plus the ground ring carry it, and the map does the rest.
+      // RETAINED RUNTIME PRIMITIVE — a glow, not a fitting: 70 mm above the deck, additive, DoubleSide,
+      // opacity 0.10 and `noMerge` so the merge pass cannot fold it into the rock it rings. It has no
+      // silhouette to author — only an annulus the eye reads as light leaving the ground.
       const pad2 = new THREE.Mesh(new THREE.RingGeometry(1.05, 1.42, 28),
         new THREE.MeshBasicMaterial({ color: 0x8fdccf, transparent: true, opacity: 0.10, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
       pad2.rotation.x = -Math.PI / 2; pad2.position.y = 0.07; noMerge(pad2); g4.add(pad2);
@@ -3145,6 +3195,10 @@ export async function buildBase(scene, quality) {
       const plateMat = new THREE.MeshBasicMaterial({ color: 0x4fe2ff, transparent: true, opacity: 0, alphaMap: lightPool(), blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
       // 1.35 → 1.75 m: the ramp puts most of a flat hexagon's light back on the inside, so the disc
       // has to reach further to pool the same area of deck.
+      // RETAINED RUNTIME PRIMITIVE — the pool of light the rotor throws on its own deck: 42 mm above the
+      // plinth, additive, `depthWrite:false`, alphaMap-carved, and its opacity is written every frame
+      // with the grid's power and nightF (same driver as the core above). A mesh can be a lampshade;
+      // this one only has to be the shape the light is not.
       const plate = new THREE.Mesh(new THREE.CircleGeometry(1.75, 40), plateMat);
       plate.rotation.x = -Math.PI / 2; plate.position.y = 0.42; rig.add(plate);
       // The shaft is the pad floods' shaft — same unit cone, same grazing-edge falloff, same run-out
@@ -3152,7 +3206,10 @@ export async function buildBase(scene, quality) {
       // opacity, which drew its own silhouette: three flat quads of cyan with a straight rim on either
       // side, and because the shell is DoubleSide and additive the two walls stacked into a brighter
       // seam down the middle. `fx/beams.js` was written to remove exactly that from the launch pad;
-      // this was the last place in the base still doing it.
+      // this was the last of the seven grid rigs still doing it (the loop walks `teleports`, and there
+      // are seven of them). It is not the last place in the base:
+      // the launch pad's five light-show searchlights (the `showBeams` loop, in the launch block) are still a
+      // 12-segment open cone on an opacity-driven `MeshBasicMaterial`, and that one is a job of its own.
       const beamMat = shaftMaterial(0x6fe8ff, 0, 0.22);
       const beam = new THREE.Mesh(UNIT_BEAM, beamMat);
       // shallow flare, and it dies away in daylight — the cone opens to 1.05 m over 15 m of rise

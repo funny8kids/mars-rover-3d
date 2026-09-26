@@ -306,7 +306,13 @@ export async function buildBase(scene, quality) {
     o.scale.setScalar(s);
     o.position.set(x, at !== undefined ? at : heightAt(x, z) + dy, z);
     o.rotation.y = ry || 0;
-    CUR.add(tagScope(o)); return o;
+    // A placed pack that reaches the collider emitter with no scope becomes `looseN` — an index whose
+    // meaning depends on how many anonymous units were built before it, so every renumbering by an
+    // upstream stamp renames all of them and a reported trap (`hub:spaceport-gate#1 | hub:loose15#1`)
+    // cannot be walked to the object it names. The asset and the stance it was sited at are both known
+    // here, so the name is written where the placement is. Nothing else about the partition changes:
+    // one unit still owns its own discs, and the seams/traps censuses count the same pairs after.
+    CUR.add(tagScope(o, `${name}@${x.toFixed(1)},${z.toFixed(1)}`)); return o;
   };
   const k = (name, x, z, ry, sc = 1) => put(name, x, z, S * sc, ry);
 
@@ -353,9 +359,9 @@ export async function buildBase(scene, quality) {
     // the hub's pad was `hub:loose3`, which is a work item nobody can go and look at. The footing
     // already carries a unique id, so the discs now answer to the same one — `hub:pad0#0`, and after
     // this change 21 of the map's discs read `padN#k` where they used to be `looseNNN#k`. Labels only:
-    // the gate is byte-identical across the change (discs 694, seams 40, traps 9, pockets 0,
-    // plan().tight 0, unreachable 0, measured 2026-09-26 on bc7f493 and after). One of the nine traps
-    // is now nameable as `hub:lamp-ring-1 | hub:pad0#0`.
+    // the driven gate is unchanged across the rename (scan(): discs 695, seams 39, traps 9, pockets 0,
+    // tight 0, unreachable 0, measured 2026-09-26 with the same probe byte-compared either side of
+    // befbc9e). One of the nine traps is now nameable as `hub:lamp-ring-1 | hub:pad0#0`.
     o.userData.rsbScope = lid;
     o.userData.rsbZone = ZONE;
     if (name === 'teleport_pad') {
@@ -622,9 +628,11 @@ export async function buildBase(scene, quality) {
   // The scope is therefore written onto the object at the moment it is added, and `solidify` below
   // reads it to decide what counts as one rigid body: discs of one prop are exempt from each other
   // in `audit` (their lens always has an escape), discs of two different props are a wedge.
-  const tagScope = o => {
+  const tagScope = (o, placed = null) => {
     if (o.userData.rsbScope === undefined) {
-      o.userData.rsbScope = CUR === G ? null : CUR.name;
+      // A structure's own scope outranks the placement name: a strut inside a gantry belongs to the
+      // gantry in the audit, not to itself. `placed` only names what was laid straight on the island.
+      o.userData.rsbScope = CUR === G ? (placed ?? null) : CUR.name;
       o.userData.rsbZone = ZONE;
     }
     return o;
@@ -945,7 +953,7 @@ export async function buildBase(scene, quality) {
     const g = cloneModel(kit);
     g.position.set(x, y - 0.31 * s, z);
     g.scale.setScalar(s);
-    G.add(g);
+    G.add(tagScope(g, `beacon@${x.toFixed(1)},${z.toFixed(1)}`));
     const lens = g.getObjectByName('lens');
     if (lens) return beacons.push(lens);
     g.traverse(o => { if (o.isMesh && /beacon_lens/.test(o.material?.name || '')) beacons.push(o); });
@@ -961,7 +969,9 @@ export async function buildBase(scene, quality) {
     const g = cloneModel(src);
     g.position.set(x, y, z);
     g.rotation.y = ry;
-    G.add(g);
+    // Same reason as `put`: a cradle or a stub mast laid straight on the island is a rigid object the
+    // audit has to be able to name, and `loose89` is not a name anyone can go and look at.
+    G.add(tagScope(g, `kit:${name}@${x.toFixed(1)},${z.toFixed(1)}`));
     return g;
   };
   const lightStrips = [];

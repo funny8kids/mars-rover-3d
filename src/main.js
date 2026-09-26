@@ -4426,7 +4426,18 @@ window.__RSB = {
         const back = Math.round((s.t - (tgt.since ?? s.t)) / 0.25);
         tgt.legXZ = s.trace.slice(Math.max(0, s.trace.length - back)).filter((_, i) => i % 4 === 0);
       }
-      if (arrived && !tgt.held) { tgt.held = +opts.pause || 0; s.holdUntil = s.t + tgt.held; }
+      // The 1.5 s standstill buys a park reading, and a street node has nothing to park at: it is a
+      // point on a carriageway centreline, not a place an action happens. Its coverage claim is
+      // `best <= r` — the closest the leg came, sampled every frame whether or not the audit stops —
+      // so holding here cannot make that claim stronger, it only spends lap budget. Measured on the
+      // committed build (tools/logs/tour-300-slowlegs.log: `driven 44/46` at 300 s): the route carries
+      // 24 street nodes out of 46 waypoints, so 24 x 1.5 = 36 s of the 300 s run is the audit standing
+      // still on tarmac, and the two points that missed are both at the tail of the lap
+      // (`south-street:5 36.0/11m aimed` — reached as the target, never closed before the clock ran
+      // out — and `sample:2 44.7/4.2m never aimed at` — never even became the target). The pads, taps
+      // and samples keep their dwell; that is where `parkΔ` and `dwell` are read from.
+      const pause = tgt.kind === 'street' ? 0 : (+opts.pause || 0);
+      if (arrived && !tgt.held) { tgt.held = pause; s.holdUntil = s.t + pause; }
       if (arrived && s.t >= s.holdUntil) {
         // Running out of patience on a point is not evidence that the map is broken: an unstick can
         // carry the rover off-route and spend the whole grace window on the detour. So a missed point

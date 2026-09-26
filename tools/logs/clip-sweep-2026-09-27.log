@@ -1,0 +1,84 @@
+TARGET http://127.0.0.1:5173/?auto=std&v=clipsweep1 · buffer 1810x883 · 22/22 interactive points × 3 skies = 66 frames
+UNITS clip,burn = % of the 16 000-px histogram sample · bins = ‰ each · shadow= chroma:warm/cool shares
+SKY day dayT=0.3 settled in 2 frames · nightF=0 dayF=0.9969369718177339 duskF=0.03402291870487639 sun=3.39 clock=07:11
+· day   pad:hub                clip= 0.1 burn=   0(   0%) bins=0/394/226/67/136/172/5/1 lamp=1.232@0.056 sun=3.39 shadow=1.362*:0.996/0.004
+✗ day   pad:launch             clip= 3.9 burn= 1.1(  28%) bins=0/53/282/201/114/208/104/39 lamp=1.153@0.236 sun=3.39 shadow=1.337*:0.998/0.002 clip 3.9
+    in frame: BufferGeometry:{}@10.3m lum2.23 | PlaneGeometry:{"width":3.2,"height":1.55,"widthSegments":1,"@29.7m lum2.05
+· day   pad:habitat            clip=   0 burn=   0(   0%) bins=0/352/158/43/164/253/29/0 lamp=1.198@0.107 sun=3.39 shadow=1.366*:0.994/0.005
+· day   pad:industry           clip=   0 burn=   0(   0%) bins=0/381/121/93/225/176/4/0 lamp=1.245@0.038 sun=3.39 shadow=1.373*:0.991/0.007
+· day   pad:comms              clip=   0 burn=   0(   0%) bins=0/309/277/40/238/130/6/0 lamp=1.224@0.024 sun=3.39 shadow=1.38*:0.997/0.003
+· day   pad:science            clip= 0.1 burn=   0(  10%) bins=0/345/204/31/194/215/10/1 lamp=1.198@0.051 sun=3.39 shadow=1.374*:0.986/0.005
+✗ day   pad:motor              clip= 9.9 burn= 2.2(  22%) bins=0/55/245/221/133/134/115/99 lamp=1.098@0.279 sun=3.39 shadow=1.377*:0.999/0.001 clip 9.9
+    in frame: BufferGeometry:{}@10.4m lum2.23 | PlaneGeometry:{"width":3.2,"height":1.55,"widthSegments":1,"@29.8m lum2.05
+· day   tap:hub                clip=   0 burn=   0(  33%) bins=0/256/267/53/197/220/7/0 lamp=1.216@0.067 sun=3.39 shadow=1.485*:0.997/0.003
+· day   tap:launch             clip=   0 burn=   0(   0%) bins=0/129/445/137/113/165/12/0 lamp=1.229@0.058 sun=3.39 shadow=1.382*:0.998/0.001
+· day   tap:habitat            clip=   0 burn=   0(   0%) bins=0/315/167/92/193/215/17/0 lamp=1.189@0.084 sun=3.39 shadow=1.358*:0.998/0.002
+· day   tap:industry           clip= 0.1 burn=   0(   0%) bins=0/242/317/59/196/180/5/1 lamp=1.233@0.043 sun=3.39 shadow=1.499*:0.997/0.002
+· day   tap:comms              clip=   0 burn=   0(   0%) bins=0/225/345/26/259/135/10/0 lamp=1.209@0.028 sun=3.39 shadow=1.525*:0.998/0.002
+· day   tap:science            clip= 0.1 burn=   0(   0%) bins=0/258/296/18/194/223/9/1 lamp=1.217@0.055 sun=3.39 shadow=1.56*:0.997/0.001
+✗ day   tap:motor              clip= 9.8 burn= 3.4(  34%) bins=0/193/160/78/197/151/123/98 lamp=1.103@0.286 sun=3.39 shadow=1.348*:0.998/0.002 clip 9.8
+    in frame: BufferGeometry:{}@10.4m lum2.23 | PlaneGeometry:{"width":3.2,"height":1.55,"widthSegments":1,"@29.8m lum2.05
+· day   sample:0               clip= 0.2 burn=   0(   4%) bins=0/66/447/44/217/192/33/2 lamp=1.193@0.094 sun=3.39 shadow=1.515*:0.985/0.004
+· day   sample:1               clip=   0 burn=   0(  14%) bins=0/7/553/73/155/200/11/0 lamp=1.204@0.064 sun=3.39 shadow=1.468*:0.999/0
+✗ day   sample:2               clip=   0 burn=   0( 100%) bins=0/9/544/25/266/149/7/0 lamp=1.21@0.019 sun=3.39 shadow=1.541*:0.988/0.001 bleached 100%
+    in frame: BufferGeometry:{}@10.4m lum2.23 | PlaneGeometry:{"width":3.2,"height":1.55,"widthSegments":1,"@29.8m lum2.05
+· day   sample:3               clip=   0 burn=   0(   0%) bins=0/223/328/27/191/220/11/0 lamp=1.217@0.073 sun=3.39 shadow=1.602*:0.991/0.002
+· day   sample:4               clip= 0.1 burn=   0(   0%) bins=0/315/235/43/232/162/13/1 lamp=1.208@0.035 sun=3.39 shadow=1.54*:0.984/0.005
+✗ day   sample:5               clip=   4 burn= 1.4(  34%) bins=0/35/455/139/43/183/106/40 lamp=1.153@0.243 sun=3.39 shadow=1.496*:0.995/0 clip 4
+    in frame: BufferGeometry:{}@10.4m lum2.23 | PlaneGeometry:{"width":3.2,"height":1.55,"widthSegments":1,"@29.8m lum2.05
+· day   leak:tanks             clip=   0 burn=   0(   0%) bins=0/90/456/47/233/159/14/0 lamp=1.2@0.059 sun=3.39 shadow=1.525*:0.999/0.001
+✗ day   watch:deck             clip= 2.5 burn= 0.7(  27%) bins=0/285/186/74/112/241/76/25 lamp=1.166@0.185 sun=3.39 shadow=1.404*:0.999/0.001 clip 2.5
+    in frame: BufferGeometry:{}@10.4m lum2.23 | PlaneGeometry:{"width":3.2,"height":1.55,"widthSegments":1,"@29.8m lum2.05
+SKY dusk dayT=0.76 settled in 2 frames · nightF=0.7364732472882882 dayF=0 duskF=0.4738494896536365 sun=1.28 clock=18:14
+· dusk  pad:hub                clip=   0 burn=   0(null%) bins=0/574/304/99/22/1/0/0 lamp=null@null sun=1.28 shadow=1.277*:0.849/0.151
+· dusk  pad:launch             clip=   0 burn=   0(null%) bins=3/628/336/26/6/1/1/0 lamp=null@null sun=1.28 shadow=1.147:0.693/0.307
+· dusk  pad:habitat            clip=   0 burn=   0(null%) bins=0/733/170/65/26/4/2/0 lamp=null@null sun=1.28 shadow=1.187*:0.764/0.235
+· dusk  pad:industry           clip=   0 burn=   0(null%) bins=7/634/302/50/5/2/1/0 lamp=null@null sun=1.28 shadow=1.168*:0.77/0.229
+· dusk  pad:comms              clip=   0 burn=   0(null%) bins=10/790/172/20/6/2/0/0 lamp=null@null sun=1.28 shadow=1.168*:0.66/0.339
+· dusk  pad:science            clip=   0 burn=   0(null%) bins=26/645/268/43/10/4/5/0 lamp=null@null sun=1.28 shadow=1.19*:0.805/0.195
+· dusk  pad:motor              clip=   0 burn=   0(null%) bins=3/710/230/38/16/2/1/0 lamp=null@null sun=1.28 shadow=1.156*:0.786/0.213
+· dusk  tap:hub                clip= 0.1 burn=   0(   0%) bins=1/739/213/44/1/1/0/1 lamp=null@null sun=1.28 shadow=1.23*:0.803/0.197
+· dusk  tap:launch             clip=   0 burn=   0(   0%) bins=1/698/247/25/25/4/0/0 lamp=null@null sun=1.28 shadow=1.17*:0.783/0.217
+· dusk  tap:habitat            clip=   0 burn=   0(   0%) bins=3/703/235/43/13/2/1/0 lamp=null@null sun=1.28 shadow=1.157*:0.727/0.252
+· dusk  tap:industry           clip=   0 burn=   0(null%) bins=2/684/273/34/6/1/0/0 lamp=null@null sun=1.28 shadow=1.233*:0.807/0.192
+· dusk  tap:comms              clip=   0 burn=   0(null%) bins=2/780/192/16/8/2/0/0 lamp=null@null sun=1.28 shadow=1.229*:0.655/0.344
+· dusk  tap:science            clip=   0 burn=   0(null%) bins=1/689/269/31/8/2/1/0 lamp=null@null sun=1.28 shadow=1.256*:0.817/0.183
+· dusk  tap:motor              clip=   0 burn=   0(   0%) bins=16/620/313/37/11/2/1/0 lamp=null@null sun=1.28 shadow=1.133:0.598/0.402
+· dusk  sample:0               clip=   0 burn=   0(   0%) bins=0/646/242/90/11/4/6/0 lamp=null@null sun=1.28 shadow=1.239*:0.802/0.194
+· dusk  sample:1               clip=   0 burn=   0(  43%) bins=0/777/171/32/9/3/7/0 lamp=null@null sun=1.28 shadow=1.23*:0.761/0.238
+· dusk  sample:2               clip=   0 burn=   0(null%) bins=0/758/211/13/7/5/5/0 lamp=null@null sun=1.28 shadow=1.247*:0.692/0.308
+· dusk  sample:3               clip=   0 burn=   0(null%) bins=0/593/347/44/11/5/0/0 lamp=null@null sun=1.28 shadow=1.24*:0.989/0.011
+· dusk  sample:4               clip=   0 burn=   0(null%) bins=0/720/237/18/14/11/0/0 lamp=null@null sun=1.28 shadow=1.233*:0.647/0.351
+· dusk  sample:5               clip=   0 burn=   0(null%) bins=5/728/247/12/3/6/0/0 lamp=null@null sun=1.28 shadow=1.24*:0.688/0.311
+· dusk  leak:tanks             clip=   0 burn=   0(null%) bins=9/654/257/71/5/1/2/0 lamp=null@null sun=1.28 shadow=1.239*:0.767/0.233
+· dusk  watch:deck             clip=   0 burn=   0(null%) bins=0/689/305/5/0/0/0/0 lamp=null@null sun=1.28 shadow=1.173*:0.611/0.389
+SKY night dayT=0.9 settled in 2 frames · nightF=1 dayF=0 duskF=0 sun=1.7 clock=21:36
+✗ night pad:hub                clip=   0 burn=   0(   0%) bins=63/756/142/36/2/0/0/0 lamp=null@null sun=1.7 shadow=1.127:0.707/0.291 bin0 63‰
+    in frame: BufferGeometry:{}@10.4m lum2.23 | PlaneGeometry:{"width":3.2,"height":1.55,"widthSegments":1,"@29.8m lum2.05
+· night pad:launch             clip= 0.1 burn=   0(   0%) bins=4/540/401/44/8/2/1/1 lamp=null@null sun=1.7 shadow=1.073:0.655/0.343
+· night pad:habitat            clip= 0.4 burn=   0(   0%) bins=0/642/228/65/44/15/2/4 lamp=null@null sun=1.7 shadow=1.107:0.667/0.293
+· night pad:industry           clip=   0 burn=   0(   0%) bins=5/598/315/66/14/2/1/0 lamp=null@null sun=1.7 shadow=1.1:0.646/0.344
+· night pad:comms              clip=   0 burn=   0(   0%) bins=12/777/173/22/12/4/0/0 lamp=null@null sun=1.7 shadow=1.104:0.64/0.358
+· night pad:science            clip= 0.2 burn=   0(   0%) bins=27/600/279/62/20/5/6/2 lamp=null@null sun=1.7 shadow=1.083:0.588/0.377
+· night pad:motor              clip=   0 burn=   0(null%) bins=1/656/276/46/18/1/1/0 lamp=null@null sun=1.7 shadow=1.089:0.721/0.278
+· night tap:hub                clip= 0.1 burn=   0(   0%) bins=1/714/184/87/12/1/1/1 lamp=null@null sun=1.7 shadow=1.153*:0.691/0.308
+· night tap:launch             clip=   0 burn=   0(   0%) bins=1/642/284/25/22/24/1/0 lamp=1.113@0.01 sun=1.7 shadow=1.104:0.757/0.242
+· night tap:habitat            clip= 0.1 burn=   0(  10%) bins=2/657/231/84/19/5/1/1 lamp=null@null sun=1.7 shadow=1.112:0.637/0.338
+· night tap:industry           clip=   0 burn=   0(   0%) bins=2/669/277/41/10/1/1/0 lamp=null@null sun=1.7 shadow=1.156*:0.675/0.32
+· night tap:comms              clip=   0 burn=   0(null%) bins=4/774/191/16/9/6/0/0 lamp=null@null sun=1.7 shadow=1.167*:0.636/0.364
+· night tap:science            clip= 0.1 burn=   0(   0%) bins=0/684/261/38/11/3/1/1 lamp=null@null sun=1.7 shadow=1.175*:0.634/0.352
+· night tap:motor              clip= 0.1 burn=   0(   0%) bins=13/554/350/45/31/6/1/1 lamp=null@null sun=1.7 shadow=1.074:0.566/0.433
+· night sample:0               clip= 0.3 burn=   0(   0%) bins=0/561/283/84/59/4/6/3 lamp=1.086@0.01 sun=1.7 shadow=1.143:0.661/0.313
+· night sample:1               clip= 0.3 burn=   0(   5%) bins=0/670/256/43/17/4/7/3 lamp=null@null sun=1.7 shadow=1.128:0.64/0.34
+✗ night sample:2               clip= 0.6 burn=   0(   0%) bins=0/644/306/25/11/3/4/6 lamp=1.106@0.011 sun=1.7 shadow=1.135:0.578/0.396 clip 0.6
+    in frame: BufferGeometry:{}@10.4m lum2.23 | PlaneGeometry:{"width":3.2,"height":1.55,"widthSegments":1,"@29.8m lum2.05
+· night sample:3               clip= 0.2 burn=   0(   0%) bins=0/599/328/48/16/3/3/2 lamp=null@null sun=1.7 shadow=1.146:0.628/0.342
+✗ night sample:4               clip= 0.8 burn=   0(   0%) bins=0/538/390/32/18/11/2/8 lamp=1.079@0.014 sun=1.7 shadow=1.107:0.579/0.379 clip 0.8
+    in frame: BufferGeometry:{}@10.4m lum2.23 | PlaneGeometry:{"width":3.2,"height":1.55,"widthSegments":1,"@29.8m lum2.05
+· night sample:5               clip= 0.5 burn=   0(   0%) bins=6/586/364/27/8/3/1/5 lamp=null@null sun=1.7 shadow=1.134:0.643/0.331
+✗ night leak:tanks             clip= 0.1 burn= 0.1( 100%) bins=16/639/247/63/31/1/2/1 lamp=null@null sun=1.7 shadow=1.18*:0.673/0.327 bleached 100%
+    in frame: BufferGeometry:{}@10.4m lum2.23 | PlaneGeometry:{"width":3.2,"height":1.55,"widthSegments":1,"@29.8m lum2.05
+· night watch:deck             clip=   0 burn=   0(null%) bins=1/612/377/9/0/0/0/0 lamp=null@null sun=1.7 shadow=1.095:0.599/0.399
+SUMMARY frames=66 flagged=10 · worst clip: day/pad:motor=9.9 day/tap:motor=9.8 day/sample:5=4 day/pad:launch=3.9 day/watch:deck=2.5 · worst bin0: night/pad:hub=63 night/pad:science=27 dusk/pad:science=26 dusk/tap:motor=16 night/leak:tanks=16 · worst burn share: day/sample:2=100 night/leak:tanks=100 dusk/sample:1=43 day/tap:motor=34 day/sample:5=34
+FRAMES /tmp/rsb-clip-2026-09-26/ (PNG, lossless — shot() stopped encoding JPEG, main.js:5141)
+CLIP SWEEP FAIL

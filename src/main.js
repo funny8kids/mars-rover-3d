@@ -2028,7 +2028,7 @@ function update(dt) {
   // an info-zone line that used `st` before its old declaration point threw straight out of
   // tick() — which skipped the render call and froze the canvas for the rest of the session.
   const st = env.state;
-  const inp = input.read();
+  const inp = input.read(dt);
   if (teleOpen) { inp.gas = inp.brake = inp.steer = inp.drift = inp.interact = 0; }
   // Deposition, the lance and their battery bill run before the sag is read, so the frame the
   // player spends charge cleaning is the same frame the motors notice it.

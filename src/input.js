@@ -43,11 +43,17 @@ export function createInput(canvasEl) {
     return { fwd, turn, drift: k.has('Space') ? 1 : 0 };
   }
 
-  let last = performance.now();
-  function read() {
-    const now = performance.now();
-    const dt = Math.min(0.05, (now - last) / 1000);
-    last = now;
+  // The pedals are followers, so their time base has to be the step they are handed to. Measuring a
+  // second wall clock here (an anchor set at construction, advanced only when `read()` runs) gave the
+  // throttle a dt that nothing else in the frame uses: the autopilot audit writes `inp.gas` and then
+  // steps the sim at a fixed 1/60, and the value physics actually got was `approach(0.6, 1, rate, dt)`
+  // with `dt` = however long the machine really took. Two reps of one build drove different laps
+  // because of it — wind, clock, day and pose all pinned and agreeing to six decimals at t=0, the
+  // hull still 9e-5 m apart 0.25 s later and 931 m against 980 m by 180 s
+  // (tools/logs/tour-180-sig-{r,s}.log). For a player this changes nothing but the jitter: both
+  // numbers are elapsed real seconds per frame, and tick() already clamps to 0.05.
+  function read(simDt) {
+    const dt = Math.min(0.05, simDt);
 
     const kb = keyAxes();
     const gp = pollGamepad();

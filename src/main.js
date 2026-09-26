@@ -2611,7 +2611,20 @@ function tick() {
   fpsAvg = fpsSamples.reduce((a, b) => a + b, 0) / fpsSamples.length;
   // A thrown HUD line used to escape from here and skip the render call at the bottom of tick,
   // which froze a perfectly drivable game. The frame is still reported, just never fatal.
-  if (started && !paused) {
+  //
+  // `simHold` is the audit's clock, not a throttle. Between two chunks the harness needs seconds to
+  // think, and every one of those seconds the page spent in `update()` advanced `elapsed` — which is
+  // the day cycle, the storm follower, and therefore the wind phase and the dust-under-the-tyres
+  // grip the physics reads. Measured 2026-09-26 with the rover's own pose snapshotted and restored
+  // across the seam: two reps of one build still disagreed — 1453 m / 5 rescues / 5-of-7 zones
+  // against 1653 m / 0 rescues / 6-of-7 (tools/logs/tour-300-seamfix2-{a,b}.log). The hull was held
+  // still and the *world* kept moving under it, so the ruler could not repeat its own reading, and a
+  // ruler that cannot repeat cannot sign off "zero wedges". Rendering is not held: the composer still
+  // runs every frame, which is what the frame-anatomy ruler measures. The tour's own `realFps` was
+  // never the fps line — a chunked tour starves rAF during the drive and samples wall clock between
+  // chunks; fps is judged by the frame ruler on a quiet box, so holding the sim costs nothing that
+  // was being trusted here.
+  if (started && !paused && !simHold()) {
     try { update(dt); }
     catch (e) { if (updateFaults++ === 0) console.error('UPDATE_FAIL', e); }
   } else { elapsed += 0; }
@@ -2707,6 +2720,11 @@ renderer.setAnimationLoop(tick);
 // The autopilot audit is longer than any tool call may block for, so its state lives out here
 // between calls rather than inside one.
 let qaDrive = null;
+// True only while the audit's chunk loop is *inside* its synchronous drive. `qaDrive` alone means a
+// chunk is paused for the harness to think, which is the window `tick()` must not spend (`simHold`).
+let qaDriving = false;
+// The page's own clock stands still while the autopilot audit is between chunks.
+function simHold() { return !!qaDrive && !qaDriving; }
 let qaTrace = [];
 // Every place the game ever asks a player to steer, with the exact radius the game itself uses to
 // decide "you have arrived" (the pad trigger, the link radius, the sample pickup, the repair range,
@@ -3482,7 +3500,10 @@ window.__RSB = {
       p.stage = null; p.wayT = -9; };
     let s = qaDrive;
     if (!s || opts.reset) {
-      const ride = phys.y - phys.groundY;
+      // The hull's rest height is a constant of the physics, not a reading of where the boot left it:
+      // a fresh page runs seconds of real-time frames before the audit attaches, and `phys.y -
+      // phys.groundY` carries whatever the heave spring was mid-settling at.
+      const ride = RIDE;
       phys.x = START.pos[0]; phys.z = START.pos[1];
       phys.groundY = surfaceAt(phys.x, phys.z);
       phys.y = phys.groundY + ride;
@@ -3502,6 +3523,17 @@ window.__RSB = {
       rescue.events.length = 0; rescue.phase = ''; rescue.cool = 0; rescue.tries = 0;
       rescue.markT = 0; rescue.stillT = 0;
       phys.pitch = 0; phys.roll = 0; phys.susp = 0; phys.suspV = 0;
+      // The two inputs the pose columns cannot see. `update()` integrates at a fixed 1/120 through
+      // `this._acc` (physics.js:80-85), and the audit hands it exactly 1/60, so a clean run does two
+      // substeps every frame — but the boot's real-time frames leave a remainder, and then some frames
+      // do two and some three. `prevGroundH` is the other: step() turns `(groundH - prevGroundH)/dt`
+      // into vertical velocity (physics.js:201), so the first audit frame inherits the terrain rate of
+      // wherever the page had been settling. Measured 2026-09-26 with the divergence probe on two reps
+      // of one build (tools/logs/tour-180-sig-{k,l}.log): row 0 agreed on every column except
+      // `battery` (0.998773 vs 0.998714 — the same boot-duration difference, visible because the cell
+      // drains in real time), and by 0.25 s the pose had split (x -0.019631 vs -0.019655). The pose at
+      // t=0 was pinned; only the state the pin did not reach could have differed.
+      phys._acc = 0; phys.prevGroundH = phys.y;
 
       // every waypoint a player is ever asked to steer to, plus the carriageway itself walked end
       // to end: covering the districts proves the shortcuts work, covering the streets proves the
@@ -3608,11 +3640,33 @@ window.__RSB = {
         // that led there. Rows: [t, x, z, dNow, parking, blind, lane, parkX, parkZ, stageX, stageZ,
         // speed, gas, range, aimErr].
         dec: [], wedgeTrails: [], nRes: 0,
-        // The wind pushes the rover, so two runs of the same route are not the same drive. The
-        // audit does not reset the weather (resetting it would hide a real failure mode) — it
-        // reports how much storm the run drove through, so a missed point can be read honestly.
+        sig: [],
+        // The wind pushes the rover, so two runs of the same route are not the same drive. That was
+        // written down as a reason not to touch the weather, and it turned the ruler into a ruler
+        // that cannot sign off anything: `stormField`'s heading is drawn with `Math.random()` when
+        // the page boots (storm.js:48), so every rep drove a different wind, and three reps of one
+        // build read 1617 m / zones 6-7 / 4 rescues, 1559 m / 5-7 / 1, 1424 m / 5-7 / 4
+        // (tools/logs/tour-300-hold-{c,d,e}.log). Coverage is a claim about the map and the driver,
+        // so the map and the driver are what the run measures: the weather is held at one calm
+        // bearing, the world clock starts at zero, and the day goes back on its boot value. The held
+        // state is printed in `weather.held`, and a coverage run that wants a front on top of it is
+        // a separate measurement made with the pin that already exists.
         stormMax: 0, windMax: 0, stormFrames: 0,
       };
+      elapsed = 0;
+      env.dayT = 0.30;
+      stormField.pin('calm', { x: phys.x, z: phys.z }, 150, 0);
+      // `pin()` freezes the phase clock `t` but deliberately keeps `tick` running (storm.js:226-231),
+      // because a held storm must not become a still image for a screenshot pair. The cruise audit reads
+      // a different thing: calm's wind target is `1.6 + sin(tick*0.21)*0.9` (storm.js:236), so `tick` —
+      // which counts the boot's *real-time* frames — sets the phase of the force on the hull for the
+      // whole run. Measured 2026-09-26 with the probe's input columns (tools/logs/tour-180-sig-{p,q}.log):
+      // pose identical at t=0, wind vx -0.48113 vs -0.344645 on the stale boot frame and 1.621671 vs
+      // 1.623389 by 0.25 s, and the two laps never agreed afterwards (974 m against 960 m). A sine keeps
+      // its offset forever, so this is not a difference that damps out. Zeroing it costs the weather
+      // nothing the audit measures: the sheet still rolls, and `t` remains frozen at one calm bearing.
+      stormField.tick = 0;
+      s.weatherHeld = 'calm@0rad,tick0';
     }
     const NONE = [];
     const blockedAt = (x, z) => {
@@ -3769,6 +3823,12 @@ window.__RSB = {
           const lane = laneMargin(fx, fz, x, z);
           if (lane.m > diag.laneMax) { diag.laneMax = lane.m; diag.laneBy = lane.by; }
           if (lane.m >= 0.4 && ++nClear >= count) return nClear;
+          // Refuted term, kept out on purpose: `- d * 0.5` here (stop at the near rim, clearance as
+          // tie-break) is the obvious answer to the far-rim pick described at `findWayIn`, and on the
+          // 300 s lap it made everything worse — rescues 0→4, districts 6/7→4/7, points 18/22→14/22,
+          // `tap:habitat` still 25 s (tools/logs/tour-300-near.log). The near rim of these pads is
+          // where their own props stand. The defect is the distance the search is run from, not the
+          // ranking inside it.
           cand.push({ x, z, d, m, lane: lane.m, score: m - ring * 0.25 });
         }
       }
@@ -3880,23 +3940,26 @@ window.__RSB = {
       // A branch that never fires on the real map is not a fix, it is a hypothesis — so the leg keeps
       // its own count of stances found, and the report prints it next to the parking clock.
       if (tgt.stage) tgt.stageN = (tgt.stageN || 0) + 1;
+      // Where the stance sits, measured off the pad: `near` wants `min(16, r+7)`, so a stance ring
+      // further out than that is one the driver can aim at all leg and never be allowed to use.
+      if (tgt.stage) tgt.stageD = Math.hypot(tgt.stage.x - tgt.x, tgt.stage.z - tgt.z);
     };
 
     input.inp.keys.add('KeyW');
     const wall = performance.now();
     const frames = Math.round(Math.min(s.budget - s.t, opts.chunk ?? 100) / dt);
-    // The stall window is re-anchored at every chunk start. The real animation loop keeps driving
-    // between chunks — the harness needs seconds to think, and the pedals are released for exactly
-    // that reason — so a window that straddled a seam would be scored on ground the audit never
-    // watched. Losing up to 4 s of window per seam is cheap: a 100 s chunk holds twenty-four of them,
-    // and a genuine wedge files on the next one.
+    // The stall window and the odometer restart at every chunk. `simHold()` means nothing moves in the
+    // gap any more, so this is no longer a correction for coasting — it is the policy that a chunk
+    // scores only the frames it drove, and it inherits the old seam's cost: a wedge that straddles a
+    // boundary loses up to 4 s of its window and files on the next chunk instead.
     s.markT = s.t; s.markX = phys.x; s.markZ = phys.z; s.windowClean = true;
-    // Re-anchor the odometer too. The rover coasts while the harness thinks between chunks, and a
-    // 1.2 s coast off a 7 m/s entry covered 8.2 m — which the hop test then filed as a teleport the
-    // sim never performed (measured: one "teleport 8.2m@50s" at exactly a chunk seam, with the cell
-    // at 0.717 and grid.dead false, i.e. nothing that could have teleported anything). A seam is the
-    // same kind of seam as the stall window's.
+    // The odometer is re-anchored for the same reason. It used to have a live bug behind it: a 1.2 s
+    // coast off a 7 m/s entry covered 8.2 m across a seam and the hop test filed that as a teleport
+    // the sim never performed (one "teleport 8.2m@50s" at exactly a chunk seam, cell at 0.717 and
+    // grid.dead false — nothing there could have teleported anything). `simHold()` removed the coast;
+    // the anchor stays because it is what keeps both rulers scoring only frames the audit drove.
     s.prevPos = [phys.x, phys.z];
+    qaDriving = true;
     let f = 0;
     for (; f < frames && (s.loop || s.wp < s.route.length); f++) {
       const tgt = s.route[s.wp];
@@ -3914,6 +3977,10 @@ window.__RSB = {
       // counting a held brake as a push: for a player, brake-down-and-not-moving IS the wedge.
       const parkBrake = () =>
         (phys.vx * Math.sin(phys.yaw) + phys.vz * Math.cos(phys.yaw) > 0.6 ? 1 : 0);
+      // `parking`/`blind` are decided inside the driving branch below; the sig row is written outside it
+      // so that a recovering frame is visible too, so the two flags travel through the loop body as
+      // lets rather than being re-read where they no longer exist.
+      let sigPark = 0, sigBlind = 0;
       if (recovering) {
         input.inp.gas = 0;
         input.inp.brake = 1;                    // back out, swinging toward whichever side is open
@@ -3988,6 +4055,7 @@ window.__RSB = {
         // fired while the rover was still outside the clean 9 m circle.
         if (parking) { tgt.parkT += dt; if (dNow >= 9) tgt.handed++; }
         const blind = parking && !tgt.park;
+        sigPark = parking ? 1 : 0; sigBlind = blind ? 1 : 0;
         const park = blind ? { x: tgt.x, z: tgt.z } : tgt.park;
         // Straight in only while the lane is clear at hull resolution. The moment it is not, the last
         // approach is an avoidance problem like any other and the whisker planner takes the park point as
@@ -4012,6 +4080,11 @@ window.__RSB = {
           }
         } else if (toStage) {
           tgt.stageAim = (tgt.stageAim || 0) + 1;
+          // Whether the rover got anywhere near the stance it was aimed at for those 609 frames. Without
+          // this the column cannot tell "the adoption gate refused a reached stance" from "the stance was
+          // never reached" — and the two have opposite fixes (`near` in the gate vs the approach line).
+          tgt.stageBest = Math.min(tgt.stageBest === undefined ? 99 : tgt.stageBest,
+            Math.hypot(phys.x - tgt.stage.x, phys.z - tgt.stage.z));
           // Driven like any other cruise point, whiskers and all: the apron it crosses is the cluttered
           // part of the map, and an aim with no way round an obstacle is the aim that wedges.
           b = pick(tgt.stage);
@@ -4081,11 +4154,43 @@ window.__RSB = {
           : toStage ? Math.min(see, Math.hypot(tgt.stage.x - phys.x, tgt.stage.z - phys.z) + 3)
           : see;
         const vCap = Math.sqrt(Math.max(2, room) / 0.15);
+        // What physics receives is this plateau plus one frame of the pedal follower's own travel
+        // toward the held KeyW (`approach(0.6, 1, 3.6, 1/60)` = 0.66, input.js:60-66), because the
+        // autopilot writes the command and the game reads the keyboard. The offset is constant, so the
+        // plateaus still order the approaches — but the numbers above are the *command*, not the torque.
         input.inp.gas = vCap < 5.75 ? 0.35 : vCap < 8.6 ? 0.45 : vCap < 11.8 ? 0.6 : 1;
         input.inp.brake = phys.speed > vCap * 1.25 ? 1 : 0;
       }
       const before = [phys.x, phys.z];
       const throttle = input.inp.gas;
+      // The divergence probe: one row every 15 frames carrying everything the next frame is built
+      // from, at six decimals on the pose. With the world clock, the day, the weather and the pedals
+      // all pinned, two reps of one build still drove different laps — 1341 m / 11 rescues against
+      // 1584 m / 0 (tools/logs/tour-300-pin-{f,g,h}.log) — so something inside a frame is not a
+      // function of the sim. This row names the first field that splits: a decision column
+      // (`gas`/`steer`/`park`/`blind`) splitting on an identical pose is the planner, a pose column
+      // splitting on identical decisions is the physics.
+      if (opts.sig && s.runFrames % 15 === 0) s.sig.push([+s.t.toFixed(2), phys.x.toFixed(6),
+        phys.z.toFixed(6), phys.y.toFixed(5), phys.yaw.toFixed(6), phys.speed.toFixed(5),
+        phys.lateral.toFixed(5), +input.inp.gas.toFixed(4), +input.inp.steer.toFixed(4), s.wp,
+        f, sigPark, sigBlind, phys.onFloor ? 1 : 0, phys.grounded ? 1 : 0,
+        +grid.battery.toFixed(6), +grid.dead, rescue.phase,
+        // The last four are the *inputs* to the frame, not its output: `lastWind` is the object handed
+        // to `phys.update`, and the collider count is the array it was handed with. Pinning the pose,
+        // the clock, the day and the storm bearing still left the two reps splitting by t=0.25 s
+        // (x -0.019715 vs -0.019694, tools/logs/tour-180-sig-{m,n}.log) while every sampled field
+        // agreed at t=0 except `battery` — so whatever seeds it is something the row did not read.
+        lastWind ? +lastWind.soft.toFixed(6) : -1, lastWind ? +lastWind.gust.toFixed(6) : -1,
+        lastWind ? +lastWind.vx.toFixed(6) : -1, base.colliders.length,
+        // Round two of the same question: with the weather clock zeroed the wind agreed from 0.25 s on
+        // (wvx 1.603153 in both, tools/logs/tour-180-sig-{r,s}.log) and the pose still split by 9e-5 m.
+        // So the seed is an input the row has not read yet — the rest of the hull's own state, the two
+        // pedals this probe could not see, and a fingerprint of the collider array (its length agreed,
+        // but its *order* feeds the solver's float summation).
+        +input.inp.brake.toFixed(3), +input.inp.drift.toFixed(3), +phys.vy.toFixed(6),
+        +phys.windLoad.toFixed(6), +phys.groundY.toFixed(6), +phys._acc.toFixed(9),
+        phys.drifting ? 1 : 0, +s.turnDir.toFixed(3),
+        base.colliders.reduce((t2, c) => t2 + c.x * 31 + c.z * 7, 0).toFixed(3)]);
       update(dt);
       s.t += dt;
       // A connectivity audit measures the roads, not the power mission. A dead cell force-teleports
@@ -4251,6 +4356,12 @@ window.__RSB = {
       // so the leg's own rows are copied out on the frame the grace fires.
       if (arrived && tgt.lapBest > tgt.r && (tgt.legTraces || []).length <= (tgt.retried ? 1 : 0)) {
         tgt.legTraces = (tgt.legTraces || []).concat([s.samples.filter(x => x[2] === s.wp)]);
+        // A 2 s sample grid cannot see a leg that ends by the clock without ever stopping: the rows
+        // below are the controller's own readings, and `s.dec` is a rolling 12 s window, so this is the
+        // run-up to the miss rather than the whole leg. Filed on the grace frame, not on a rescue,
+        // because the legs worth asking about (`tap:habitat` burned 25 s at gas 1 and 0 rescues) are
+        // precisely the ones that never look like a wedge to the watchdog.
+        tgt.decTrails = (tgt.decTrails || []).concat([s.dec.slice(-90).map(r => r.join(','))]);
         // The bearing/range rows say the planner refused the last metres; the ground it refused to
         // cross is only readable off the positions. `s.trace` files one [x,z] every 15 frames
         // (~0.25 s of sim), so the leg's own slice is taken by its elapsed seconds and thinned to
@@ -4291,9 +4402,11 @@ window.__RSB = {
       if (s.loop && s.wp >= s.route.length) { s.wp = 0; s.laps++; s.spots.forEach(armLap); }
       if (f % 900 === 899 && performance.now() - wall > 9000) break;  // never outlive the call budget
     }
-    // Release the pedal between chunks: the real animation loop keeps running while QA thinks,
-    // and a rover left accelerating between two measurements is a rover that arrives at chunk 2
-    // somewhere chunk 1 never drove it.
+    // The chunk is over: from here the audit thinks, and `simHold()` stops the page advancing at all.
+    qaDriving = false;
+    // The pedals still come off, because the last chunk releases `qaDrive` and the game resumes under
+    // a player who did not press anything — a rover left accelerating by the audit is a rover that
+    // drives off on its own the moment the report prints.
     keys.forEach(k => input.inp.keys.delete(k));
     input.inp.gas = 0; input.inp.steer = 0; input.inp.brake = 0;
     const done = s.t >= s.budget || (!s.loop && s.wp >= s.route.length);
@@ -4319,6 +4432,12 @@ window.__RSB = {
     const zoneKeys = pois.filter(p => p.kind === 'pad').map(p => p.name.slice(4));
     const zoneOff = zoneKeys.filter(k => !(s.visited.has(`pad:${k}`) && s.visited.has(`tap:${k}`)));
     return { done, simSeconds: +s.t.toFixed(1), metres: Math.round(s.dist), laps: s.laps,
+             // `worldClock` is the read that says the run held still: with the page's `update()` held
+             // between chunks and the clock pinned at session start, it is `simSeconds` to the frame,
+             // in any rep, at any chunk size. When it drifts, a seam leaked and nothing else in this
+             // object can be trusted.
+             worldClock: +elapsed.toFixed(2),
+             sig: s.sig.map(r => r.join(',')),
              frames: s.runFrames, retries: s.retries,
              coverage: {
                zones: `${zoneKeys.length - zoneOff.length}/${zoneKeys.length}`, zonesMissing: zoneOff,
@@ -4349,7 +4468,11 @@ window.__RSB = {
               abandon: s.spots.filter(p => p.legTraces && (!inReach(p) || opts.traceAll))
                  .map(p => `${p.name} @${p.x},${p.z} r${p.r} [t,spd,wp,dist,brg,yaw,aim,range,gas,steer] ` +
                    p.legTraces.map(tr => tr.map(r => r.join(',')).join(' ; ')).join(' || ') +
-                   ` xz ${JSON.stringify(p.legXZ || [])}`),
+                   ` xz ${JSON.stringify(p.legXZ || [])}` +
+                   (p.decTrails && opts.traceAll
+                     ? ` [t,x,z,dNow,parking,blind,lane,parkX,parkZ,stageX,stageZ,spd,gas,range,err] ` +
+                       p.decTrails.map(tr => tr.join(' ; ')).join(' || ')
+                     : '')),
                // The clock ledger, in the order the tour drove it: seconds spent on each leg, then the
                // share of that leg the parking controller held, then how many frames the handover fired
                // outside the clean circle. A coverage miss with no clock against it is only half a
@@ -4360,13 +4483,19 @@ window.__RSB = {
                legs: s.route.map(p => `${p.name} ${p.legT ? p.legT.toFixed(1) : '–'}` +
                  `${p.parkT ? 's' + p.parkT.toFixed(1) : ''}${p.handed ? 'h' + p.handed : ''}` +
                  `${p.stageN ? ' st' + p.stageN + (p.stageUsed ? '/' + p.stageUsed : '') +
-                   'a' + (p.stageAim || 0) : ''}`).join(' '),
+                   'a' + (p.stageAim || 0) +
+                   // `g` = how close the rover came to the stance it was aimed at, `s` = how far that
+                   // stance stands off the pad centre (the last one found). Together they say whether
+                   // the hand-over was reached and whether `near` could ever have permitted it.
+                   (p.stageBest === undefined ? '' : 'g' + p.stageBest.toFixed(1)) +
+                   (p.stageD === undefined ? '' : 's' + p.stageD.toFixed(1)) : ''}`).join(' '),
                // [t,x,z,dNow,parking,blind,lane,parkX,parkZ,stageX,stageZ,speed,gas,range,aimErr] every
                // other frame for the 4 s before each rescue. Only filled on a leg run (`traceAll`),
                // which is the only run that asks the question.
                wedges: s.wedgeTrails },
              mps: s.t > 0 ? +(s.dist / s.t).toFixed(2) : 0, peakSpeed: +s.peakSpeed.toFixed(1),
              weather: { stormMax: +s.stormMax.toFixed(2), windMax: +s.windMax.toFixed(1),
+               held: s.weatherHeld,
                stormPct: Math.round(100 * s.stormFrames / Math.max(1, s.runFrames)) },
              reached: [...s.visited], of: s.route.length,
              stuckPockets: stalls.length,

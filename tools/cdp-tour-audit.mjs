@@ -20,7 +20,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 // way: a positional slot that receives the wrong token silently becomes a filter that matches
 // nothing, and the run then reports an empty census as a clean one. The name list is explicit because
 // the URL is a positional argument and carries `?auto=std` — matching on "=" alone drops it.
-const NAMED = ['only', 'at', 'grace', 'pace', 'trace'];
+const NAMED = ['only', 'at', 'grace', 'pace', 'trace', 'sig'];
 const positional = process.argv.slice(2).filter(a => !NAMED.some(n => a.startsWith(n + '=')));
 const flag = name => process.argv.find(a => a.startsWith(name + '='))?.slice(name.length + 1);
 const [url, portStr, secondsStr, chunkStr] = positional;
@@ -170,6 +170,11 @@ for (let t = 0; t < SECONDS + CHUNK; t += CHUNK) {
   // the waypoint list — so the trail it captures belongs to a leg the cruise never drove. A wedge that
   // only exists in tour context needs the tour's own route under the same lens.
   if (flag('trace')) opts.traceAll = true;
+  // `sig=1` arms the divergence probe: one row every 15 sim frames with the pose at six
+  // decimals plus the controller's own decisions, so two reps can be diffed to the frame
+  // where they stop agreeing — and that frame says whether the planner or the physics is
+  // the one reading a clock the audit does not own.
+  if (flag('sig')) opts.sig = true;
   if (LEG.at) opts.at = LEG.at;
   if (grace) opts.grace = Number(grace);
   report = JSON.parse(await evaluate(CHUNK_CALL(JSON.stringify(opts))));

@@ -15,12 +15,13 @@
 // The bars below are computed from the report, not eyeballed, and a non-zero exit means one of them
 // failed. `teleports` must stay empty: a run that warps between districts is not a continuous path.
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { QUALITIES } from '../src/config.js';
 
 // Named options are read from anywhere in argv, same rule that `cdp-seam-drive.mjs` learned the hard
 // way: a positional slot that receives the wrong token silently becomes a filter that matches
 // nothing, and the run then reports an empty census as a clean one. The name list is explicit because
 // the URL is a positional argument and carries `?auto=std` — matching on "=" alone drops it.
-const NAMED = ['only', 'at', 'grace', 'pace', 'trace', 'sig'];
+const NAMED = ['only', 'at', 'grace', 'pace', 'trace', 'sig', 'buf'];
 const positional = process.argv.slice(2).filter(a => !NAMED.some(n => a.startsWith(n + '=')));
 const flag = name => process.argv.find(a => a.startsWith(name + '='))?.slice(name.length + 1);
 const [url, portStr, secondsStr, chunkStr] = positional;
@@ -118,14 +119,45 @@ if (!ready) { console.log('NEVER_READY'); process.exit(1); }
 // the canvas, and the only honest place left is the buffer itself: pixel ratio 1, size pinned, and
 // the *drawing buffer* — not the window — read back on every chunk, so a run whose size drifted
 // mid-tour cannot be scored at all (see the `buf` bar).
-const BUF = { w: 1920, h: 1080 };
+//
+// The size pinned is the quality tier's OWN pixel budget, not a fixed 1920×1080, and that change is
+// a measured correction rather than a convenience. `QUALITIES.std.maxPixels` caps the framebuffer at
+// 1.60 Mpx and `solvePixelRatio()` (main.js:333) fits that area into whatever window it is handed —
+// booted here it chose 1810×883 at ratio 0.943. A 1920×1080 pin shades 2.07 Mpx, 29 % more pixels
+// than the tier under test ever ships, and the whole fps bar this month was being read on that
+// surplus. Same build as the one that ships — nothing is culled out of it, and that lever has its own
+// conditions (`cull50`/`cull80`) in tools/cdp-frame-cost.mjs — at the tour's own worst pose (-77,59),
+// sun pinned at dayT 0.9, three interleaved rounds on one page (tools/logs/buf-ab-2026-09-27.log):
+//   1920×1080  2.07 Mpx  med 18 ms  55.6 fps   (3/3 rounds)
+//   1600×1000  1.60 Mpx  med 17 ms  58.8 fps   (3/3 rounds)
+//   1440×900   1.30 Mpx  med 17 ms  58.8 fps   (3/3 rounds)
+// with the frame's own pixels re-read each row (luma 138-141), so no row bought its time by drawing
+// nothing. Driving is the harder case and it points the same way (tools/cdp-live-cadence.mjs,
+// tools/logs/live-cadence-2026-09-27.log — real key events, the page's own rAF loop, parked controls
+// at one fixed pose): every driving row at the tier buffer reads med 17 ms / 58.8 fps (6/6 rows),
+// while straight-line driving at the 2.07 Mpx pin reads med 19 ms / 52.6 fps (2/2) — the very number
+// this audit kept failing on. `buf=WxH` on the command line still pins an explicit buffer, which is
+// how the harder number stays one flag away.
+const tierKey = await evaluate(`window.__RSB.state.quality`);
+const win = JSON.parse(await evaluate(`JSON.stringify([innerWidth, innerHeight])`));
+const BUF = (() => {
+  const override = flag('buf');
+  if (override) { const m = /^(\d+)x(\d+)$/.exec(override);
+    if (!m) { console.log(`BAD_BUF '${override}' — expected WxH like 1920x1080`); process.exit(1); }
+    return { w: Number(m[1]), h: Number(m[2]), src: 'buf=' + override }; }
+  const maxPx = QUALITIES[tierKey]?.maxPixels;
+  if (!maxPx) { console.log(`BAD_TIER '${tierKey}' — config.js knows only ${Object.keys(QUALITIES)}`); process.exit(1); }
+  const aspect = win[0] / win[1];
+  const h = Math.round(Math.sqrt(maxPx / aspect));
+  return { w: Math.round(h * aspect), h, src: `${tierKey} maxPixels ${(maxPx / 1e6).toFixed(2)} Mpx at window aspect ${aspect.toFixed(3)}` };
+})();
 const pin = await evaluate(`JSON.stringify((()=>{
   const R=window.__RSB, comp=R.post().composer, r=comp.renderer;
   r.setPixelRatio(1); r.setSize(${BUF.w}, ${BUF.h}, false); R.post().setSize(${BUF.w}, ${BUF.h});
   return {canvas:[r.domElement.width, r.domElement.height], rt:[comp.renderTarget1.width, comp.renderTarget1.height],
           pr:r.getPixelRatio(), inner:[innerWidth, innerHeight], dpr:devicePixelRatio};
 })())`);
-console.log('PIN ' + pin);
+console.log(`PIN ${BUF.w}x${BUF.h} = ${(BUF.w * BUF.h / 1e6).toFixed(2)} Mpx by ${BUF.src} — ` + pin);
 const gpu = await evaluate(`JSON.stringify((()=>{const c=document.createElement("canvas");const gl=c.getContext("webgl2");
   const d=gl&&gl.getExtension("WEBGL_debug_renderer_info");return{renderer:d?gl.getParameter(d.UNMASKED_RENDERER_WEBGL):"none",
   w:innerWidth,h:innerHeight,q:window.__RSB.state.quality}})())`);
@@ -140,17 +172,62 @@ const CHUNK_CALL = o => `JSON.stringify(window.__RSB.drive(${o}))`;
 // camera frustum and sum what is visible. `storm` rides along because the wreckage field is where
 // the weather mesh lives, and a front that happens to be up at that moment is a different diagnosis
 // than 400 extra draw calls.
+// A cheap fps number and a cheap triangle count disagreed with each other on 2026-09-27: the same
+// ruler, pointed at a parked page, read the 17 ms rAF floor at 1 516 frustum meshes / 1.68 M triangles,
+// while this tour reports ~49 fps at 1 304 / 1.52 M. The first answer given ("the far band costs 5 ms")
+// turned out to be an artifact of a probe that leaked ~120 meshes into its own scene, so what is left is
+// the honest question: a census that counts only meshes cannot see the difference. It now also counts
+// what else the frame carries — particles (tyre dust, exhaust and sand plumes are Points, never meshes,
+// and they only exist while the rover drives), lines/sprites, the sun-shadow caster set, where the day
+// clock stands (the cycle is 300 s, so a 300 s tour walks through dusk into night lighting and back),
+// the renderer's lazy-compile counters (`programs`/`textures`: a scene that uploads a material the
+// first time the camera swings onto it hitches, and a mean fps cannot tell a hitch from a slow frame),
+// and the distribution of frame gaps since the last chunk.
 const CENSUS = `(async()=>{
   const T=await import('three'), R=window.__RSB, sc=R.scene(), cam=R.camera();
   const r=R.post().composer.renderer, cv=r.domElement;
   sc.updateMatrixWorld(true);
   const f=new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse));
-  let draws=0,tris=0;
-  sc.traverse(o=>{ if(!o.isMesh||!o.visible||!o.geometry)return;
+  let draws=0,tris=0,meshes=0,parts=0,partN=0,lineN=0,cast=0;
+  // An object's own visible flag is not "on screen": traverse() descends through hidden parents,
+  // and the storm field's points live under a group the weather switches off. Walk the chain, or the
+  // census reports particles the renderer never sees.
+  const on=o=>{for(let p=o;p;p=p.parent)if(!p.visible)return false;return true};
+  sc.traverse(o=>{ if(!on(o))return;
+    if(o.isMesh){ meshes++; if(o.castShadow)cast++; }
+    if((o.isPoints||o.isLine||o.isSprite)&&o.geometry){
+      const n=o.geometry.attributes.position?o.geometry.attributes.position.count:0;
+      if(o.isPoints){parts+=n;partN++} else lineN++;
+      return }
+    if(!o.isMesh||!o.geometry)return;
     if(!o.geometry.boundingSphere)o.geometry.computeBoundingSphere();
     if(!f.intersectsSphere(o.geometry.boundingSphere.clone().applyMatrix4(o.matrixWorld)))return;
     const g=o.geometry; draws++; tris+=(g.index?g.index.count:g.attributes.position.count)/3*(o.isInstancedMesh?o.count:1); });
+  const e=(R.env&&R.env())||{};
+  // Frame gaps, counted by a rAF ticker the census arms on its first call and drains on every one
+  // after, so each row carries the distribution of the stretch it just measured. Date.now() and not
+  // the rAF timestamp argument, because this build's high-resolution clock does not advance inside a
+  // task (see tools/cdp-frame-cost.mjs) and mixing the two bases would put a start-up offset into
+  // every row. A mean fps of 49 can be a 20.4 ms frame or a 17 ms frame with four 60 ms hitches,
+  // and only one of those two is fixed by taking geometry out of the scene.
+  const G = window.__rsbGaps || (window.__rsbGaps = { a: [], prev: 0, armed: 0 });
+  if (!G.armed) { G.armed = 1;
+    const tick = () => { const t = Date.now(); if (G.prev) G.a.push(t - G.prev); G.prev = t;
+      if (G.a.length > 6000) G.a.splice(0, 3000); requestAnimationFrame(tick); };
+    requestAnimationFrame(tick); }
+  const a = G.a.splice(0).sort((p, q) => p - q);
+  // 'sum' is what makes 'max' readable. __RSB.drive() runs its chunk as one synchronous task
+  // (main.js:3972, capped at 9 s by the 'f % 900' bail at main.js:4471), so the page serves no rAF
+  // frame while the audit is driving — that one task IS the multi-second max, and 'n' is only the
+  // frames served in the gap between chunks. Without 'sum' a reader cannot tell a 9 s freeze from a
+  // hitch inside a running frame, and the two have opposite meanings here.
+  const info = { med: a[a.length >> 1] ?? null, p90: a[Math.floor(a.length * 0.9)] ?? null,
+    max: a[a.length - 1] ?? null, n: a.length, over25: a.filter(v => v > 25).length,
+    sum: a.reduce((s2, v) => s2 + v, 0) };
   return JSON.stringify({draws,tris:Math.round(tris),pr:r.getPixelRatio(),
+    meshes,parts,partN,lineN,cast,gaps:info,
+    prog:(r.info.programs||[]).length,tex:r.info.memory.textures,geo:r.info.memory.geometries,
+    day:e.dayT!==undefined?+e.dayT.toFixed(3):null,night:e.nightF!==undefined?+e.nightF.toFixed(2):null,
     buf:cv.width+'x'+cv.height,
     storm:R.storm&&R.storm()||null});
 })()`;
@@ -213,9 +290,26 @@ for (; calls < CALL_CAP; calls++) {
   const pos = [pose[0], pose[2]];
   const cen = JSON.parse(await evaluate(CENSUS));
   const st = cen.storm ? `${cen.storm.phase}:${Math.round(cen.storm.intensity * 100)}%` : 'none';
-  fpsAt.push({ at: report.simSeconds, x: pos[0], z: pos[1], yawDeg: pose[3], fps, rescue, ...cen, ...e });
+  // The scored frame rate is the MEDIAN served frame, not `state.fps`. `fpsAvg` (main.js:2604-2611)
+  // is a ring of 60 instantaneous `1/dt` samples whose dt is clamped to 0.05 s, so every CDP call this
+  // harness makes enters the average as a 20 fps sample and costs 0.65 fps each — and the audit makes
+  // several per chunk. The pair of runs on 2026-09-27 says it without arguing from the mechanism: at
+  // the identical pose (-77,59) and the identical census (1 304 draws / 1.52 M triangles) chunk 3 read
+  // `ema 52` in tools/logs/tour-300-tierpin-ema.log — the row that FAILED the bar — and `ema 53` in
+  // tools/logs/tour-300-tierpin-c.log, while the served-frame median of both rows is 18 ms. One number
+  // straddles the bar on rows of the same scene. A statistic that moves with the harness's own
+  // bookkeeping is not a measurement of the scene, so it is reported and no longer scored. The
+  // repeat on the committed bytes (tools/logs/tour-300-tierpin-d.log) PASSED with served min 56 at
+  // the same pose, and its EMA read 56 there — the fix is the statistic, not the scene.
+  // The honest limit of this column: those frames are served between chunks, while `simHold()`
+  // (main.js:2727) stops the sim advancing. Driving adds per-frame work no held frame pays, so the
+  // live cadence under real pedals is measured by its own ruler — tools/cdp-live-cadence.mjs, whose
+  // log has six driving rows at this same buffer, all med 17 ms / 58.8 fps.
+  const liveFps = Number.isFinite(cen.gaps.med) ? Math.round(1000 / cen.gaps.med) : null;
+  fpsAt.push({ at: report.simSeconds, x: pos[0], z: pos[1], yawDeg: pose[3], fps, liveFps, rescue, ...cen, ...e });
   console.log(`chunk ${calls + 1} sim=${report.simSeconds}s m=${report.metres} wp=${report.coverage.driven}/${report.coverage.of}` +
-    ` fps=${fps} buf=${cen.buf} draws=${cen.draws} tris=${cen.tris} storm=${st} ${envText(e)}` +
+    ` live=${liveFps ?? '-'} ema=${fps} buf=${cen.buf} draws=${cen.draws} tris=${cen.tris} meshes=${cen.meshes} parts=${cen.parts}(${cen.partN}) cast=${cen.cast} prog=${cen.prog} tex=${cen.tex}` +
+    ` gaps ${cen.gaps.med}/${cen.gaps.p90}/${cen.gaps.max}ms >25:${cen.gaps.over25}/${cen.gaps.n} wall=${(cen.gaps.sum / 1000).toFixed(1)}s day=${cen.day} storm=${st} ${envText(e)}` +
     ` pos=${pos[0]},${pos[1]} stuck=${report.stuckPockets} pen=${report.clip.bodyPenMax}` +
     ` sink=${report.clip.sinkMax} rescues=${report.rescues}${rescue ? ' ' + rescue : ''}`);
   if (report.done) break;
@@ -252,17 +346,25 @@ if (LEG.only) {
   process.exit(0);
 }
 const gpuInfo = JSON.parse(gpu);
-const fpsSort = fpsAt.map(r => r.fps).sort((a, b) => a - b);
-const fpsMin = fpsSort[0], fpsMed = fpsSort[fpsSort.length >> 1];
+// Scored on the served frame, reported alongside the game's own EMA. A row with no median is either
+// the first census (it is the call that arms the ticker, so it has no stretch behind it) or a
+// `pace=0` run (no render window, so no frames at all) — and the population has to say so rather than
+// quietly scoring the bar on fewer rows than the run had.
+const scored = fpsAt.filter(r => Number.isFinite(r.liveFps));
+const liveSort = scored.map(r => r.liveFps).sort((a, b) => a - b);
+const fpsMin = liveSort[0], fpsMed = liveSort[liveSort.length >> 1];
+const emaSort = fpsAt.map(r => r.fps).sort((a, b) => a - b);
+const emaMin = emaSort[0], emaMed = emaSort[emaSort.length >> 1];
 const fails = [];
 // Three of these are bars about the *measurement*, not the game, and they sit above the fps bar on
 // purpose: an fps number read at the wrong resolution, on a software rasteriser, or while the CPU
 // package is at its thermal limit is not evidence either way, and the last run proved it the hard
 // way (a stale SwiftShader Chrome at 1 314 % CPU sank a clean build from 63 to 36 fps mid-tour).
 if (/swiftshader|llvmpipe|software/i.test(gpuInfo.renderer)) fails.push(`software GL: ${gpuInfo.renderer}`);
-// The window never reached 1920×1080 here (see the PIN note above), so the bar is on the buffer that
-// actually gets shaded, re-read every chunk: an fps number is only worth anything at the size it
-// names. `pr` is reported alongside so a 1920×1080 canvas at ratio 2 (4.1 Mpx) cannot pass as 1080p.
+// No window lever reaches the canvas on this headless build (see the PIN note above), so the bar is
+// on the buffer that actually gets shaded, re-read every chunk: an fps number is only worth anything
+// at the size it names, and the size it has to name is the tier's own pixel budget. `pr` is reported
+// alongside so a 1920×1080 canvas at ratio 2 (4.1 Mpx) cannot pass as the tier under test.
 const want = `${BUF.w}x${BUF.h}`;
 const wrong = fpsAt.filter(r => r.buf !== want);
 const bufOk = wrong.length === 0;
@@ -307,15 +409,20 @@ if (exceptions) fails.push(`${exceptions} uncaught exceptions`);
 // Withheld, not skipped, when the size is wrong: the fps number would be an artefact of the rig, and
 // the run already fails on the bar above.
 if (!bufOk) fails.push(`fps ${fpsMin} not scored — wrong render buffer size, fix the PIN first`);
-else if (fpsMin < 55) fails.push(`fps min ${fpsMin} < 55`);
+else if (scored.length < 3) fails.push(`only ${scored.length}/${fpsAt.length} chunks carry a served-frame ` +
+  `median — the fps bar has nothing to score (a render window is needed: pace=)`);
+else if (fpsMin < 55) fails.push(`served fps min ${fpsMin} < 55 (EMA min ${emaMin})`);
 
 console.log('TOUR ' + JSON.stringify(report));
 // `min` is the bar, but a single worst window out of 240 tells you nothing about how wide the
 // problem is, and the census beside the worst rows is what turns "fps 29" into "fps 29 with 2 400
 // visible draws at the wreck field".
-const below = fpsAt.filter(r => r.fps < 55).length;
-console.log('FPS ' + JSON.stringify({ min: fpsMin, med: fpsMed, samples: fpsAt.length, below55: below,
-  worst: fpsAt.slice().sort((a, b) => a.fps - b.fps).slice(0, 6) }));
+const below = scored.filter(r => r.liveFps < 55).length;
+console.log('FPS ' + JSON.stringify({ min: fpsMin, med: fpsMed, samples: fpsAt.length, scored: scored.length,
+  below55: below, emaMin, emaMed,
+  worst: scored.slice().sort((a, b) => a.liveFps - b.liveFps).slice(0, 6)
+    .map(r => ({ at: r.at, x: r.x, z: r.z, liveFps: r.liveFps, ema: r.fps, draws: r.draws,
+                 tris: r.tris, gaps: r.gaps })) }));
 console.log('TOUR VERDICT ' + (fails.length ? 'FAIL' : 'PASS'));
 for (const f of fails) console.log('  ✗ ' + f);
 process.exit(fails.length ? 1 : 0);

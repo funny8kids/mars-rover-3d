@@ -1,0 +1,24 @@
+BOOT {"tier":"std","pr":0.9431,"w":1810,"h":883,"css":"1920x937"} · rows: tier=1811x884 pin=1920x1080
+--- r1 tier 1811x884 = 1.60 Mpx by std maxPixels 1.60 Mpx at aspect 2.049 ---
+r1 tier parked         buf=1811x884 med=17 p90=18 max=41 live=58.8 statefps=60.2 >25:1/358 draws=1563 tris=1811864 parts=7930(11) cast=312 spd=0 pos=-80,61 luma=138 px=218,169,141 193,133,95
+r1 tier straight       buf=1811x884 med=17 p90=19 max=23 live=58.8 statefps=58.5 >25:0/353 draws=1221 tris=1428424 parts=7930(11) cast=332 spd=5.8 pos=-47,59 luma=120 px=217,157,126 114,63,63
+r1 tier turning        buf=1811x884 med=17 p90=17 max=22 live=58.8 statefps=60 >25:0/360 draws=643 tris=889160 parts=7930(11) cast=374 spd=2.4 pos=-28,-5 luma=99 px=218,158,124 131,91,79
+--- r1 pin 1920x1080 = 2.07 Mpx by the buffer tools/cdp-tour-audit.mjs pinned before 2026-09-27 ---
+r1 pin parked          buf=1920x1080 med=18 p90=20 max=27 live=55.6 statefps=54.6 >25:1/326 draws=1563 tris=1811864 parts=7930(11) cast=312 spd=0 pos=-80,61 luma=140 px=218,174,150 194,138,101
+r1 pin straight        buf=1920x1080 med=19 p90=22 max=27 live=52.6 statefps=51.8 >25:3/307 draws=1222 tris=1430222 parts=7930(11) cast=332 spd=5.8 pos=-47,59 luma=127 px=217,159,129 123,75,106
+r1 pin turning         buf=1920x1080 med=17 p90=19 max=23 live=58.8 statefps=58.5 >25:0/344 draws=547 tris=775130 parts=7930(11) cast=387 spd=9.1 pos=-31,-14 luma=99 px=218,158,125 121,64,63
+--- r2 pin 1920x1080 = 2.07 Mpx by the buffer tools/cdp-tour-audit.mjs pinned before 2026-09-27 ---
+r2 pin parked          buf=1920x1080 med=18 p90=20 max=26 live=55.6 statefps=56.1 >25:1/328 draws=1563 tris=1811864 parts=7930(11) cast=295 spd=0 pos=-80,61 luma=141 px=218,172,147 194,137,99
+r2 pin straight        buf=1920x1080 med=19 p90=22 max=27 live=52.6 statefps=50.8 >25:1/306 draws=1219 tris=1424770 parts=7930(11) cast=332 spd=5.9 pos=-47,59 luma=122 px=217,158,129 101,60,61
+r2 pin turning         buf=1920x1080 med=17 p90=19 max=21 live=58.8 statefps=60.2 >25:0/350 draws=274 tris=516452 parts=7930(11) cast=367 spd=14.5 pos=-36,-44 luma=101 px=219,166,137 143,85,76
+--- r2 tier 1811x884 = 1.60 Mpx by std maxPixels 1.60 Mpx at aspect 2.049 ---
+r2 tier parked         buf=1811x884 med=17 p90=18 max=24 live=58.8 statefps=60 >25:0/360 draws=1563 tris=1811864 parts=7930(11) cast=296 spd=0 pos=-80,61 luma=141 px=218,168,141 192,133,94
+r2 tier straight       buf=1811x884 med=17 p90=19 max=45 live=58.8 statefps=59.2 >25:1/351 draws=1221 tris=1428424 parts=7930(11) cast=332 spd=5.8 pos=-47,59 luma=113 px=217,161,134 103,60,58
+r2 tier turning        buf=1811x884 med=17 p90=18 max=20 live=58.8 statefps=60 >25:0/359 draws=585 tris=803792 parts=7930(11) cast=375 spd=7.5 pos=-31,-12 luma=98 px=223,148,115 122,61,52
+LIVE tier  parked   med 17/17 ms -> 58.8 fps · p90≤18 max 41 · draws 1563/1563
+LIVE tier  straight med 17/17 ms -> 58.8 fps · p90≤19 max 45 · draws 1221/1221
+LIVE tier  turning  med 17/17 ms -> 58.8 fps · p90≤18 max 22 · draws 643/585
+LIVE pin   parked   med 18/18 ms -> 55.6 fps · p90≤20 max 27 · draws 1563/1563
+LIVE pin   straight med 19/19 ms -> 52.6 fps · p90≤22 max 27 · draws 1222/1219
+LIVE pin   turning  med 17/17 ms -> 58.8 fps · p90≤19 max 23 · draws 547/274
+  ✗ 2 driving row(s) at pin slower than 18 ms med: r1 pin straight 19ms @-47,59 1222 draws | r2 pin straight 19ms @-47,59 1219 draws

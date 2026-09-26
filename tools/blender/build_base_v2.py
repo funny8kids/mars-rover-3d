@@ -1308,11 +1308,21 @@ def export(root, fname, label):
         if o.type in {'MESH', 'EMPTY'}:
             o.select_set(True)
     path = os.path.join(OUT, fname)
-    bpy.ops.export_scene.gltf(filepath=path, export_format='GLB',
-                              use_selection=True, export_yup=True,
-                              export_apply=True)
+    rc = bpy.ops.export_scene.gltf(filepath=path, export_format='GLB',
+                                   use_selection=True, export_yup=True,
+                                   export_apply=True)
+    # The gltf operator does not raise when it refuses to write — it returns
+    # {'CANCELLED'} and the old code printed "EXPORTED" over the top of that,
+    # which is how an asset that never reached the disc read as a success
+    # (audit 2026-09-26, task #95/2). Status and file size are both checked now.
+    size = os.path.getsize(path) if os.path.isfile(path) else -1
+    if rc != {'FINISHED'} or size <= 0:
+        print("BASE_V2_EXPORT_FAILED asset=%s exporter rc=%s file=%s bytes=%d"
+              % (label, sorted(rc) if isinstance(rc, (set, frozenset)) else rc,
+                 path, size))
+        raise SystemExit(1)
     mn, mx = extents(root)
-    print("EXPORTED %-22s -> %s" % (fname, path))
+    print("EXPORTED %-22s -> %s (%d bytes)" % (fname, path, size))
     print("   blender AABB x[%.2f .. %.2f]  y[%.2f .. %.2f]  z[%.2f .. %.2f]"
           % (mn.x, mx.x, mn.y, mx.y, mn.z, mx.z))
     print("   centre x=%.2f y=%.2f  dims %.2f x %.2f x %.2f"
@@ -3924,23 +3934,73 @@ def habitat_dome():
 # ============================================================================
 #  main
 # ============================================================================
+# `starship` was dropped from this ORDER on 2026-09-26: it never had a builder
+# here (BUILDERS holds the seven names below), so the main loop's silent
+# `SKIP (no builder)` made the entry export nothing while the process ended
+# rc=0. The shipped star stack is public/assets/starship_stack.glb, produced by
+# tools/blender/build_starship.py — build_starship() at :203, exported as
+# "starship_stack.glb" at :361 — and src/world/props.js loads it under the name
+# `starship_stack` (props.js:107 in HERO, :321 `models.starship_stack`). It is
+# never loaded as `starship` anywhere in src/. Rebuilding it means running that
+# script, not this one.
 ORDER = ["lamp", "crystal", "cryo_tank", "lander", "greenhouse",
-         "habitat_dome", "launch_tower", "starship"]
+         "habitat_dome", "launch_tower"]
 
 if __name__ == "__main__":
-    want = [a for a in sys.argv[4:] if a in BUILDERS]
-    for nm in (want or ORDER):
-        if nm not in BUILDERS:
-            print("SKIP (no builder):", nm)
+    # No silent skips (audit 2026-09-26, task #95/2): an ORDER entry or a
+    # CLI-requested asset without a builder is a NAMED build failure, not a
+    # `continue`. Blender --background exits rc=0 even on an uncaught script
+    # exception (measured on 5.2 LTS), so every failure path here goes through
+    # SystemExit, which does propagate rc=1:
+    #   BASE_V2_ABORT          requested/ORDER asset has no builder
+    #   BASE_V2_EXPORT_FAILED  the gltf operator cancelled or wrote an empty file
+    #   BASE_V2_FAILED         a stage raised for that asset (build/cleanup/datum)
+    #   BASE_V2_INCOMPLETE     the run ended without every asset on disc
+    # A crash costs that one asset only; the rest still get audited and exported,
+    # and the exit code reports the whole undone set at the end.
+    import traceback
+    want = [a for a in sys.argv[4:] if a != "--"]
+    unknown = [a for a in want if a not in BUILDERS]
+    if unknown:
+        print("BASE_V2_ABORT requested assets have no builder: %s (builders: %s)"
+              % (unknown, sorted(BUILDERS)))
+        raise SystemExit(1)
+    if not want:
+        missing = [nm for nm in ORDER if nm not in BUILDERS]
+        if missing:
+            print("BASE_V2_ABORT ORDER entries have no builder: %s (builders: %s)"
+                  % (missing, sorted(BUILDERS)))
+            raise SystemExit(1)
+    run = want or ORDER
+    done = []
+    crashed = []
+    for nm in run:
+        try:
+            purge()
+            root = BUILDERS[nm]()
+            root.name = nm
+            for o in root.children_recursive:
+                if o.type == 'MESH':
+                    cleanup(o)
+            snap_datum(root)
+            audit(nm, root)
+            export(root, nm + ".glb", nm)
+        except SystemExit:
+            raise
+        except BaseException:
+            traceback.print_exc()
+            print("BASE_V2_FAILED asset=%s stage raised — not counted as built" % nm)
+            crashed.append(nm)
             continue
-        purge()
-        root = BUILDERS[nm]()
-        root.name = nm
-        for o in root.children_recursive:
-            if o.type == 'MESH':
-                cleanup(o)
-        snap_datum(root)
-        audit(nm, root)
-        export(root, nm + ".glb", nm)
-    print("BASE_V2_DONE")
+        done.append(nm)
+    # Reconcile against the disc, not against the loop counter: `done != run` alone
+    # can never fire, because every exception path above has already left the run.
+    nofile = [nm for nm in run
+              if not (os.path.isfile(os.path.join(OUT, nm + ".glb"))
+                      and os.path.getsize(os.path.join(OUT, nm + ".glb")) > 0)]
+    if crashed or nofile or done != run:
+        print("BASE_V2_INCOMPLETE exported %d/%d crashed=%s no glb on disk=%s"
+              % (len(done), len(run), crashed, nofile))
+        raise SystemExit(1)
+    print("BASE_V2_DONE %d/%d %s" % (len(done), len(run), done))
 

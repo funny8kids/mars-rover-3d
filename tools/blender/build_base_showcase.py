@@ -701,11 +701,22 @@ def export(root, name):
         if o.type in {'MESH', 'EMPTY'}:
             o.select_set(True)
     path = os.path.join(OUT, name + ".glb")
-    bpy.ops.export_scene.gltf(filepath=path, export_format='GLB',
-                              use_selection=True, export_yup=True,
-                              export_apply=True)
+    rc = bpy.ops.export_scene.gltf(filepath=path, export_format='GLB',
+                                   use_selection=True, export_yup=True,
+                                   export_apply=True)
+    # A cancelled exporter does NOT raise — it returns {'CANCELLED'} and leaves the
+    # previous file, or nothing, on disk. Before this check the "EXPORTED" line
+    # below was therefore decoration on a build that had written no asset at all
+    # (audit 2026-09-26, task #95/3). Both the operator status and the file that
+    # is actually on disk have to agree before anything downstream gets to print.
+    size = os.path.getsize(path) if os.path.isfile(path) else -1
+    if rc != {'FINISHED'} or size <= 0:
+        print("SHOWCASE_EXPORT_FAILED asset=%r exporter rc=%s file=%s bytes=%d"
+              % (name, sorted(rc) if isinstance(rc, (set, frozenset)) else rc,
+                 path, size))
+        sys.exit(1)
     tris = sum(tri_of(o) for o in root.children_recursive if o.type == 'MESH')
-    print("EXPORTED %s.glb tris=%d" % (name, tris))
+    print("EXPORTED %s.glb tris=%d bytes=%d" % (name, tris, size))
     return tris
 
 # ============================================================ small helpers
@@ -1259,7 +1270,11 @@ def verify(name):
            drift, got))
     print("VERIFY %s => %s%s" % (name, "OK" if ok else "DRIFT",
           (" bad_emissives=" + str(bad_emis)) if bad_emis else ""))
-    return got, mn, mx
+    # `ok` is returned, not asserted here: main is what decides the exit code, so
+    # one run can still report every asset that drifted instead of stopping at the
+    # first. Before this the "VERIFY x => DRIFT" line was a printout that the
+    # process then walked past into BASE_DONE with rc=0 (task #95/3).
+    return got, mn, mx, ok
 
 def setup_render_world():
     w = bpy.data.worlds.get("World") or bpy.data.worlds.new("World")
@@ -1337,17 +1352,68 @@ ORDER = ["starship", "habitat_dome", "greenhouse", "launch_tower", "cryo_tank",
          "lander", "lamp", "crystal"]
 
 if __name__ == "__main__":
+    # Exit-code contract (audit 2026-09-26, task #95/3): this script used to
+    # die with `KeyError: greenhouse` after exporting 2 of 8 assets and still
+    # leave blender at rc=0 — blender --background does NOT propagate an
+    # uncaught script exception into the exit code (measured on 5.2 LTS), while
+    # SystemExit does. So every stage here reports into one of the named
+    # SHOWCASE_* lines below, and BASE_DONE only prints when the run is clean:
+    #   SHOWCASE_ABORT          requested asset has no builder (nothing built)
+    #   SHOWCASE_EXPORT_FAILED  the gltf operator cancelled or wrote no asset
+    #   SHOWCASE_VERIFY_FAILED  the re-imported GLB misses TARGETS / material bar
+    #   SHOWCASE_FAILED         a stage raised — the asset is not counted as built
+    # A crash stops that one asset, not the run: the remaining assets still get
+    # their readings, and the process leaves rc=1 naming everything that is undone.
+    import traceback
+    # `--only greenhousee` used to cost nothing: ORDER is the filter's left-hand side, so a name
+    # that is not in it was dropped by the comprehension and the run built an empty batch and
+    # printed `BASE_DONE 0/0 []` at rc=0 (measured 2026-09-26, task #95). A requested asset this
+    # script cannot build is a refusal, the same way v2 refuses an unknown CLI name.
+    outside = [n for n in ONLY if n not in ORDER]
+    if outside:
+        print("SHOWCASE_ABORT --only names assets this script does not order: %s (ORDER: %s)"
+              % (outside, ORDER))
+        sys.exit(1)
+    expected = [n for n in ORDER if not ONLY or n in ONLY]
+    missing = [n for n in expected if n not in BUILDERS]
+    if missing:
+        print("SHOWCASE_ABORT expected assets have no builder: %s (builders: %s)"
+              % (missing, sorted(BUILDERS)))
+        sys.exit(1)
     total_tris = 0
     done = []
-    for name in ORDER:
-        if ONLY and name not in ONLY:
-            continue
+    crashed = []
+    drifted = []
+    for name in expected:
         t0 = time.time()
-        root = BUILDERS[name]()
-        export(root, name)
-        got, mn, mx = verify(name)
-        if not flag("--no-render"):
-            setup_render_world()
-            render_asset(name, mn, mx)
+        ok = False
+        try:
+            root = BUILDERS[name]()
+            export(root, name)
+            got, mn, mx, ok = verify(name)
+            if not flag("--no-render"):
+                setup_render_world()
+                render_asset(name, mn, mx)
+        except SystemExit:
+            raise
+        except BaseException:
+            traceback.print_exc()
+            print("SHOWCASE_FAILED asset=%r stage raised — not counted as built" % name)
+            crashed.append(name)
+            purge()          # the failed build may have left half a scene behind
+            continue
         done.append((name, time.time() - t0))
-    print("BASE_DONE %s" % done)
+        if not ok:
+            print("SHOWCASE_VERIFY_FAILED asset=%r — see the VERIFY lines above "
+                  "for which bar it missed" % name)
+            drifted.append(name)
+    # Reconcile: every expected asset must have a non-empty GLB actually on disk.
+    nofile = [n for n in expected
+              if not (os.path.isfile(os.path.join(OUT, n + ".glb"))
+                      and os.path.getsize(os.path.join(OUT, n + ".glb")) > 0)]
+    if crashed or drifted or nofile or len(done) != len(expected):
+        print("SHOWCASE_INCOMPLETE built %d/%d crashed=%s verify_failed=%s "
+              "no glb on disk=%s" % (len(done), len(expected), crashed, drifted,
+              nofile))
+        sys.exit(1)
+    print("BASE_DONE %d/%d %s" % (len(done), len(expected), done))

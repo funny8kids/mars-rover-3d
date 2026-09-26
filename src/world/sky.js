@@ -65,7 +65,18 @@ void main(){
   // so the sun read as a white hole rather than a disc with a rim.
   float glow = pow(sdot, 220.0) * 0.9 + pow(sdot, 26.0) * 0.22 + pow(sdot, 3.0) * 0.055;
   vec3 sunCol = mix(vec3(1.0, 0.55, 0.28), vec3(1.0, 0.87, 0.72), dayF);
-  sky += sunCol * (disc * 22.0 + glow) * (0.12 + dayF * 0.9) * (1.0 - duskF * 0.15);
+  // 5.0, not 22.0. The disc only has to clear the tone-mapped white point (ACES is at 0.99 by 4.0), and
+  // UnrealBloomPass puts the *excess* over its threshold into the mip chain — so at 22 the sun painted a
+  // third of the frame from a position outside the frame altogether. Measured at the motor-pad vantage
+  // (sun 53° off-axis, i.e. not visible), against the bloom that existed then (day threshold 2.9):
+  // 12.3 % of the sample blown with the disc at 22, 2.3 % with the pass switched off, 5.2 % at half
+  // strength — the disc was the bloom's fuel, not the ground.
+  // The 2.9 it was measured against is gone: main.js:2566 now lerps the threshold 6.0 → 0.42 with
+  // nightF, so at noon the disc at 5.0 no longer feeds the pass at all. What survives here is the
+  // second half of that finding — a disc has to stay near the white point or the *sky* around it is the
+  // next thing that gets veiled — and the same vantage still reads 1.5 % blown with the pass off, which
+  // is the sun's own corona at the frame edge plus sunlit white paint, not bloom.
+  sky += sunCol * (disc * 5.0 + glow) * (0.12 + dayF * 0.9) * (1.0 - duskF * 0.15);
   // Forward scattering off suspended fines. Clearing the disc away with the day factor also threw
   // away the only thing that made a dust storm read as *dust* rather than brown fog: the sun still
   // shines through a Martian storm, it just smears into a wide sheath around itself. This is lit by

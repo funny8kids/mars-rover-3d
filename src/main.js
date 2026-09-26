@@ -2559,11 +2559,21 @@ function update(dt) {
   // at night a full-strength bloom turns every lamp into a disc that lifts the whole
   // sky and erases the stars, so the night frames get a tighter bloom budget
   post.bloom.strength = (quality.bloomStrength + (launch.audioLevel || 0) * 0.5) * (1 - st.nightF * 0.35);
-  // Bloom threshold is read against raw linear radiance. By day sunlit hull sits near 3.0
-  // and must stay under it; by night the lamps are the whole picture and must clear it.
-  // The rim crest also reaches ~3.0, and blooming it veiled the whole horizon in a flat orange
-  // wash, so the day gate now sits above the brightest thing the sun can light.
-  post.bloom.threshold = THREE.MathUtils.lerp(2.9, 0.42, st.nightF) * (1 - stormF * 0.45);
+  // Bloom threshold is read against raw linear radiance, so the gate has to sit above the brightest
+  // thing the sun lights — and that thing measured 3.39 (the `sun=` column of the map-wide clip
+  // sweep, tools/logs/clip-sweep-2026-09-27*.log), not the ~3.0 the previous comment assumed. With the
+  // gate at 2.9 every sunlit cream fitting fed the mip chain: at the motor pad the frame read 5.9 %
+  // blown and 18.3 % in the 192-223 band just under it, and with the pass switched off entirely the
+  // same pose scored 2.4 % / 9.8 %. The veil, not the hole, is what the eye called "washed out", so
+  // the day gate now clears the whole sunlit band and leaves bloom to what genuinely exceeds it:
+  // the plume, the lamp cores, the sun itself.
+  post.bloom.threshold = THREE.MathUtils.lerp(6.0, 0.42, st.nightF) * (1 - stormF * 0.45);
+  // The spread has to follow the same clock. At 0.62 a mip pyramid wide enough to soften a night lamp
+  // smears a day specular across a third of the frame, and the two knobs are not interchangeable:
+  // measured at one pinned pose, threshold alone took 5.9 % -> 5.5 %, threshold + radius 0.30 took it
+  // to 4.5 %, and all three gates together landed on 2.5 % — which is the bloom-off number (2.4 %).
+  // Night keeps its 0.62; that softening is what the lamp rework bought.
+  post.bloom.radius = THREE.MathUtils.lerp(0.28, 0.62, st.nightF);
   // Daylight frames were crushing to 43% near-black silhouette; night was already balanced
   // at 0.97 by the lamp pass, so the lift tracks the sun rather than the whole clock.
   // The storm's own lift is small and deliberate: the key is down 68%, so the exposure opens up
@@ -2575,7 +2585,14 @@ function update(dt) {
   // `cast` ruler came back null at three of the four — there was nothing bright enough in frame to
   // be the reason for the restraint. The lamps are already held by the bloom gate above, which is
   // night-aware on its own, so the exposure now gives back most of that dip.
-  renderer.toneMappingExposure = 1.02 - st.nightF * 0.09 + stormF * 0.11;
+  // The cut is on the DAY end only, and the two followers are subtracted separately rather than
+  // folded into one constant so the dusk and night grades keep the exact numbers the lamp rework
+  // tuned them to: at dayF 0 the expression is byte-for-byte the old one, and only a sun that is
+  // actually up pays for it. Why the day end had to come down at all: with both bloom gates already
+  // fixed, the sunlit band still sat over the tone curve's white point — measured clip 2.4 % at the
+  // motor pad and 0.7 % on the open dunes, of which the ground half was 0.51 % and 0.00 %. At 0.88
+  // those become 1.7 % and 0.3 %, and the 192-223 band under the blow point halves (9.8 % -> 7.7 %).
+  renderer.toneMappingExposure = 1.02 - st.nightF * 0.09 - st.dayF * 0.14 + stormF * 0.11;
 
   // HUD
   UI.setSpeed(phys.speed * 3.6);

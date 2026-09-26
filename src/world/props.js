@@ -348,6 +348,16 @@ export async function buildBase(scene, quality) {
     const seat = name === 'teleport_pad' ? -PAD_DECK_Z * s : bias;
     const y = grade(lid, x, z, foot.w, foot.d, foot.ry) + seat;
     const o = put(name, x, z, s, ry, 0, y);
+    // `put` takes its scope stamp from the group it is added into, and a pad is added straight to the
+    // island, so every pad has been inventoried under a name the collision pass made up on the spot:
+    // the hub's pad was `hub:loose3`, which is a work item nobody can go and look at. The footing
+    // already carries a unique id, so the discs now answer to the same one — `hub:pad0#0`, and after
+    // this change 21 of the map's discs read `padN#k` where they used to be `looseNNN#k`. Labels only:
+    // the gate is byte-identical across the change (discs 694, seams 40, traps 9, pockets 0,
+    // plan().tight 0, unreachable 0, measured 2026-09-26 on bc7f493 and after). One of the nine traps
+    // is now nameable as `hub:lamp-ring-1 | hub:pad0#0`.
+    o.userData.rsbScope = lid;
+    o.userData.rsbZone = ZONE;
     if (name === 'teleport_pad') {
       const d = new THREE.Mesh(padMarkGeo, padMarkMat(PAD_MARKS[padSeq % 6], 0x1a2b3d + padSeq * 7919));
       padSeq++;
@@ -2909,6 +2919,12 @@ export async function buildBase(scene, quality) {
       // Hugging the pad beats a wide but distant lot — the tap is meant to be seen from the pad —
       // so legal sites rank by radius first. If the district owns every one of the 96 candidates the
       // emptiest loser is used, which is never as bad as the blind 4.4 m offset it replaced.
+      // Tried and withdrawn the same day (measured on the built scene): ranking the tight bucket
+      // widest-first does clear the hub crease — the tap leaves `hub:ring-135` and `scan().traps`
+      // falls 9 → 7 — but the tap it buys is 13.4 m from its own pad, which breaks the one thing the
+      // bucket's ordering exists to keep ("the tap is meant to be seen from the pad") and drags the
+      // feed duct 10 m across the plaza. The crease is therefore not this pass's to solve: see the
+      // note on `TAP_STANDOFF` — the hub's north-west quadrant is over-subscribed.
       const pick = (legal.length ? legal : best.length ? best : apron).sort((p, q) => p.rr - q.rr || q.clear - p.clear)[0];
       return pick || { x: px, z: pz, yaw: away };
     };

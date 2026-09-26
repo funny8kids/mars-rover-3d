@@ -3497,7 +3497,7 @@ window.__RSB = {
     // burning all 46 waypoint indices in 0.77 s. A run that reported `laps: 175` had not driven 175
     // laps — it had stopped driving and kept counting.
     const armLap = p => { p.lapBest = 1e9; p.since = null; p.held = 0; p.park = undefined;
-      p.stage = null; p.wayT = -9; };
+      p.stage = null; p.wayT = -9; p.parkArmed = null; };
     let s = qaDrive;
     if (!s || opts.reset) {
       // The hull's rest height is a constant of the physics, not a reading of where the boot left it:
@@ -4049,7 +4049,21 @@ window.__RSB = {
         // driven. When it closes the waypoint falls back to the cruise planner — aimed at the entry
         // stance if one has been found, at the pad centre otherwise — and the lane re-opens as soon as
         // the hull is past the obstruction.
-        const parking = near && (!tgt.park || lane >= 0.4);
+        // The bar has to be one-way, though: measured 2026-09-27 on the whole 4 s run-up of
+        // pad:industry's failed leg (240-frame decision trace, tools/logs/tour-130-decwin.log), `lane`
+        // crossed 0.4 seven times in 240 frames (0.31 → 1.08 → 0.26 → 1.00 …) and every frame below the
+        // bar handed the waypoint to the cruise planner — which reads a clear 18 m ray over the pad,
+        // commands gas 1 at 8-11 m/s, and carries the hull past the circle it was entering. The pad's
+        // own legs stand inside that circle (`industry:pad3#0/#1/#2` at 2.5 m off centre), so on the
+        // last metres the line always grazes something: an entry bar of 0.4 m is reachable, a *held* bar
+        // of 0.4 m is not, and a rule that needs both disarms exactly where slowing down was the point.
+        // So the commit is made at 0.4 and kept until the line actually crosses a solid (lane < 0),
+        // which is what the driving in this branch does with a grazing line anyway: the detour aim at
+        // `tgt.spot` stays bounded by the distance to the spot, so the rover creeps around the leg
+        // instead of being released back onto the road.
+        const heldLine = tgt.parkArmed === tgt.park;
+        const parking = near && (!tgt.park || lane >= (heldLine ? 0 : 0.4));
+        if (parking && tgt.park && lane >= 0.4) tgt.parkArmed = tgt.park;
         // What the clock is actually spent on. `parkT` is seconds this waypoint was steered by the
         // parking controller rather than the whisker planner; `handed` counts the frames the handover
         // fired while the rover was still outside the clean 9 m circle.
@@ -4150,7 +4164,22 @@ window.__RSB = {
         // An entry stance bounds the pedal the same way a park point does: it is a point to arrive at,
         // not a point to drive through at 13 m/s, and the apron past it is the clutter the last section
         // is about.
-        const room = parking && !blind ? Math.min(see, b.r)
+        // The parking leg's room is measured *along the heading*, not to the point. Measured 2026-09-27
+        // on the last 3 s of pad:industry's failed leg (240-frame decision trace with the yaw and the
+        // raw bearing to the spot added, tools/logs/tour-130-yawprobe.log): the spot stood 2.8 m off the
+        // bow, `steer` held at full lock for the whole window, and the bearing error to that spot grew
+        // from 1.20 to 1.94 rad anyway — the hull only swung 0.36 rad in 0.6 s at 5.0 m/s, i.e. an ~8 m
+        // turning circle against a 2.8 m offset. The rover drove the arc past its own parking spot, the
+        // lane then read negative on the way out, and the next re-pick handed it a spot on the far side,
+        // which it also sailed past: `best 4.1 m / r 3.9 m, dwell 0.0 s` on both laps of both reps.
+        // Projecting the room onto the heading is what closes that loop: an unaligned spot is a spot to
+        // stop at and turn into, and the crawl speed is measured to be enough (the same trace turns 1.15
+        // rad in 1.2 s at 0.4-2.2 m/s). Cosine, clamped at a right angle, so an approach that already
+        // aims at its spot pays nothing for the change: measured on the whole lap
+        // (tools/logs/tour-300-align.log) the six other pad legs kept their dwell and the route closed
+        // a full circle for the first time — districts 7/7, streets 23/24, points 21/22.
+        const align = Math.cos(Math.min(Math.abs(err), Math.PI / 2));
+        const room = parking && !blind ? Math.min(see, b.r * align)
           : toStage ? Math.min(see, Math.hypot(tgt.stage.x - phys.x, tgt.stage.z - phys.z) + 3)
           : see;
         const vCap = Math.sqrt(Math.max(2, room) / 0.15);
@@ -4377,7 +4406,7 @@ window.__RSB = {
         // misses is a real defect, and the report labels which points needed the second try.
         if (tgt.lapBest > tgt.r && !tgt.retried && s.t < s.budget - 90) {
           tgt.retried = true; tgt.since = null; tgt.held = 0; tgt.park = undefined;
-          tgt.stage = null; tgt.wayT = -9;
+          tgt.stage = null; tgt.wayT = -9; tgt.parkArmed = null;
           s.route.push(tgt); s.retries++;
         }
         s.wp++;

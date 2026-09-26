@@ -20,7 +20,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 // way: a positional slot that receives the wrong token silently becomes a filter that matches
 // nothing, and the run then reports an empty census as a clean one. The name list is explicit because
 // the URL is a positional argument and carries `?auto=std` — matching on "=" alone drops it.
-const NAMED = ['only', 'at', 'grace', 'pace'];
+const NAMED = ['only', 'at', 'grace', 'pace', 'trace'];
 const positional = process.argv.slice(2).filter(a => !NAMED.some(n => a.startsWith(n + '=')));
 const flag = name => process.argv.find(a => a.startsWith(name + '='))?.slice(name.length + 1);
 const [url, portStr, secondsStr, chunkStr] = positional;
@@ -165,6 +165,11 @@ for (let t = 0; t < SECONDS + CHUNK; t += CHUNK) {
   const opts = { seconds: SECONDS, chunk: CHUNK, loop: true, pause: 1.5, keepPower: true,
                  reset: calls === 0 };
   if (LEG.only) { opts.only = LEG.only; opts.traceAll = true; }
+  // `trace=1` arms the controller's own per-frame readings (main.js `s.dec` → the report's `wedges`)
+  // on a run that keeps its full route. `only=` has been the only way to get them, and that narrows
+  // the waypoint list — so the trail it captures belongs to a leg the cruise never drove. A wedge that
+  // only exists in tour context needs the tour's own route under the same lens.
+  if (flag('trace')) opts.traceAll = true;
   if (LEG.at) opts.at = LEG.at;
   if (grace) opts.grace = Number(grace);
   report = JSON.parse(await evaluate(CHUNK_CALL(JSON.stringify(opts))));

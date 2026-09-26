@@ -3809,6 +3809,11 @@ window.__RSB = {
       // saved around the loop because the nested stance searches re-point it at the stance, while the
       // driver's own per-frame lane test reads it relative to the rover.
       const held = laneDiscs;
+      // `parkDiag` for the same reason: the outer read has already concluded the circle is blind *from
+      // the rover*, and the search below re-runs `parkSpot` from a dozen apron stances. Leaving the
+      // clobber in place made `BLIND` print bare in the report (the last stance read succeeded, so its
+      // diag was null) — exactly the case the census exists to name.
+      const heldDiag = tgt.parkDiag;
       const discs = base.colliders.filter(c => c.floor === undefined &&
         (Math.hypot(c.x - phys.x, c.z - phys.z) < 20 + c.r ||
          Math.hypot(c.x - tgt.x, c.z - tgt.z) < tgt.r + 15 + c.r));
@@ -3855,11 +3860,15 @@ window.__RSB = {
         }
       }
       for (const c of cand) if (!best || c.score > best.score) best = c;
-      laneDiscs = held;
-      if (!best) return null;
+      if (!best) { laneDiscs = held; tgt.parkDiag = heldDiag; return null; }
       // The stage carries the park point it can see, so arriving there is not a dead end: `parking`
       // adopts `stage.park` at 3.5 m and drives the line in from a stance whose lane was measured.
+      // Both the disc set and the blind-census slot are released only after that read: the last `parkSpot`
+      // re-points `laneDiscs` at the stance, and the driver's own per-frame lane test into the adopted
+      // park point reads the slot relative to the rover.
       const park = parkSpot(tgt, { x: best.x, z: best.z });
+      laneDiscs = held;
+      tgt.parkDiag = heldDiag;
       return { x: best.x, z: best.z, sees: best.sees, park, detour: 0 };
     };
     // One question per waypoint, with a clock of its own: can this circle be entered from where the
@@ -4006,6 +4015,23 @@ window.__RSB = {
           // Driven like any other cruise point, whiskers and all: the apron it crosses is the cluttered
           // part of the map, and an aim with no way round an obstacle is the aim that wedges.
           b = pick(tgt.stage);
+        } else if (!parking && tgt.park) {
+          // The band between the 17 m search ring and the handover circle used to be steered at the
+          // waypoint's own centre even after `parkSpot` had answered with a standable point on the open
+          // side of it. Measured 2026-09-26 on pad:motor (full-route decision trace, `v=tourtrace1`): a
+          // park point at (-1.1,-50) sat in `tgt.park` for all 240 traced frames of the leg while
+          // `parking` read 0 on every one of them — `near` wants 10.9 m and the whisker planner, aimed
+          // at the centre straight through the pad's own props, held the hull at 12-26 m for 12 s and
+          // then led it down the crease at (-9.6,-56.7) into three `no-net-progress` rescues without
+          // ever sampling the line it had already chosen. The entry point the search picked *is* the
+          // goal out there; the handover circle only decides who does the steering inside it. The
+          // detour side has to live on a stable object (`pick` writes it onto its argument), so the
+          // point is mirrored once per park pick rather than rebuilt every frame.
+          if (tgt.approachFor !== tgt.park) {
+            tgt.approachFor = tgt.park;
+            tgt.approach = { x: tgt.park.x, z: tgt.park.z, detour: 0 };
+          }
+          b = pick(tgt.approach);
         } else b = pick(tgt);
         s.aim = b.a;
         const err = wrap(b.a - phys.yaw);

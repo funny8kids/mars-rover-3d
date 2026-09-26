@@ -65,6 +65,42 @@ const lightPool = () => {
   return poolTex;
 };
 
+// ── 落位 walk 的纯核：候选穷尽必须可报告，不能伪装成"留在原处" ──
+// 旧实现的最后一步是静默的 `return [x, z]`：一次收紧判据的试验（2026-09-26，MOUTH_GAP）里，
+// 样点就此坐在冷冻农场的碰撞盘内侧 1.59 m，而审计对此一无所知 —— "没找到"被写成了"找到"。
+// 判据函数在这里被注入：`blocked(cx, cz)` 返回 null 表示净空，否则必须给出
+// { escape, violation, rule, by }。walk 的半径步长、17 方位角、away 取自 escape 的算式与旧代码
+// 逐字节相同 —— 这些任何一处变了，每个种子的落点都会漂；唯一的增量是失败时顺路记下
+// 可达范围内违规量最小的候选，退回锚点的行为本身一个坐标都不动。
+export function siteWalk(x, z, reach, blocked) {
+  const block = blocked(x, z);
+  if (!block) return { at: [x, z], miss: null };
+  const away = Math.atan2(block.escape[1], block.escape[0]);
+  let best = { at: [x, z], violation: block.violation, rule: block.rule, by: block.by };
+  for (let r = 0.5; r <= reach; r += 0.5) {
+    for (let k = 0; k <= 16; k++) {
+      const th = away + (k % 2 ? Math.ceil(k / 2) : -k / 2) * (Math.PI / 8);
+      const cx = x + Math.cos(th) * r, cz = z + Math.sin(th) * r;
+      const b = blocked(cx, cz);
+      if (!b) return { at: [cx, cz], miss: null };
+      if (b.violation < best.violation) best = { at: [cx, cz], violation: b.violation, rule: b.rule, by: b.by };
+    }
+  }
+  return { at: [x, z], miss: best };  // 落空：坐标照旧退回锚点，但 miss 带着证据上账
+}
+
+// 体检条目的成形：坐标与 audit 的其余读数一样取到 0.1 m，点名对象/退回锚点/最优候选/
+// 违规量/超标判据一项不缺 —— 没有读者的降级等于没有降级。
+export function siteMissEntry(x, z, miss, need, reach, who, bar) {
+  if (!miss) return null;
+  return {
+    who, bar, need: +need.toFixed(2), reach,
+    anchor: [+x.toFixed(2), +z.toFixed(2)],
+    best: [+miss.at[0].toFixed(2), +miss.at[1].toFixed(2)],
+    violation: +miss.violation.toFixed(2), rule: miss.rule, by: miss.by,
+  };
+}
+
 export async function buildBase(scene, quality) {
   G.clear();
   resetLots();
@@ -810,27 +846,43 @@ export async function buildBase(scene, quality) {
     }
     return best;
   };
+  // 判据测量：null = 净空；否则给出去向 escape + 最严重的一处违规（量、类型、肇事盘）。
+  // escape 仍是"第一块违规盘"给出的旧向量，接受/拒绝的比较也与旧代码逐字相同 ——
+  // 违规量只是顺路采样，不参与任何一次取舍，所以这条改动对落位结果是 byte-level 等价的。
   const corridorBreak = (x, z, w, d, ry, need = CORRIDOR) => {
+    let escape = null, worst = null;
+    const note = (v, rule, by) => { if (!worst || v > worst.violation) worst = { violation: v, rule, by }; };
     for (const p of discLayout(w, d, x, z, ry)) {
-      if (streetEncroach(p.x, p.z, p.r) > 0) return offStreet(p.x, p.z);
+      const s = streetEncroach(p.x, p.z, p.r);
+      if (s > 0) {
+        // the disc that is in the way names the way out of it —— 第一次违规决定去向，和旧实现一样
+        if (!escape) escape = offStreet(p.x, p.z);
+        let sid = '?', bd = Infinity;
+        for (const t of STREETS) {
+          const ex = t.b[0] - t.a[0], ez = t.b[1] - t.a[1], ll = ex * ex + ez * ez || 1;
+          const u = Math.max(0, Math.min(1, ((p.x - t.a[0]) * ex + (p.z - t.a[1]) * ez) / ll));
+          const dd = Math.hypot(p.x - (t.a[0] + ex * u), p.z - (t.a[1] + ez * u));
+          if (dd < bd) { bd = dd; sid = t.id; }
+        }
+        note(s, 'street', `street:${sid}`);
+        continue;                       // 旧实现在街侵入处也不再看同盘的盘距，照抄
+      }
       const { gap, off } = tightestAgainst(p.x, p.z, p.r);
-      // the disc that is in the way names the way out of it
-      if (gap < need) return [p.x - off.x, p.z - off.z];
-    }
-    return null;
-  };
-  const siteClear = (x, z, w, d, ry = 0, reach = 9, need = CORRIDOR) => {
-    const block = corridorBreak(x, z, w, d, ry, need);
-    if (!block) return [x, z];
-    const away = Math.atan2(block[1], block[0]);
-    for (let r = 0.5; r <= reach; r += 0.5) {
-      for (let k = 0; k <= 16; k++) {
-        const th = away + (k % 2 ? Math.ceil(k / 2) : -k / 2) * (Math.PI / 8);
-        const cx = x + Math.cos(th) * r, cz = z + Math.sin(th) * r;
-        if (!corridorBreak(cx, cz, w, d, ry, need)) return [cx, cz];
+      if (gap < need) {
+        if (!escape) escape = [p.x - off.x, p.z - off.z];
+        note(need - gap, 'gap', (off && (off.prop || off.name)) || 'disc');
       }
     }
-    return [x, z];        // nothing within reach: leave it where the audit can still see it
+    return escape ? { escape, ...worst } : null;
+  };
+  // 落空点名用的账本：`auditPlan()` 以 `misses` 上账，主页面经 main.js 的 `plan` 调试口读出。
+  const siteMisses = [];
+  // `who` 只用于点名上报，绝不参与判据；缺省点到当前区。
+  const siteClear = (x, z, w, d, ry = 0, reach = 9, need = CORRIDOR, who = null) => {
+    const { at, miss } = siteWalk(x, z, reach, (cx, cz) => corridorBreak(cx, cz, w, d, ry, need));
+    if (miss) siteMisses.push(siteMissEntry(x, z, miss, need, reach,
+      who || ZONE, need === MOUTH_GAP ? 'MOUTH_GAP' : need === CORRIDOR ? 'CORRIDOR' : 'custom'));
+    return at;
   };
   // the same, for an asset authored in real metres (the hero set): `s` is the absolute scale
   const putClear = (name, x, z, ry, s = 1, id, reach = 9) => {
@@ -935,7 +987,8 @@ export async function buildBase(scene, quality) {
     const a = audit(colliders.filter(c => c.floor === undefined)
       .map(c => ({ x: c.x, z: c.z, r: c.r, zone: c.zone, prop: c.prop, id: c.prop })));
     return { ...a, discs: colliders.length, lots: lots.length, zones: [...new Set(lots.map(l => l.id.split(':')[0]))],
-             rim: rimReport, pads: padAudit.filter(p => p.room < 0 || p.rimRoom < 0 || p.road > 0).length, padItems: padAudit };
+             rim: rimReport, pads: padAudit.filter(p => p.room < 0 || p.rimRoom < 0 || p.road > 0).length, padItems: padAudit,
+             misses: siteMisses };
   };
   const infoZones = [];
   const sparkPoints = [];
@@ -2576,11 +2629,14 @@ export async function buildBase(scene, quality) {
       // anchor is not a neutral place to be left: it puts the spire 1.59 m *inside* `industry:cryo-farm`,
       // where the corridor bar had left a 1.05 m pinch. A stricter bar that finds nothing is therefore
       // worse than a looser bar that answers, and it says so nowhere — see the note on `siteClear`
-      // before any future bar is tightened across the map. And the clock it was bought for was never
+      // before any future bar is tightened across the map. 那句 "nowhere" 如今已补上：落空会带着
+      // 退回锚点、最优候选与违规量上账 `plan().misses`（核在导出的 `siteWalk`），收紧判据前先去看它。
+      // And the clock it was bought for was never
       // there: the tour prints `sample:0 25.0` on both bytes, so that leg's cost is the route into the
       // site, not the site's position.
       const [cw, cd] = measuredSlot('crystal', cs);
-      [x, z] = siteClear(x, z, cw, cd, 0, 14);
+      // 点名到样点：落空时 `plan().misses` 里要能看见是哪个 site 退回了哪个锚点
+      [x, z] = siteClear(x, z, cw, cd, 0, 14, CORRIDOR, `samples:site${si}`);
       const y = heightAt(x, z);
       const masked = si >= 6;
       const g4 = new THREE.Group(); g4.position.set(x, y, z);

@@ -51,15 +51,17 @@ function desun(mt) {
 // classed as a solid. Culled, the skirt vanished when the rover drove under the ship, and the
 // overhead chopstick arm vanished from the pad — 2 739 and 17 546 changed pixels at those two
 // vantages. So the test is now the honest binary one: any boundary edge at all means the shell is
-// not closed. 243 924 of 714 568 library triangles are open, over the 48 material names below
-// (386 476 triangles, 54%). The over-retention is forced by the runtime's granularity — the decision
+// not closed. 257 504 of 744 168 library triangles are open, over the 50 material names below
+// (404 472 triangles, 54.4%). The over-retention is forced by the runtime's granularity — the decision
 // is per material, so a material with one open primitive stays DoubleSide everywhere.
+// Both counts are `node tools/audit_double_sided.mjs` output, not a hand-tallied figure: the list has
+// grown since the sweep below was run, so re-read the tool before quoting these numbers again.
 //
 // Cost, measured on the hub in one synchronous task, 4 rounds x 3 conditions x 15 frames, shadow map
 // pinned every frame, one amortised flush per block (medians; every no-policy block was slower than
 // every honest-list block, which was slower than every ratio-list block):
 //   no policy              12.13 ms   1 704 062 triangles double-drawn
-//   this list (48 names)   11.40 ms   1 094 620   — keeps 0.73 ms of the 1.46 ms the policy is worth
+//   this list (48 names then) 11.40 ms   1 094 620   — keeps 0.73 ms of the 1.46 ms the policy is worth
 //   the old ratio list     10.67 ms     611 790   — rejected: it deletes visible surfaces
 // Acceptance for the list above: with the scene rendered twice at 320x348, once with no policy and
 // once with it, 159 camera vantages that the chase rig can actually occupy (filtered against every
@@ -83,6 +85,11 @@ const SHEET_MATERIALS = new Set([
   // Emitters and Kenney kit detail — lamps, straps, panel decals and suits, all single-sided quads.
   'light_cyan', 'light_amber', 'light_warm', 'acc_orange',
   'metal', 'metalDark', 'metalRed', 'skin',
+  // The CC0 kit library (`pipe_kit`, Poly Haven's modular industrial pipes): every primitive in both
+  // of its material groups is a tube with open ends or an un-capped flange plate, so the whole
+  // asset measures 12 340 of 12 340 triangles on a boundary. Names come from
+  // `node tools/audit_double_sided.mjs --emit`, not from looking at the model.
+  'modular_industrial_pipes_01_group01', 'modular_industrial_pipes_01_group02',
 ]);
 
 function unstub(root) {

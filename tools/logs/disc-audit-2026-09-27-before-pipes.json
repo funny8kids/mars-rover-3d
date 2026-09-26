@@ -1,0 +1,571 @@
+{
+ "anchors": {
+  "BODY_R": 1.6,
+  "RIDE": 0.46,
+  "ROOF": 2.72,
+  "TOL": 0.6,
+  "ISLAND": 112,
+  "roofCheck": {
+   "rel": -0.265,
+   "hullTop": 2.598,
+   "surface": 0.6,
+   "groupY": 0,
+   "scale": 1
+  }
+ },
+ "discs": 693,
+ "meshes": 1556,
+ "bandFaces": 89070,
+ "faceBudget": "exact",
+ "offIslandFaces": 22992,
+ "domeMeshes": 1,
+ "exemptRover": {
+  "meshes": 57,
+  "tris": 38468
+ },
+ "instancing": {
+  "seenMeshes": 88,
+  "seenInstances": 3600,
+  "sweptMeshes": 88,
+  "sweptInstances": 3600,
+  "truncatedMeshes": 0,
+  "covered": true
+ },
+ "coverage": [
+  {
+   "root": "Group#2",
+   "faces": 79583,
+   "strays": 2053,
+   "maxAbove": 73.8,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "rock-scatter#3",
+   "faces": 9485,
+   "strays": 396,
+   "maxAbove": 5.93,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "stone-field#4",
+   "faces": 2,
+   "strays": 2,
+   "maxAbove": 0.48,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "Mesh#0",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "terrain#1",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": true,
+   "why": "the surface being driven on; a slope is not a wall"
+  },
+  {
+   "root": "Group#6",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "Group#7",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "Group#8",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "Group#9",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "Group#10",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "Group#11",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "Mesh#12",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "Mesh#13",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "Mesh#14",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "Mesh#15",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "Mesh#16",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "Mesh#17",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": false,
+   "why": null
+  },
+  {
+   "root": "rim-veil#19",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": true,
+   "why": "the island edge itself, drawn as travelling dust at the collider ring radius"
+  },
+  {
+   "root": "Mesh#35",
+   "faces": 0,
+   "strays": 0,
+   "maxAbove": 0,
+   "skipped": false,
+   "why": null
+  }
+ ],
+ "staleExclusions": [],
+ "discSide": {
+  "rectless": 136,
+  "licensedBulgeSamples": 1294,
+  "rimSamples": 6483
+ },
+ "controls": {
+  "cleanPast": 0,
+  "brokenPast": 1.17,
+  "slid": 3,
+  "tol": 0.6,
+  "gate": {
+   "outside": 0.6,
+   "inside": -0.2,
+   "touch": 0,
+   "pass": true
+  },
+  "pass": true,
+  "coverRuler": {
+   "r": 2.6,
+   "latticeStep": 4,
+   "openest": {
+    "at": [
+     -106,
+     -26
+    ],
+    "clearToFace": 6
+   },
+   "fullest": {
+    "at": [
+     -18,
+     -22
+    ],
+    "faceCellsInBodyWindow": 145
+   },
+   "parked": {
+    "merged": true,
+    "pocketSamples": 48
+   },
+   "drawn": {
+    "merged": false,
+    "pocketSamples": 0
+   },
+   "emittedDiscs": 119,
+   "pass": true
+  }
+ },
+ "reachability": {
+  "seed": "START@0,-26",
+  "seeded": true,
+  "freeCells": 233958,
+  "reachedCells": 124949,
+  "reachFrac": 0.534,
+  "atSpawn": true,
+  "atWidestDiscCentre": false,
+  "widestDiscR": 8.82,
+  "atSandBeyondRim": false,
+  "pois": 22,
+  "poisSealed": 0,
+  "sealedPois": [],
+  "pass": true
+ },
+ "attribution": {
+  "lots": 141,
+  "cells": 93
+ },
+ "exposedFaces": 0,
+ "sealedFaces": 0,
+ "driveThroughCells": 0,
+ "driveThroughFaces": 0,
+ "wholeBodyFaces": 0,
+ "sealedCells": 0,
+ "driveLicensed": 0,
+ "driveUnlicensed": 0,
+ "exposureByLot": {},
+ "exposure": [],
+ "phantomCount": 0,
+ "phantomFamilies": {},
+ "phantom": [],
+ "overWideCount": 0,
+ "overWideFamilies": {},
+ "overWide": [],
+ "blanketCount": 0,
+ "blanketFamilies": {},
+ "blanket": [],
+ "blanketArea": 0,
+ "mergedCount": 0,
+ "mergedFamilies": {},
+ "merged": [],
+ "hollowCount": 0,
+ "hollowFamilies": {},
+ "hollowArea": 0,
+ "hollow": [],
+ "solidifier": {
+  "units": 207,
+  "swept": 46,
+  "meshes": 1382,
+  "bandFaces": 70217,
+  "exposed": 4272,
+  "discs": 129,
+  "families": 39,
+  "cells": 97,
+  "top": [
+   "science:platform_low@0.0,62.0:12",
+   "comms:platform_low@54.0,-52.0:10",
+   "launch:cargo-umbilical:6",
+   "leak:pipe_corner@90.5,41.5:5",
+   "samples:site2:5",
+   "samples:site4:5",
+   "hub:ring-gantry-180:4",
+   "industry:fab-substation:4",
+   "comms:array-feed:4",
+   "motor:rover-bay:4",
+   "samples:site0:4",
+   "samples:site1:4",
+   "samples:site6:4",
+   "samples:site8:4"
+  ],
+  "skipped": {
+   "invisible": 1,
+   "noSolid": 9,
+   "low": 48,
+   "high": 8
+  },
+  "refused": {
+   "road": 0,
+   "block": 20,
+   "pad": 0
+  },
+  "refusedNames": [
+   "block island:loose0",
+   "block island:loose1",
+   "block launch:platform_high@-60.0,-60.0",
+   "block leak:pipe_corner@90.5,41.5",
+   "block leak:beacon@89.5,51.5",
+   "block comms:platform_high@60.0,-60.0",
+   "block comms:desk_computer@54.0,-52.0",
+   "block comms:astronaut@56.0,-53.0",
+   "block science:platform_low@0.0,62.0",
+   "block island:loose106",
+   "block storm:lander@-60.0,0.0"
+  ],
+  "refusedAt": [
+   {
+    "k": "block island:loose0",
+    "cell": "-10,-20",
+    "n": 1,
+    "x": -6,
+    "z": -11.6,
+    "r": 0.05,
+    "mesh": "Scene",
+    "against": "hub:spaceport-gate#0(authored)"
+   },
+   {
+    "k": "block island:loose0",
+    "cell": "0,-20",
+    "n": 1,
+    "x": 6,
+    "z": -11.6,
+    "r": 0.05,
+    "mesh": "Scene",
+    "against": "hub:spaceport-gate#1(authored)"
+   },
+   {
+    "k": "block island:loose1",
+    "cell": "-10,-20",
+    "n": 1,
+    "x": -5.2,
+    "z": -12.3,
+    "r": 0.06,
+    "mesh": "saddle_062_-1",
+    "against": "hub:spaceport-gate#0(authored)"
+   },
+   {
+    "k": "block island:loose1",
+    "cell": "0,-30",
+    "n": 1,
+    "x": 5.2,
+    "z": -21.1,
+    "r": 0.06,
+    "mesh": "saddle_062_1",
+    "against": "hub:spaceport-gate#1(authored)"
+   },
+   {
+    "k": "block island:loose1",
+    "cell": "0,-20",
+    "n": 1,
+    "x": 5.2,
+    "z": -12.3,
+    "r": 0.06,
+    "mesh": "saddle_062_-1",
+    "against": "hub:spaceport-gate#1(authored)"
+   },
+   {
+    "k": "block launch:platform_high@-60.0,-60.0",
+    "cell": "-70,-60",
+    "n": 1,
+    "x": -63.2,
+    "z": -56.8,
+    "r": 0.2,
+    "mesh": "Mesh_platform_high",
+    "against": "launch:starship(authored)"
+   },
+   {
+    "k": "block launch:platform_high@-60.0,-60.0",
+    "cell": "-60,-60",
+    "n": 1,
+    "x": -56.8,
+    "z": -56.8,
+    "r": 0.2,
+    "mesh": "Mesh_platform_high",
+    "against": "launch:starship(authored)"
+   },
+   {
+    "k": "block launch:platform_high@-60.0,-60.0",
+    "cell": "-60,-70",
+    "n": 1,
+    "x": -56.8,
+    "z": -63.2,
+    "r": 0.2,
+    "mesh": "Mesh_platform_high",
+    "against": "launch:starship(authored)"
+   },
+   {
+    "k": "block launch:platform_high@-60.0,-60.0",
+    "cell": "-70,-70",
+    "n": 1,
+    "x": -63.2,
+    "z": -63.2,
+    "r": 0.2,
+    "mesh": "Mesh_platform_high",
+    "against": "launch:starship(authored)"
+   },
+   {
+    "k": "block leak:pipe_corner@90.5,41.5",
+    "cell": "80,40",
+    "n": 1,
+    "x": 89.3,
+    "z": 42.4,
+    "r": 0.91,
+    "mesh": "Mesh_pipe_corner",
+    "against": "leak:bog-line#1(authored)"
+   },
+   {
+    "k": "block leak:beacon@89.5,51.5",
+    "cell": "80,50",
+    "n": 2,
+    "x": 89.4,
+    "z": 51.5,
+    "r": 0.34,
+    "mesh": "feed",
+    "against": "leak:kit:mast@89.5,51.5#0(new)"
+   },
+   {
+    "k": "block comms:platform_high@60.0,-60.0",
+    "cell": "60,-60",
+    "n": 1,
+    "x": 61.6,
+    "z": -58.9,
+    "r": 1.19,
+    "mesh": "Mesh_platform_high",
+    "against": "comms:main-ear(authored)"
+   },
+   {
+    "k": "block comms:platform_high@60.0,-60.0",
+    "cell": "60,-70",
+    "n": 1,
+    "x": 61.7,
+    "z": -61.8,
+    "r": 0.86,
+    "mesh": "Mesh_platform_high",
+    "against": "comms:main-ear(authored)"
+   },
+   {
+    "k": "block comms:desk_computer@54.0,-52.0",
+    "cell": "50,-60",
+    "n": 2,
+    "x": 53.8,
+    "z": -52.3,
+    "r": 0.65,
+    "mesh": "Mesh_desk_computer",
+    "against": "comms:platform_low@54.0,-52.0#4(new)"
+   },
+   {
+    "k": "block comms:astronaut@56.0,-53.0",
+    "cell": "50,-60",
+    "n": 1,
+    "x": 56,
+    "z": -53,
+    "r": 0.37,
+    "mesh": "Scene",
+    "against": "comms:platform_low@54.0,-52.0#7(new)"
+   },
+   {
+    "k": "block science:platform_low@0.0,62.0",
+    "cell": "0,50",
+    "n": 1,
+    "x": 1.3,
+    "z": 59.4,
+    "r": 0.22,
+    "mesh": "Mesh_platform_low",
+    "against": "science:anomaly-07(authored)"
+   },
+   {
+    "k": "block island:loose106",
+    "cell": "50,-10",
+    "n": 1,
+    "x": 52.9,
+    "z": -5.2,
+    "r": 0.19,
+    "mesh": "tube",
+    "against": "night:telescope(authored)"
+   },
+   {
+    "k": "block storm:lander@-60.0,0.0",
+    "cell": "-70,0",
+    "n": 1,
+    "x": -66.3,
+    "z": 4.1,
+    "r": 0.49,
+    "mesh": "Cylinder_1",
+    "against": "storm:dawn7(authored)"
+   }
+  ],
+  "blockVsEmitted": 5,
+  "blockVsAuthored": 15,
+  "lampRun": {
+   "slots": 40,
+   "placed": 35,
+   "crossed": [
+    "lamp-0-13",
+    "lamp-0-19",
+    "lamp-1-1",
+    "lamp-1-19",
+    "lamp-2-7",
+    "lamp-2-16",
+    "lamp-2-19"
+   ],
+   "holes": [
+    "lamp-0-10",
+    "lamp-1-10",
+    "lamp-2-10",
+    "lamp-3-10",
+    "lamp-3-19"
+   ]
+  }
+ },
+ "dynamic": {
+  "sites": 9,
+  "rulerArmed": true,
+  "ghost": [],
+  "missing": [],
+  "unwalled": [],
+  "liveOfSites": 22,
+  "ownedBySites": 32,
+  "pass": true
+ },
+ "site": {
+  "blocks": 25,
+  "tight": 120,
+  "intrusions": 6,
+  "discs": 694,
+  "tightSample": [
+   "rim:border#63@scatter:rock#9",
+   "rim:border#63@scatter:rock#9",
+   "rim:border#65@scatter:rock#28",
+   "rim:border#65@scatter:rock#28",
+   "rim:border#65@scatter:rock#28",
+   "rim:border#65@scatter:rock#28",
+   "rim:border#65@scatter:rock#28",
+   "rim:border#99@scatter:rock#16"
+  ],
+  "blockSample": [
+   "hub:spaceport-gate#0@watch:watch-deck",
+   "hub:spaceport-gate#0@watch:watch-deck",
+   "hub:spaceport-gate#0@watch:watch-deck",
+   "hub:spaceport-gate#0@watch:watch-deck",
+   "hub:spaceport-gate#0@watch:watch-deck",
+   "hub:spaceport-gate#0@watch:watch-deck",
+   "hub:spaceport-gate#0@watch:watch-deck",
+   "hub:spaceport-gate#0@watch:watch-deck"
+  ]
+ }
+}

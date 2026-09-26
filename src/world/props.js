@@ -109,6 +109,10 @@ export async function buildBase(scene, quality) {
     'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut', 'barrier_kit', 'flag_mast',
     'hazard_sign', 'telemetry_board', 'feeder_pillar', 'rim_rock', 'beacon_kit', 'telescope', 'site_kit',
     'drum_crate'];
+  // Authored elsewhere and licensed CC0, so it is listed apart from our own heroes: every entry here
+  // has to be checked against the base palette before it ships (tools/retint_modular_industrial_pipes_01.py
+  // is that check for `pipe_kit`, and tools/cc0-conform.mjs is the grid that says whether it fits).
+  const CC0 = ['pipe_kit'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA',
     'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
@@ -117,7 +121,7 @@ export async function buildBase(scene, quality) {
     'rocket_fuelA', 'rocket_sidesA', 'rocket_topA', 'barrel', 'craft_speederA',
     'alien', 'desk_computer', 'terrain_roadStraight', 'rail', 'stairs',
     'supports_high', 'craterLarge'];
-  const entries = [...HERO, ...KENNEY.map(K)];
+  const entries = [...HERO, ...CC0, ...KENNEY.map(K)];
   const models = {};
   await Promise.all(entries.map(async (n) => { models[n.split('/').pop()] = await loadModel(n); }));
   // glTF emissives arrive at full strength; under the sun + bloom band they blow out into
@@ -284,7 +288,10 @@ export async function buildBase(scene, quality) {
   // `rim_rock` is a third of the same kind, and the reason is harder: its three nodes are
   // alternative clasts, and each one's collision discs in rim_rock.js are measured about *that
   // node's* origin. Baking the kit into one mesh would delete the nodes the rampart clones from.
-  const keepsParts = new Set(['crystal', 'barrier_kit', 'rim_rock', 'starship_stack', 'beacon_kit', 'site_kit']);
+  const keepsParts = new Set(['crystal', 'barrier_kit', 'rim_rock', 'starship_stack', 'beacon_kit', 'site_kit',
+    // `pipe_kit` is a seventh of the `barrier_kit` kind: Poly Haven ships its eight modules as sibling
+    // nodes on a packing sheet, and the feed duct clones `pipe02`/`pipe05`/`pipe07` out individually.
+    'pipe_kit']);
   // `beacon_kit` is a kit for the same reason as `barrier_kit`, with one more thing riding on it:
   // the optical drum has to survive as its own node, because the night pulse reaches the beacons
   // through `beacons[]` — the placement code clones the fitting and hands over the mesh named
@@ -1026,6 +1033,64 @@ export async function buildBase(scene, quality) {
     // audit has to be able to name, and `loose89` is not a name anyone can go and look at.
     G.add(tagScope(g, `kit:${name}@${x.toFixed(1)},${z.toFixed(1)}`));
     return g;
+  };
+  // ─── the CC0 pipe kit, laid one section per ground sample ───
+  // `pipe_kit` is Poly Haven's `modular_industrial_pipes_01` (CC0, 12 340 triangles, authored in real
+  // metres) with both of its texture sets pulled into the base palette: the pack ships at hue 62.2°
+  // and 21.3°, the band every other fitting sits in is 25-40°, and
+  // tools/retint_modular_industrial_pipes_01.py is what moves it there without touching a vertex.
+  // It replaces the fourteen hand-drawn `box()` sections on the seven tap→pad feed runs.
+  //
+  // What the asset does not remove is why those were sections at all. Each module's node transform
+  // still carries its slot on the pack's packing sheet (`pipe02` at local y −0.025, `pipe01` at
+  // x +0.40), so `pipeModule` strips that and hands back a clone placed on its own centre; `ductRun`
+  // then seats every section on the chord between its own two height reads. One rigid span from tap
+  // to pad floats in the air where the ground falls away between the two graded bases, and the
+  // comment at the old loop said so — a fixed-length model has to answer the same need, it just
+  // answers it with flanges instead of boxes.
+  // Calibre read off the POSITION accessor of `pipe02`, not off a preview: its authored box is
+  // ⌀0.208 × 0.206 m, so the one scale factor below puts a ⌀0.32 m pipe where the 0.52 × 0.19 m
+  // flat-pack duct used to be — narrower across, because a duct that wide was only ever wide
+  // because a box has to fake a silhouette, and a pipe does not.
+  const PIPE_K = 1.55;
+  const pipeModule = short => {
+    const src = models.pipe_kit?.getObjectByName(`modular_industrial_pipes_01_${short}`);
+    if (!src?.isMesh) return null;
+    const m = cloneModel(src);
+    m.position.set(0, 0, 0);
+    m.geometry.computeBoundingBox();
+    const bb = m.geometry.boundingBox;
+    return { m, len: bb.max.y - bb.min.y };   // every module is authored along its own +Y
+  };
+  // Lay one run down a host group's local +Z, from `from` to `to` metres out of the host's origin.
+  // The host is yawed but never pitched, so one ground read per section end is the whole slope.
+  const ductRun = (host, from, to) => {
+    const capA = pipeModule('pipe05'), capB = pipeModule('pipe07'), straight = pipeModule('pipe02');
+    if (!straight) return 0;
+    const yaw = host.rotation.y, ground = lz =>
+      heightAt(host.position.x + Math.sin(yaw) * lz, host.position.z + Math.cos(yaw) * lz);
+    const seg = (mod, z0, z1) => {
+      const h0 = ground(z0), h1 = ground(z1), dz = z1 - z0, dy = h1 - h0;
+      const o = mod.m;
+      o.position.set(0, (h0 + h1) / 2 - host.position.y, (z0 + z1) / 2);
+      // three composes T·R·S, so a rotation about X carries the module's +Y onto the chord; reading
+      // that angle as atan2(run, rise) is the chord itself, and a flat section lands on π/2.
+      o.rotation.x = Math.atan2(dz, dy);
+      o.scale.set(PIPE_K, Math.hypot(dz, dy) / mod.len, PIPE_K);
+      o.traverse(shade);
+      host.add(o);
+    };
+    const la = capA ? capA.len * PIPE_K : 0, lb = capB ? capB.len * PIPE_K : 0;
+    const inner = (to - from) - la - lb;
+    if (!capA || !capB || inner <= 0.1) { seg(straight, from, to); return 1; }
+    // `n` snaps to the nearest whole straight, so a leftover module is stretched by at most half its
+    // own length and the joints still close exactly at both ends.
+    const n = Math.max(1, Math.round(inner / (straight.len * PIPE_K))), each = inner / n;
+    let z = from;
+    seg(capA, z, z + la); z += la;
+    for (let i = 0; i < n; i++) { seg(straight, z, z + each); z += each; }
+    seg(capB, z, z + lb);
+    return n + 2;
   };
   const lightStrips = [];
   const lightRings = [];
@@ -2977,10 +3042,11 @@ export async function buildBase(scene, quality) {
   // dimmed per district. Deliberately emissive-only (no PointLight) — the whole scene is lit by
   // sun/hemi plus bloom, and six extra dynamic lights would recompile every standard shader.
   const gridRigs = [];
+  // `runs` should equal the number of teleport pads and `refused` should be empty; both are read live
+  // off `__RSB.solid().tapDuct`, because a tap whose duct silently vanished is a pad with a wide
+  // empty stripe across the paving and no report saying so.
+  const ductAudit = { runs: 0, sections: 0, refused: [] };
   {
-    // The cable's anchor blocks are the one part of a tap that cannot be an asset: each one
-    // has to sit on ground the model has never seen.
-    const soot = new THREE.MeshStandardMaterial({ color: 0x2a2825, roughness: 0.72, metalness: 0.5 });
     ZONE = 'grid';
     // The tap has to stand beside its pad, out of the carriageway, and clear of everything the
     // district already owns. It used to wear a hand-typed 4.4 m offset, which in the habitat put
@@ -3063,16 +3129,11 @@ export async function buildBase(scene, quality) {
       // dash in the middle of the paving — so it starts at the transformer drum's own face and ends
       // on the pad's bright apron, where dark-on-light carries it. The span is measured, not typed:
       // the tap stands wherever the plan gave it a lot. Local +Z is the side the rig was yawed to
-      // face, which is its pad. Kept as primitives rather than authored because every section's
-      // height comes from a live terrain sample.
-      const ductFrom = 1.05, ductTo = Math.hypot(tp.x - rx, tp.z - rz) - 3.05;
-      const ductSpan = (ductTo - ductFrom) / 7;
-      for (let i = 0; i < 7; i++) {
-        const lz = ductFrom + (i + 0.5) * ductSpan;
-        const wx = rx + Math.sin(rig.rotation.y) * lz, wz = rz + Math.cos(rig.rotation.y) * lz;
-        box(0.52, 0.19, ductSpan * 0.96, soot, 0, heightAt(wx, wz) + 0.085 - (rig.position.y), lz, rig);
-        box(0.2, 0.06, 0.2, soot, 0, heightAt(wx, wz) + 0.205 - (rig.position.y), lz, rig);
-      }
+      // face, which is its pad. The sections survive the move to an asset — every one of them still
+      // gets its own ground sample — what went away is the fourteen boxes they were drawn with.
+      const laid = ductRun(rig, 1.05, Math.hypot(tp.x - rx, tp.z - rz) - 3.05);
+      ductAudit.runs++; ductAudit.sections += laid;
+      if (!laid) ductAudit.refused.push(tp.key);   // the kit did not load: a bare apron, on the record
 
       const coreMat = new THREE.MeshStandardMaterial({ color: 0x101a1f, emissive: 0x4fe2ff, emissiveIntensity: 0, roughness: 0.2, metalness: 0.1 });
       // RETAINED RUNTIME PRIMITIVE — the grid readout, not a fitting: main.js's tick spins this rotor
@@ -3447,6 +3508,7 @@ export async function buildBase(scene, quality) {
   // in the list they are tested against. Must run before the merge below: a `put` clone is skipped by
   // it on purpose, and a lamp added afterwards would not be shaded into the same pass.
   solidReport.lampRun = siteStreetLamps();
+  solidReport.tapDuct = ductAudit;
 
   // The mineral sites take the discs their own spires drew. Each one is a prop that moves after this
   // line — `dressSample` sinks it into its drift and scours it out again — so the wall has to be in

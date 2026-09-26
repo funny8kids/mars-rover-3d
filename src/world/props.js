@@ -1263,7 +1263,7 @@ export async function buildBase(scene, quality) {
       const FRONT = 18.5;                       // the hub block's building line
       const RING = [
         { n: 'hangar_roundA', k: 0.5, a: 45 },  { n: 'hangar_largeA', k: 0.62, a: 90 },
-        { n: 'machine_generatorLarge', k: 0.9, a: 135 }, { n: 'gantry_service', g: 1.0, a: 180, gate: true },
+        { n: 'gantry_service', g: 1.0, a: 180, gate: true },
         { n: 'machine_wireless', k: 1.1, a: 315 }, { n: 'structure_detailed', k: 0.8, a: 0 },
       ];
       for (const slot of RING) {
@@ -1318,6 +1318,28 @@ export async function buildBase(scene, quality) {
         // An open gantry with nothing standing inside it reads as scaffolding nobody finished; the
         // Blender portal carries its own transformers, switchgear, conductors and signage.
         kSolid(slot.n, x, z, ry, s / S, `ring-${slot.a}`);
+      }
+      // The big generator is off the plaza ring, and it is the ring that had to give, not the tap.
+      // Measured on 70ce729: standing at 135° on the building line its two r 1.88 discs came to 9.2 m
+      // from the hub's teleport pad centre, while the tap must stand 7.34..11.5 m from that same
+      // centre on any bearing (`TAP_STANDOFF`, and its search fans a full circle) — so the two
+      // envelopes overlap by six metres and whichever way the substation came down it ended 2.32 m of
+      // edge gap from the generator, i.e. 2.32/2 − 1.6 = −0.44 m of hull daylight. The clean-clock
+      // acceptance tour of 2026-09-26 filed four rescues in 16 s inside that crease ((−11.8, 18.1),
+      // `held:2`) and `pad:hub` burned two 25 s give-up laps, which is what starved the district
+      // coverage. Two siting-rule fixes were tried against that crease and both are documented at
+      // `siteFor`: tightening the tap's bar left the hub tap exactly where it was (nothing within its
+      // reach is wide enough) and made other districts worse, and ranking the fallback by width moved
+      // the substation 13.4 m from the pad it feeds. What was wrong was the plan, not the ordering: a
+      // 3.8 m machine does not belong inside a ceremonial plaza, so it now stands on the works apron
+      // beyond the building line. Measured after the siting pass: its discs' centre sits 16.3 m from
+      // the hub pad, while the tap's envelope reaches 11.5 + 1.84 = 13.34 m and the generator's own
+      // disc edge 1.88 m inside its centre — 1.1 m of margin, where the ring position overlapped the
+      // two envelopes by six metres.
+      {
+        const WORKS = 34, a135 = 135 * Math.PI / 180;
+        kClear('machine_generatorLarge', hx + Math.cos(a135) * WORKS, hz + Math.sin(a135) * WORKS,
+          a135 + Math.PI / 2, 0.9, 'works-generator');
       }
       // An ungated lamp ring dropped a post dead-centre in the carriageway, i.e. directly in the
       // rover's path at spawn. Same south exclusion as the structures, plus two lamps squared up on

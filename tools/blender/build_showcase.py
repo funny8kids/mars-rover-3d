@@ -1468,13 +1468,14 @@ def export(root, fname):
 if __name__ == "__main__":
     # SHOWCASE_FAILED names a builder stage raising (blender would otherwise leave rc=0
     # with no SHOWCASE_DONE); SHOWCASE_INCOMPLETE reconciles the run against the disc.
-    wanted = ["rover.glb", "teleport_pad.glb", "arch.glb", "rocks.glb", "crystal.glb"]
+    # REMOVED HERO ASSETS TO PREVENT MULTIPLE WRITERS (#107):
+    #   - rover.glb → build_heroes.py only (runtime: src/vehicle/rover.js loads this)
+    #   - teleport_pad.glb → build_heroes.py only (runtime: props.js putDeck('teleport_pad'))
+    #   - arch.glb → build_heroes.py only (no runtime reader yet)
+    # Only crystal.glb remains as showcase-specific asset
+    wanted = ["crystal.glb"]
     failed = []
-    for fn, fname in [(build_rover, "rover.glb"),
-                      (build_teleport, "teleport_pad.glb"),
-                      (build_arch, "arch.glb"),
-                      (build_rocks, "rocks.glb"),
-                      (build_crystal, "crystal.glb")]:
+    for fn, fname in [(build_crystal, "crystal.glb")]:
         try:
             r = fn()
             export(r, fname)

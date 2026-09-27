@@ -495,13 +495,18 @@ assets = [
     (build_greenhouse,   "greenhouse.glb"),
     (build_launch_tower, "launch_tower.glb"),
     (build_starship,     "starship.glb"),
-    (build_rover,        "rover.glb"),
+    # REMOVED HERO ASSETS TO PREVENT MULTIPLE WRITERS (#107):
+    #   - rover.glb → build_heroes.py only (runtime loaded by src/vehicle/rover.js)
+    #   - teleport_pad.glb → build_heroes.py only  
+    #   - arch.glb → build_heroes.py only
+    #   - crystal.glb → build_showcase.py only
+    # These caused OWNERSHIP_MULTI conflicts verified by glb-owner-census.py
     (build_solar_array,  "solar_array.glb"),
     (build_comm_dish,    "comm_dish.glb"),
     (build_cryo_tank,    "cryo_tank.glb"),
     (build_lamp,         "lamp.glb"),
     (build_rocks,        "rock_cluster.glb"),
-    (build_crystal,      "crystal.glb"),
+    # (build_crystal,      "crystal.glb"),  # MOVED to build_showcase.py
     (build_gate,         "gate.glb"),
     (build_lander,       "lander.glb"),
 ]

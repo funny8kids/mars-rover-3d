@@ -3616,6 +3616,16 @@ export async function buildBase(scene, quality) {
   // second copy of `0.03 / 0.85 / RIDE` over there would be a host this census cannot see.
   const siteK = s => THREE.MathUtils.smoothstep(s.buried, 0.03, 0.85);
   const siteWallUp = s => s.group.visible && s.rise - s.sink * siteK(s) > RIDE;
+  // The drawn half of the same sentence. `siteWallUp` decides whether the ring is in the list the
+  // solver reads; this decides how high the rock the player sees stands. A harness that takes one and
+  // not the other draws a buried spire at its raised height and counts its band as exposure — which is
+  // how tools/offline-world.mjs came to call this instead of doing its own arithmetic. The two readings
+  // either side of that call: 412 band faces past 0, with `crystal001` in the two worst cells (past
+  // 8.63 m, 8.57 m) and 407 faces filed under drawn root `Group`
+  // (`tools/logs/phantom-census-2026-09-27-full.log:60,63,64,70`); then 5 faces, `Group` gone from the
+  // tally, `stone-field` alone in it, and no crystal row in the worst-cells list at all
+  // (`…-writer.log:62,64,67`). One `k`, one host, so pose and membership cannot be argued apart.
+  const siteSinkY = s => s.seatY - s.sink * siteK(s);
   for (const s of samples) s.discs = discsByFamily.get(`samples:site${s.id}`) || [];
 
   // Collapse the hand-built groups and the several hundred loose struts, tiles and crates placed
@@ -3634,7 +3644,7 @@ export async function buildBase(scene, quality) {
   const flamePoint = new THREE.Vector3(SHIP_POS[0], 1.6, SHIP_POS[1]);
   return {
     group: G, colliders, infoZones, samples, sparkPoints, beacons, lightStrips, lightRings, showBeams, showBeamMats, shipGroup, launchRig, teleports, padGlow, heroLights, occluders, gridRigs, crystalMat: M.crystal,
-    plan: auditPlan, lots, solidReport, siteK, siteWallUp,
+    plan: auditPlan, lots, solidReport, siteK, siteWallUp, siteSinkY,
     leakPoint: new THREE.Vector3(LEAK_POS[0], heightAt(LEAK_POS[0], LEAK_POS[1]) + 1.8, LEAK_POS[1]),
     flamePoint,
     // `ZONES.*.pos` is a 2-tuple [x, z], so spreading it into a Vector3 — which the two lines above

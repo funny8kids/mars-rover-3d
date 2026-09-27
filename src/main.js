@@ -763,18 +763,14 @@ const SAND = {
 function exposure(x, z) {
   return THREE.MathUtils.clamp(-stormField.along(x, z) / SAND.WAKE, -1, 1);
 }
-// Is a site's spire standing inside the rover's band right now? Two things take it out of the band:
-// the drift it is buried under (the taller `k`, the deeper the same rock sits) and the sample having
-// been collected, which hides the group. Written as one predicate because both of them change it, in
-// two different places, and a wall with no geometry behind it is the defect — not a detail to be
-// remembered at each call site separately. Read off the *measured* crown, not the sink depth: the
-// drift's hiding depth has a 0.9 m floor so a short spire still vanishes, and a predicate borrowed
-// from it would wall a rock out taller than it stands. `rise` and `sink` are re-sampled in props.js
-// against the finished ground for the same reason — a seat taken mid-build goes stale under every
-// footing claimed afterwards, and a stale one reported this line true over a crown already at
-// 0.358 m, i.e. under the hull floor at RIDE 0.46. tools/site-wall-probe.js is the ruler.
-const siteK = s => THREE.MathUtils.smoothstep(s.buried, 0.03, 0.85);
-const siteWallUp = s => s.group.visible && s.rise - s.sink * siteK(s) > RIDE;
+// Is a site's spire standing inside the rover's band right now? The predicate is `base.siteK` and
+// `base.siteWallUp`, defined in props.js beside the ledger whose numbers they read. They are reached
+// through `base` rather than copied here because tools/offline-world.mjs has to reproduce exactly this
+// membership with no browser: a second host of `0.03 / 0.85 / RIDE` in the app would be a wall the
+// offline census cannot see, and the page would arm a ring the harness then reports as phantom.
+const siteK = s => base.siteK(s);
+const siteWallUp = s => base.siteWallUp(s);
+const siteSinkY = s => base.siteSinkY(s);
 // Put the site's own discs in or out of the list the solver reads, by object identity. Membership
 // rather than a flag on the disc: then the physics step, the unstick planner, the tour and seam
 // drivers and the audit probe all see the wall that is actually there without any of them having to
@@ -792,7 +788,7 @@ function syncSiteWall(s) {
 // Put a site where its ledger says it should be: sunk into its own drift by that drift's height.
 function dressSample(s) {
   const k = siteK(s);
-  s.crystal.position.y = s.seatY - k * s.sink;
+  s.crystal.position.y = siteSinkY(s);
   syncSiteWall(s);
   s.ring.material.opacity = 0.10 * (1 - k);
   s.lens.visible = s.buried > SAND.SHOW;

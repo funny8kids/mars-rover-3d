@@ -1,11 +1,36 @@
 # Blender headless asset builder for RED STARBASE.
 # Stylized low-poly + emissive Mars base, Outer Wilds inspired.
 # Run: blender --background --python tools/blender/build_assets.py
-import bpy, math, random, os
+import bpy, math, random, os, time, traceback
 
-OUT = os.path.join(os.path.dirname(__file__), "..", "..", "public", "assets")
+# Reproducibility guard, same measurement and mechanism as rsbkit.RSBKIT_REPIN:
+# two plain runs differ by 1-ULP TEXCOORD bytes unless str-hash iteration is
+# pinned, and the seed must be set before the interpreter starts — so repin
+# and re-exec blender once with the same command line.
+if os.environ.get("PYTHONHASHSEED") != "0":
+    os.environ["PYTHONHASHSEED"] = "0"
+    print("ASSETS_REPIN re-exec'ing under PYTHONHASHSEED=0: %s" % " ".join(__import__("sys").argv))
+    import sys as _sys
+    _sys.stdout.flush()
+    os.execv(bpy.app.binary_path, list(__import__("sys").argv))
+
+# RSB_OUT redirects verification runs away from public/assets (same convention as rsbkit).
+OUT = os.environ.get("RSB_OUT") or os.path.join(os.path.dirname(__file__), "..", "..", "public", "assets")
 OUT = os.path.abspath(OUT)
 os.makedirs(OUT, exist_ok=True)
+
+# `canon_polys` is rsbkit's, not a second copy: this file's own primitives are a second host for the
+# same emitter, and a second host without the pin is exactly how the #95 sweep caught lander.glb
+# differing by 416 bytes between two runs of unchanged source (the UV sphere's face list comes out in
+# an order that is not repeatable across processes, and the glTF exporter writes indices in face
+# order). Named import only, so nothing else in rsbkit shadows this file's helpers. The path insert
+# is the one build_barriers.py:25 already needs — blender puts the CWD on sys.path, not the script's
+# own directory, and without this line the import raises ModuleNotFoundError at module scope, before
+# crash_guard exists, so blender exits rc=0 and the only evidence is a traceback (caught by re-running
+# this file twice into empty dirs and counting the files: 0 and 0 compare equal).
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from rsbkit import canon_polys
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
@@ -70,13 +95,16 @@ def cyl(name, r, d, loc, m, rot=(0, 0, 0), verts=24):
 def sph(name, r, loc, m, segs=20, rings=14, flat=False):
     bpy.ops.mesh.primitive_uv_sphere_add(radius=r, location=loc, segments=segs, ring_count=rings)
     o = obj(bpy.context.object); o.name = name
+    canon_polys(o)   # UV-sphere face order is not repeatable across processes — see rsbkit.ball
     if flat: o.data.shade_flat()
     else: bpy.ops.object.shade_smooth()
     o.data.materials.append(m); return o
 
 def ico(name, r, loc, m, subdiv=1):
     bpy.ops.mesh.primitive_ico_sphere_add(radius=r, location=loc, subdivisions=subdiv)
-    o = obj(bpy.context.object); o.name = name; o.data.shade_flat()
+    o = obj(bpy.context.object); o.name = name
+    canon_polys(o)   # same reason as sph(): a primitive emits faces in process order
+    o.data.shade_flat()
     o.data.materials.append(m); return o
 
 def cone(name, r1, r2, d, loc, m, verts=24):
@@ -87,7 +115,9 @@ def cone(name, r1, r2, d, loc, m, verts=24):
 def tor(name, R, r, loc, m, maj=24, mino=8, rot=(0, 0, 0)):
     bpy.ops.mesh.primitive_torus_add(major_radius=R, minor_radius=r, location=loc,
                                      rotation=rot, major_segments=maj, minor_segments=mino)
-    o = obj(bpy.context.object); o.name = name; bpy.ops.object.shade_smooth()
+    o = obj(bpy.context.object); o.name = name
+    canon_polys(o)   # the torus emits the same way. lander.glb differed by 416 bytes between two
+    bpy.ops.object.shade_smooth()   # runs of unchanged source until these three helpers were pinned
     o.data.materials.append(m); return o
 
 def parent(child, p):
@@ -102,15 +132,38 @@ def move_all_to(collection, root):
         if o != root and o.parent is None: o.parent = root
 
 def export(root, fname):
+    # Exit-code contract, same shape as rsbkit.export() (audit of the other builders):
+    # the gltf operator can raise OR return {'CANCELLED'} AND LEAVE AN OLD FILE, and
+    # blender --background stays at rc=0 on an uncaught exception either way. The
+    # "EXPORTED" line below used to print over all of that.
+    path = os.path.join(OUT, fname)
+    t_start = time.time() - 2.0        # mtime slack for whole-second filesystems
     bpy.ops.object.select_all(action='DESELECT')
     root.select_set(True)
     for o in root.children_recursive:
         if o.type in {'MESH', 'EMPTY'}: o.select_set(True)
-    path = os.path.join(OUT, fname)
-    bpy.ops.export_scene.gltf(filepath=path, export_format='GLB',
-                              use_selection=True, export_yup=True,
-                              export_apply=True)
-    print("EXPORTED", fname)
+    rc, reason = None, ""
+    try:
+        rc = bpy.ops.export_scene.gltf(filepath=path, export_format='GLB',
+                                       use_selection=True, export_yup=True,
+                                       export_apply=True)
+    except BaseException as e:
+        reason = "raised %s" % type(e).__name__
+    size, fresh = -1, False
+    if not reason:
+        try:
+            size = os.path.getsize(path)
+            fresh = os.path.getmtime(path) >= t_start
+        except OSError:
+            reason = "missing"
+    if reason or rc != {'FINISHED'} or size <= 0 or not fresh:
+        if not reason:
+            reason = "empty" if size <= 0 else "stale"
+        print("ASSETS_EXPORT_FAILED asset=%s exporter_rc=%s reason=%s file=%s bytes=%d fresh=%s"
+              % (fname, sorted(rc) if isinstance(rc, (set, frozenset)) else rc,
+                 reason, path, size, fresh))
+        raise SystemExit(1)
+    print("EXPORTED", fname, size)
 
 def clean(o):
     if o and o.name != "":
@@ -454,8 +507,37 @@ assets = [
 ]
 
 if __name__ == "__main__":
+    # Uncaught exceptions in a builder used to leave blender at rc=0 with no ALL_DONE
+    # (measured on 5.2 LTS: --background does not propagate them), so every stage now
+    # reports into a named line and the run reconciles against the disc:
+    #   ASSETS_FAILED         a builder stage raised
+    #   ASSETS_EXPORT_FAILED  the gltf operator raised/cancelled or wrote nothing fresh
+    #   ASSETS_INCOMPLETE     the run ended without every asset on disc
+    # The guard is wired here rather than at module scope so this builder keeps its own
+    # OUT/materials helpers: the reconciliation below used to raise a TypeError of its own,
+    # printed a traceback, and the run still reported rc=0 with no ALL_DONE — which is the
+    # exact failure mode this hook exists to close (measured 2026-09-27 in the #95 sweep,
+    # tools/logs/blender-repro-sweep/build_assets.a.out).
+    from rsbkit import crash_guard
+    crash_guard("ASSETS")
+    failed = []
     for fn, fname in assets:
-        r = fn()
-        move_all_to(bpy.context.scene.collection, r)
-        export(r, fname)
+        try:
+            r = fn()
+            move_all_to(bpy.context.scene.collection, r)
+            export(r, fname)
+        except SystemExit:
+            raise
+        except BaseException:
+            traceback.print_exc()
+            print("ASSETS_FAILED asset=%s stage raised — not counted as built" % fname)
+            failed.append(fname)
+    # `assets` holds (builder, filename) pairs: the first version of this line unpacked them the
+    # wrong way round, so `os.path.join(OUT, <function>)` raised TypeError on every single run.
+    nofile = [fname for _, fname in assets
+              if not os.path.isfile(os.path.join(OUT, fname)) or os.path.getsize(os.path.join(OUT, fname)) <= 0]
+    if failed or nofile:
+        print("ASSETS_INCOMPLETE built %d/%d crashed=%s no glb on disk=%s"
+              % (len(assets) - len(failed), len(assets), failed, nofile))
+        raise SystemExit(1)
     print("ALL_DONE")

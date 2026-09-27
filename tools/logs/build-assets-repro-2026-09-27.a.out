@@ -1,0 +1,546 @@
+ASSETS_REPIN re-exec'ing under PYTHONHASHSEED=0: /snap/blender/7803/blender --background --python tools/blender/build_assets.py
+00:00.028  color_management | Using OCIO=/snap/blender/7803/5.2/datafiles/colormanagement/config.ocio
+/home/dominic-jamil/GIthub_Code/mars-rover-3d/tools/blender/build_assets.py:48: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  m = bpy.data.materials.new(name); m.use_nodes = True
+INFO Draco is available, use library at /snap/blender/7803/lib/libbf_intern_draco_bridge.so
+INFO MeshOptimizer is available, use library at /snap/blender/7803/lib/libbf_intern_meshopt_bridge.so
+23:05:11 | INFO: Starting glTF 2.0 export
+23:05:11 | INFO: Extracting primitive: Cylinder.001
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Torus.002
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Cylinder
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Icosphere
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Cylinder.002
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Cube
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Cube.001
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Cube.002
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Cube.003
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Cube.004
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Cube.005
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Torus.001
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Torus
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Finished glTF 2.0 export in 0.08461451530456543 s
+
+EXPORTED habitat_dome.glb 43636
+23:05:11 | INFO: Starting glTF 2.0 export
+23:05:11 | INFO: Extracting primitive: Cylinder.003
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Torus.009
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Icosphere.001
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Sphere
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Sphere.001
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Sphere.002
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Sphere.003
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Icosphere.002
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Icosphere.003
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Icosphere.004
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Icosphere.005
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Icosphere.006
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Icosphere.007
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Icosphere.008
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Icosphere.009
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Icosphere.010
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Torus.003
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Torus.004
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Torus.005
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Torus.006
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Torus.007
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Extracting primitive: Torus.008
+23:05:11 | INFO: Primitives created: 1
+23:05:11 | INFO: Finished glTF 2.0 export in 0.0326077938079834 s
+
+EXPORTED greenhouse.glb 63140
+23:05:12 | INFO: Starting glTF 2.0 export
+23:05:12 | INFO: Extracting primitive: Cube.063
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Sphere.004
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.006
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.007
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.008
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.009
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.012
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.013
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.014
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.015
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.018
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.019
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.020
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.021
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.024
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.025
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.026
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.027
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.030
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.031
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.032
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.033
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.036
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.037
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.038
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.039
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.042
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.043
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.044
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.045
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.048
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.049
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.050
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.051
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.054
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.055
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.056
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.057
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.060
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.061
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.010
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.011
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.016
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.017
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.022
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.023
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.028
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.029
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.034
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.035
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.040
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.041
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.046
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.047
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.052
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.053
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.058
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.059
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.004
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.005
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.006
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.007
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.065
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.067
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.064
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.066
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.062
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Finished glTF 2.0 export in 0.08214974403381348 s
+
+EXPORTED launch_tower.glb 107388
+23:05:12 | INFO: Starting glTF 2.0 export
+23:05:12 | INFO: Extracting primitive: Cube.068
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cone.001
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.072
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.073
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.074
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.069
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.008
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.071
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cone
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Sphere.005
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.009
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.070
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Finished glTF 2.0 export in 0.0363006591796875 s
+
+EXPORTED starship.glb 36816
+23:05:12 | INFO: Starting glTF 2.0 export
+23:05:12 | INFO: Extracting primitive: Cube.078
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.077
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.081
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.080
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.075
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.076
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Sphere.006
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.124
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.024
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.010
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.011
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.082
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.083
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.084
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.085
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.086
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.087
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Sphere.007
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.079
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.013
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.088
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.089
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.090
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.091
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.092
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.093
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.012
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.015
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.094
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.095
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.096
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.097
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.098
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.099
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.014
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.017
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.100
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.101
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.102
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.103
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.104
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.105
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.016
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.019
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.106
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.107
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.108
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.109
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.110
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.111
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.018
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.021
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.112
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.113
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.114
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.115
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.116
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.117
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.020
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.023
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.118
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.119
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.120
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.121
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.122
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.123
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.022
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Finished glTF 2.0 export in 0.13604044914245605 s
+
+EXPORTED rover.glb 131528
+23:05:12 | INFO: Starting glTF 2.0 export
+23:05:12 | INFO: Extracting primitive: Cube.130
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.136
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.026
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.126
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.127
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.128
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.129
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.132
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.133
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.134
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.135
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Sphere.008
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.125
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.131
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.025
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Finished glTF 2.0 export in 0.03254890441894531 s
+
+EXPORTED solar_array.glb 28840
+23:05:12 | INFO: Starting glTF 2.0 export
+23:05:12 | INFO: Extracting primitive: Cone.002
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.029
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Sphere.009
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.028
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.027
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Finished glTF 2.0 export in 0.015573263168334961 s
+
+EXPORTED comm_dish.glb 14684
+23:05:12 | INFO: Starting glTF 2.0 export
+23:05:12 | INFO: Extracting primitive: Sphere.010
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Torus.010
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Torus.011
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.137
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.031
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.032
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.033
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.034
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.035
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.030
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Finished glTF 2.0 export in 0.020807266235351562 s
+
+EXPORTED cryo_tank.glb 34048
+23:05:12 | INFO: Starting glTF 2.0 export
+23:05:12 | INFO: Extracting primitive: Torus.012
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Sphere.011
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.037
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.036
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.138
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Finished glTF 2.0 export in 0.014612674713134766 s
+
+EXPORTED lamp.glb 15132
+23:05:12 | INFO: Starting glTF 2.0 export
+23:05:12 | INFO: Extracting primitive: Icosphere.011
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Icosphere.012
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Icosphere.013
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Icosphere.014
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Icosphere.015
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Finished glTF 2.0 export in 0.009011983871459961 s
+/home/dominic-jamil/GIthub_Code/mars-rover-3d/tools/blender/build_assets.py:48: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  m = bpy.data.materials.new(name); m.use_nodes = True
+
+EXPORTED rock_cluster.glb 15340
+23:05:12 | INFO: Starting glTF 2.0 export
+23:05:12 | INFO: Extracting primitive: Cone.003
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cone.004
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cone.005
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cone.006
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Finished glTF 2.0 export in 0.007911205291748047 s
+
+EXPORTED crystal.glb 6800
+23:05:12 | INFO: Starting glTF 2.0 export
+23:05:12 | INFO: Extracting primitive: Sphere.012
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Sphere.013
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.140
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.141
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.038
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cylinder.039
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.139
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Finished glTF 2.0 export in 0.015878915786743164 s
+
+EXPORTED gate.glb 16816
+23:05:12 | INFO: Starting glTF 2.0 export
+23:05:12 | INFO: Extracting primitive: Torus.013
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Sphere.014
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Sphere.015
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.142
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.143
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Cube.144
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Sphere.016
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Sphere.017
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Extracting primitive: Sphere.018
+23:05:12 | INFO: Primitives created: 1
+23:05:12 | INFO: Finished glTF 2.0 export in 0.019989490509033203 s
+
+EXPORTED lander.glb 31952
+ALL_DONE
+Blender 5.2.2 LTS (hash d13f752e3b9c built 2026-09-15 01:34:58)
+
+Blender quit

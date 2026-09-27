@@ -33,13 +33,11 @@ const MARK_WINDOW = 10;
 const CALL = /new THREE\.([A-Za-z]+Geometry)\(/;
 
 // Each entry: the file, an anchor that must be present on the call line, and who owns the fix.
-// The three #105 entries are not excuses — those sites owe a marker like any other, and the only thing
-// holding them is that #75 has src/main.js and src/world/sky.js open right now; a second writer in the
-// same file would land its own hunks under the other's commit message. The exemption therefore names
-// the ticket that empties this list, and #105 goes red the day one of them is marked and not removed.
+// An #105 entry is not an excuse — the site still owes a marker like any other, and the exemption
+// only covers the window in which another writer holds that file open. It is removed the day the
+// marker lands: the staleness check above goes red on exactly that pairing (marked *and* exempt),
+// so an entry cannot quietly outlive the hunk it was written for.
 const EXEMPT = [
-  { file: 'src/main.js', anchor: 'TorusGeometry(6, 0.35', why: 'the race-gate rings', ticket: '#105', owner: 'after #75 releases src/main.js' },
-  { file: 'src/main.js', anchor: 'TorusGeometry(r, r * 0.14', why: 'shockWave, one ring per event', ticket: '#105', owner: 'after #75 releases src/main.js' },
   { file: 'src/world/sky.js', anchor: 'SphereGeometry(7000', why: 'the sky dome volume', ticket: '#105', owner: 'after #75 releases src/world/sky.js' },
   { file: 'src/world/props.js', anchor: 'PlaneGeometry(2.3, 1.35', why: 'the plaza flag cloth', ticket: '#101', owner: '#101 (a Blender cloth asset, not an excuse)' },
   { file: 'src/world/props.js', anchor: 'CylinderGeometry(0.5, 2.6, 56', why: 'the five light-show searchlights', ticket: '#104', owner: '#104 (move them onto fx/beams.js; needs main.js:2280 off `.opacity`)' },

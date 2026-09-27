@@ -401,6 +401,12 @@ function buildGates() {
   const mat = new THREE.MeshBasicMaterial({ color: 0x33ff99, transparent: true, opacity: 0.65 });
   for (const [x, z] of pts) {
     const g = new THREE.Group();
+    // RETAINED RUNTIME PRIMITIVE — six rings, one per zone-pair midpoint, posed off `ZONES[*].pos` at
+    // boot. `updateRace` then animates two things per frame: the ring you are aimed at is set to
+    // opacity 0.9 and spun at 1.2 rad/s, the other five sit at opacity 0.15 and 0.2 rad/s. The
+    // profile is 8x30 = 480 tris of a perfect torus, which is the one silhouette a modelling pass
+    // cannot improve on; as an asset it would be one more boot request carrying no information the
+    // procedural ring does not already carry.
     const rin = new THREE.Mesh(new THREE.TorusGeometry(6, 0.35, 8, 30), mat.clone());
     g.add(rin);
     g.position.set(x, surfaceAt(x, z) + 6.5, z);
@@ -1461,6 +1467,12 @@ function seedPlumes(F, dt) {
 }
 const shockRings = [];
 function shockWave(x, y, z, color = 0x8fe8ff, r = 5) {
+  // RETAINED RUNTIME PRIMITIVE — the radius is an argument, not a part: callers ask for 7 m at the
+  // booster's return to the deck, 10 m at liftoff and 12 m at ignition, and the default 5 m is the
+  // grid rig coming back online; each ring is then scaled by `1 + age * grow` (grow is overwritten
+  // per beat: 20/9/7 against the 1.7 default) and faded out across its 2.2 s of life. One GLB torus
+  // carries one radius; the tube here is `r * 0.14` precisely so the far beats do not read as a
+  // thin line.
   const ring = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.14, 8, 40),
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
   ring.rotation.x = Math.PI / 2; ring.position.set(x, y, z);

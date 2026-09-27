@@ -206,5 +206,9 @@ def build_gate():
 
 
 if __name__ == "__main__":
+    # A builder stage raising used to leave blender --background at rc=0 with no
+    # GATE_DONE line (5.2 LTS does not propagate uncaught exceptions). crash_guard
+    # names the crash and forces rc=1; export refusals keep their own named lines.
+    from rsbkit import crash_guard; crash_guard("GATE")
     export(build_gate(), "spaceport_gate.glb")
     print("GATE_DONE")

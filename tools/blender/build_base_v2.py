@@ -45,8 +45,20 @@
 # ============================================================================
 import bpy, bmesh, math, os, sys
 from mathutils import Vector, Matrix, Euler
+# Reproducibility guard, same measurement and mechanism as rsbkit.RSBKIT_REPIN:
+# two plain runs of this builder differ by 1-ULP TEXCOORD bytes unless str-hash
+# iteration is pinned, and the seed must be set before the interpreter starts —
+# so repin and re-exec blender once with the same command line. The *_REPIN line
+# is what says a run did that.
+if os.environ.get("PYTHONHASHSEED") != "0":
+    os.environ["PYTHONHASHSEED"] = "0"
+    print("BASE_V2_REPIN re-exec'ing under PYTHONHASHSEED=0: %s" % " ".join(__import__("sys").argv))
+    import sys as _sys
+    _sys.stdout.flush()
+    os.execv(bpy.app.binary_path, list(__import__("sys").argv))
 
-OUT = "/tmp/rsb_stage3"
+
+OUT = os.environ.get("RSB_OUT") or "/tmp/rsb_stage3"
 os.makedirs(OUT, exist_ok=True)
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
@@ -1397,6 +1409,11 @@ def export(root, fname, label):
         if o.type in {'MESH', 'EMPTY'}:
             o.select_set(True)
     path = os.path.join(OUT, fname)
+    # A cancelled exporter leaves the PREVIOUS run's file at the path, and a file
+    # with bytes in it is not evidence this run wrote it (same failure class
+    # rsbkit.export() documents). Freshness joins rc and size in the bar.
+    import time as _time
+    t_start = _time.time() - 2.0
     rc = bpy.ops.export_scene.gltf(filepath=path, export_format='GLB',
                                    use_selection=True, export_yup=True,
                                    export_apply=True)
@@ -1405,10 +1422,11 @@ def export(root, fname, label):
     # which is how an asset that never reached the disc read as a success
     # (audit 2026-09-26, task #95/2). Status and file size are both checked now.
     size = os.path.getsize(path) if os.path.isfile(path) else -1
-    if rc != {'FINISHED'} or size <= 0:
-        print("BASE_V2_EXPORT_FAILED asset=%s exporter rc=%s file=%s bytes=%d"
+    fresh = size > 0 and os.path.getmtime(path) >= t_start
+    if rc != {'FINISHED'} or size <= 0 or not fresh:
+        print("BASE_V2_EXPORT_FAILED asset=%s exporter rc=%s file=%s bytes=%d fresh=%s"
               % (label, sorted(rc) if isinstance(rc, (set, frozenset)) else rc,
-                 path, size))
+                 path, size, fresh))
         raise SystemExit(1)
     mn, mx = extents(root)
     print("EXPORTED %-22s -> %s (%d bytes)" % (fname, path, size))

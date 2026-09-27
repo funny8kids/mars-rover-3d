@@ -129,6 +129,13 @@ const SHEET_MATERIALS = new Set([
   // asset measures 12 340 of 12 340 triangles on a boundary. Names come from
   // `node tools/audit_double_sided.mjs --emit`, not from looking at the model.
   'modular_industrial_pipes_01_group01', 'modular_industrial_pipes_01_group02',
+  // The two other CC0 heroes (`overhead_crane`, `portable_generator`, also Poly Haven). The crane is
+  // a kit of I-beams, cable and a hook block — every one of them an extruded profile with open ends —
+  // and the generator is a tub frame around a louvred canopy. Both assets measure 100 % boundary over
+  // every material, so this is not a case of one open primitive dragging a closed material along:
+  // 58 067/58 067 + 31 897/31 897 and 26 365/26 365 + 54/54, from
+  // `node tools/audit_double_sided.mjs --emit`.
+  'overhead_crane', 'overhead_crane_trim', 'portable_generator', 'portable_generator_glass',
 ]);
 
 function unstub(root) {

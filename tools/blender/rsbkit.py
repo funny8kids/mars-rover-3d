@@ -7,11 +7,29 @@
 # cylinder), so a part cannot be off-surface unless its radius is wrong.
 #
 # Import from a builder:  from rsbkit import *
-import bpy, bmesh, math, os, time
+import bpy, bmesh, math, os, sys, time
 from mathutils import Vector
 
+# Reproducibility guard (audit of the other builders, 2026-09-27): string-keyed set
+# iteration order leaks out of the interpreter and into the exported TEXCOORD_0
+# buffers. Measured on this box, two plain runs of build_barriers.py: same file size,
+# two differing bytes, each exactly 1 ULP (5.96e-08) — and byte-for-byte identical
+# once PYTHONHASHSEED=0. Turning ASLR off instead of pinning the seed changed nothing,
+# so it is the str hash, not pointer order. The seed must be set before the
+# interpreter starts, so a script cannot pin it for itself — this module repins and
+# re-execs blender once with the same command line, invisibly to the caller. The
+# RSBKIT_REPIN line is what says a run did that.
+if os.environ.get("PYTHONHASHSEED") != "0":
+    os.environ["PYTHONHASHSEED"] = "0"
+    print("RSBKIT_REPIN re-exec'ing under PYTHONHASHSEED=0: %s" % " ".join(__import__("sys").argv))
+    sys.stdout.flush()
+    os.execv(bpy.app.binary_path, list(__import__("sys").argv))
+
 TAU = math.tau
-OUT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "public", "assets"))
+# RSB_OUT redirects every kit-driven export (verification runs must not overwrite the
+# shipped GLBs in public/assets). Unset keeps the shipped behaviour, byte for byte.
+OUT = os.path.abspath(os.environ.get("RSB_OUT")
+                      or os.path.join(os.path.dirname(__file__), "..", "..", "public", "assets"))
 
 
 # ────────────────────────────── materials ──────────────────────────────
@@ -131,6 +149,90 @@ def uv_cube(o, size):
 
 
 # ────────────────────────────── object ops ──────────────────────────────
+def canon_polys(o):
+    """Reorder a mesh's polygons into an order that depends only on their geometry.
+
+    `bpy.ops.mesh.primitive_uv_sphere_add` does not emit its face list in a
+    repeatable order — measured 2026-09-27 (tools/logs/repro-uv-sphere-2026-09-27.log,
+    and re-confirmed on this audit's first run of build_tap.py: two invocations,
+    same size, 1056 differing bytes, all inside the `Sphere` index bufferViews),
+    and the glTF exporter writes the index buffer in face order. Without this pin
+    every kit asset containing a `ball()` re-exports with permuted triangle
+    indices, so two builds of one source are not comparable and no re-run is
+    evidence of anything. build_base_v2.py's local copy of this function carries
+    the full history; this is that function, lifted so the same measurement holds
+    for every builder. What it does not pin: `bmesh.ops.bevel(clamp_overlap=True)`
+    interpolating in loop order — a UV-byte residue of <=4 ULP is a known,
+    documented remainder, not a new failure.
+
+    Order is keyed on the face's own rounded centroid, vertex count, material
+    slot and vertex coords, so it is a function of the numbers only; winding,
+    coordinates, UV values, smooth flags and slots are carried over verbatim.
+    Run it at creation time, before shading bakes custom normals onto the mesh."""
+    me = o.data
+    co = [tuple(v.co) for v in me.vertices]
+    uvsrc = me.uv_layers.active.data if me.uv_layers and me.uv_layers.active else None
+    rows = []
+    for p in me.polygons:
+        loops = [tuple(uvsrc[l].uv) for l in
+                 range(p.loop_start, p.loop_start + p.loop_total)] if uvsrc else None
+        vs = tuple(p.vertices)
+        n = len(vs)
+        key = (round(sum(co[v][0] for v in vs) / n, 6),
+               round(sum(co[v][1] for v in vs) / n, 6),
+               round(sum(co[v][2] for v in vs) / n, 6),
+               n, p.material_index,
+               tuple(tuple(round(c, 6) for c in co[v]) for v in vs))
+        rows.append((key, p.use_smooth, p.material_index, vs, loops))
+    rows.sort(key=lambda r: r[0])
+    old_name = me.name
+    new = bpy.data.meshes.new(old_name + "~canon")
+    new.from_pydata(co, [], [r[3] for r in rows])
+    new.update()
+    for m in me.materials:
+        new.materials.append(m)
+    for i, p in enumerate(new.polygons):
+        p.use_smooth = rows[i][1]
+        if p.material_index != rows[i][2]:
+            p.material_index = rows[i][2]
+    if rows and rows[0][4] is not None:
+        nl = new.uv_layers.new(name=me.uv_layers.active.name)
+        li = 0
+        for row in rows:
+            for uv in row[4]:
+                nl.data[li].uv = uv
+                li += 1
+    o.data = new
+    bpy.data.meshes.remove(me)
+    new.name = old_name
+    return o
+
+
+def crash_guard(tag):
+    """Turn an uncaught builder-stage exception into a named line and rc=1.
+
+    `blender --background --python` leaves an uncaught script exception at rc=0
+    (measured on 5.2.2 LTS: `raise RuntimeError` in a --python script prints a
+    traceback and quits 0), which is indistinguishable from a green build by any
+    caller that reads only the exit code. `export()` already refuses with
+    RSBKIT_EXPORT_FAILED; this hook covers the crash paths BEFORE the export —
+    a bmesh op raising mid-build would otherwise stop the script silently.
+    SystemExit (including export()'s own refusal) bypasses the hook and keeps
+    its code, so the named export lines still win where both could fire."""
+    import sys, traceback
+
+    def _hook(exc_type, exc_val, tb):
+        traceback.print_exception(exc_type, exc_val, tb)
+        print("%s_FAILED stage raised outside export — blender rc forced non-zero" % tag)
+        try:
+            sys.stdout.flush()
+        except Exception:
+            pass
+        os._exit(1)
+
+    sys.excepthook = _hook
+
+
 def act(o):
     bpy.context.view_layer.objects.active = o
     return o
@@ -169,6 +271,16 @@ def bevel(o, width, segs=3, min_angle=28):
                     edges.append(e)
             except Exception:
                 pass
+    # Feed the bevel its edges in a geometry-keyed order, not bmesh's internal
+    # index order: `clamp_overlap` resolves width clamps in the order it is
+    # handed, and an order that depends on allocation history is how the second
+    # reflector of build_barriers came out 1 ULP away between two plain runs
+    # (audit 2026-09-27; see the RSBKIT_REPIN note — the seed pin alone did not
+    # reach this one).
+    def _key(e):
+        return tuple(c for v in sorted(tuple(round(x, 7) for x in vv.co)
+                                       for vv in e.verts) for c in v)
+    edges.sort(key=_key)
     if edges:
         bmesh.ops.bevel(bm, geom=edges, offset=width, segments=segs,
                         profile=0.72, affect='EDGES', clamp_overlap=True)
@@ -282,6 +394,16 @@ def rbox(name, sx, sy, sz, loc, m=None, bevel_r=None, segs=3, rot=(0, 0, 0)):
     o.name = name
     o.scale = (sx, sy, sz)
     apply_scale(o)
+    # Drop the template's default UV layer before the bevel: `bmesh.ops.bevel`
+    # interpolates existing corner data, and that interpolation is NOT repeatable
+    # across calls (measured 2026-09-27: three creates of one identical cube gave
+    # three different UV hashes while the vertex positions hashed identically;
+    # /tmp/rsb_audit/clamp2 runs). Positions are stable, interpolated loop UVs are
+    # the noise, and a beveled primitive's template UVs carry no authored meaning
+    # anyway — the project's UV discipline is uv_cube() after the fact, and every
+    # helper below that ends up textured gets exactly that.
+    for _l in list(o.data.uv_layers):
+        o.data.uv_layers.remove(_l)
     bevel(o, bevel_r if bevel_r is not None else min(sx, sy, sz) * 0.24, segs)
     smooth_angle(o)
     if m:
@@ -294,6 +416,7 @@ def ball(name, r, loc, m=None, segs=32, rings=None, scale=None):
                                          ring_count=rings or segs // 2 + 2)
     o = act(bpy.context.object)
     o.name = name
+    canon_polys(o)   # the UV-sphere face order is not repeatable without this — see canon_polys
     if scale:
         o.scale = scale
         apply_scale(o)
@@ -308,6 +431,16 @@ def cyl(name, r, d, loc, m=None, rot=(0, 0, 0), verts=32, br=None, bsegs=2):
                                         vertices=verts)
     o = act(bpy.context.object)
     o.name = name
+    # Drop the template's default UV layer before the bevel: `bmesh.ops.bevel`
+    # interpolates existing corner data, and that interpolation is NOT repeatable
+    # across calls (measured 2026-09-27: three creates of one identical cube gave
+    # three different UV hashes while the vertex positions hashed identically;
+    # /tmp/rsb_audit/clamp2 runs). Positions are stable, interpolated loop UVs are
+    # the noise, and a beveled primitive's template UVs carry no authored meaning
+    # anyway — the project's UV discipline is uv_cube() after the fact, and every
+    # helper below that ends up textured gets exactly that.
+    for _l in list(o.data.uv_layers):
+        o.data.uv_layers.remove(_l)
     if br is None:
         br = r * 0.3
     if br > 0:
@@ -323,6 +456,16 @@ def cone(name, r1, r2, d, loc, m=None, rot=(0, 0, 0), verts=40, br=0.0):
                                     rotation=rot, vertices=verts)
     o = act(bpy.context.object)
     o.name = name
+    # Drop the template's default UV layer before the bevel: `bmesh.ops.bevel`
+    # interpolates existing corner data, and that interpolation is NOT repeatable
+    # across calls (measured 2026-09-27: three creates of one identical cube gave
+    # three different UV hashes while the vertex positions hashed identically;
+    # /tmp/rsb_audit/clamp2 runs). Positions are stable, interpolated loop UVs are
+    # the noise, and a beveled primitive's template UVs carry no authored meaning
+    # anyway — the project's UV discipline is uv_cube() after the fact, and every
+    # helper below that ends up textured gets exactly that.
+    for _l in list(o.data.uv_layers):
+        o.data.uv_layers.remove(_l)
     if br > 0:
         bevel(o, br, 2)
     smooth_angle(o, 46)

@@ -211,6 +211,10 @@ def build_beacon():
 
 
 if __name__ == "__main__":
+    # A builder stage raising used to leave blender --background at rc=0 with no
+    # TELEMETRY_BOARD_DONE line (5.2 LTS does not propagate uncaught exceptions). crash_guard
+    # names the crash and forces rc=1; export refusals keep their own named lines.
+    from rsbkit import crash_guard; crash_guard("TELEMETRY_BOARD")
     purge()
     root = empty("telemetry_board")
     build_ground()

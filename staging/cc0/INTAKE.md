@@ -1,6 +1,7 @@
 # CC0 / free-license asset intake — staging area
 
-Status: **research + staging only — nothing under `src/`, `tools/`, `public/assets/` was touched.**
+Status: **staged 2026-09-26; two of the four shipped to `public/assets/` on 2026-09-27 — see §6.
+No `src/` or `tools/` runtime file was touched by either pass.**
 Date: 2026-09-26. Task: work item #76 / 任务 I —「全图粗糙建模清零，优先以网络 CC0/免版权资源替换」.
 
 ## 1. What the repo already has
@@ -81,3 +82,24 @@ files for the four staged models are in `LICENSE-source.txt` in each folder.
 - Kenney-style **rounded pipe/hangar hybrid props** at the diorama's 3.5× grid — the Kenney
   grid and Poly Haven real-metric scale do not share a module size; a conforming prop set is
   authoring work, not intake work.
+
+## 6. Intake status — 2026-09-27 conform + ship pass
+
+Rows 1–4 of the table in §2, resolved against `tools/cc0-conform.mjs` and the base-palette check
+`src/world/props.js:113-115` demands before an entry joins the `CC0` list. Full gate readouts:
+`tools/logs/cc0-conform-2026-09-26.txt` (all four, staged) and
+`tools/logs/cc0-conform-2026-09-27.txt` (the two that shipped, plus the rejection).
+
+| Row | Verdict | Evidence |
+|---|---|---|
+| 1 `modular_industrial_pipes_01` | **SHIPPED as `public/assets/pipe_kit.glb`** (previous pass) | needed a hue retint first (30.7 %/44.3 % of pixels in the 20–45° band → 87.5 %/93.2 % after `tools/retint_modular_industrial_pipes_01.py`); wired into the tap→pad feed runs at `props.js:1071-1125` |
+| 2 `overhead_crane` | **SHIPPED as `public/assets/overhead_crane.glb`** | R1 12.49 m ≤ 72.88 · R2 89 964 tris ≤ 91 636 (**98 % of the cap — the tightest asset in the library**) · R3 no emissives · R4 foot = full footprint. No retint needed: body hue 29.9°, 76.2 % in band, 4.0 % cool-side (retinted pipes: 5.1 %). Awaiting `props.js` `CC0` registration + `assets.js` SHEET_MATERIALS names (`overhead_crane`, `overhead_crane_trim`) |
+| 3 `portable_generator` | **SHIPPED as `public/assets/portable_generator.glb`** | R1 0.82 m · R2 26 419 tris (29 %) · R3 none · R4 clean; hue 34.8°, 72.2 % in band, 4.2 % cool. Authored footed at y=0. Same two registration points (`portable_generator`, `portable_generator_glass`) |
+| 4 `modular_electric_cables` | **NOT SHIPPED — palette pre-check fails, retint required first** | Gates themselves PASS (42 078 tris, 2.02 m) but the junction-box atlas sits at hue 43.1° with **30.0 %** of pixels cool-side of the band — the same failure mode that made row 1 unshippable until it was retinted, and no `tools/retint_modular_electric_cables.py` exists. Also row-4's own §2 risk still stands: fixed-length spans. |
+
+Two consequences of putting a `.glb` in `public/assets/` before it is registered, both measured this
+pass: `node tools/audit_double_sided.mjs --check` exits 1 until the new material names are in
+`src/world/assets.js` `SHEET_MATERIALS` (Poly Haven hard-surface exports arrive as open shells — the
+crane measures 58 067/58 067 and 31 897/31 897 boundary triangles, the generator 26 365/26 365, the
+same 100 % result `pipe_kit` measured), and the conform baseline is re-read from the directory, so
+these files also count as shipped library for later candidates.

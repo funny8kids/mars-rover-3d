@@ -1,11 +1,39 @@
 # Builds public/assets/gantry_service.glb — a substation portal gantry.
 # Runs headless:  blender -b -P tools/blender/build_gantry.py   (Blender 5.2 has no --noaudio)
+# Verification runs:  RSB_OUT=/tmp/dir blender -b -P tools/blender/build_gantry.py
 # bmesh-only by design: modifier_apply / origin_set are unreliable in Blender 5.2 headless.
-import bpy, bmesh, math, os
+import bpy, bmesh, math, os, sys, traceback
 from mathutils import Matrix, Vector, Euler
+# Reproducibility guard, same measurement and mechanism as rsbkit.RSBKIT_REPIN:
+# two plain runs of this builder differ by 1-ULP TEXCOORD bytes unless str-hash
+# iteration is pinned, and the seed must be set before the interpreter starts —
+# so repin and re-exec blender once with the same command line. The *_REPIN line
+# is what says a run did that.
+if os.environ.get("PYTHONHASHSEED") != "0":
+    os.environ["PYTHONHASHSEED"] = "0"
+    print("GANTRY_REPIN re-exec'ing under PYTHONHASHSEED=0: %s" % " ".join(__import__("sys").argv))
+    import sys as _sys
+    _sys.stdout.flush()
+    os.execv(bpy.app.binary_path, list(__import__("sys").argv))
 
+
+# This builder is linear top-level code, and blender --background leaves an uncaught
+# script exception at rc=0 with no WROTE line (measured on 5.2.2 LTS the same way
+# build_base_v2.py documents it). The hook turns any such crash into a named line and
+# a non-zero exit; SystemExit (used below and by rsbkit-style refusals) bypasses the
+# hook and keeps its own code.
+#   GANTRY_FAILED           a stage raised — nothing downstream is trusted
+def _fail_hook(exc_type, exc_val, tb):
+    traceback.print_exception(exc_type, exc_val, tb)
+    print("GANTRY_FAILED stage raised — see traceback above")
+    sys.stdout.flush()
+    os._exit(1)
+sys.excepthook = _fail_hook
+
+# RSB_OUT redirects verification runs away from public/assets (same convention as rsbkit).
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-OUT = os.path.join(ROOT, 'public', 'assets', 'gantry_service.glb')
+OUT = os.path.join(os.environ.get("RSB_OUT") or os.path.join(ROOT, 'public', 'assets'),
+                   'gantry_service.glb')
 
 MATS = [
     ('hull_white', (0.80, 0.81, 0.83), 0.06, 0.52),
@@ -432,7 +460,44 @@ for name, col, met, rough in MATS:
     mats.append(m)
     me.materials.append(m)
 
+# Determinism pin: this builder's one joined bmesh can come out of the union with a
+# face order that differs between processes (measured 2026-09-27: two plain runs,
+# 640 differing bytes, all inside the exported index buffer — the triangles were the
+# same multiset, reordered). canon_polys rewrites the polygon order from geometry
+# alone, the same pin rsbkit's primitives use, so two builds of this file are
+# byte-comparable.
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from rsbkit import canon_polys
+canon_polys(ob)
+
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
-bpy.ops.export_scene.gltf(filepath=OUT, export_format='GLB', use_selection=True,
-                          export_yup=True, export_apply=True, export_materials='EXPORT')
-print('WROTE', OUT, os.path.getsize(OUT))
+# The operator can raise or return {'CANCELLED'} while an old file sits at the path
+# (audit of the other builders): check the status, the size and the freshness before
+# the WROTE line is allowed to print.
+#   GANTRY_EXPORT_FAILED    asset=... exporter_rc=... reason=raised|missing|empty|stale
+import time
+_path = OUT
+_t_start = time.time() - 2.0
+_rc, _reason = None, ""
+try:
+    _rc = bpy.ops.export_scene.gltf(filepath=_path, export_format='GLB', use_selection=True,
+                                    export_yup=True, export_apply=True, export_materials='EXPORT')
+except BaseException as e:
+    _reason = "raised %s" % type(e).__name__
+_size, _fresh = -1, False
+if not _reason:
+    try:
+        _size = os.path.getsize(_path)
+        _fresh = os.path.getmtime(_path) >= _t_start
+    except OSError:
+        _reason = "missing"
+if _reason or _rc != {'FINISHED'} or _size <= 0 or not _fresh:
+    if not _reason:
+        _reason = "empty" if _size <= 0 else "stale"
+    print("GANTRY_EXPORT_FAILED asset=gantry_service.glb exporter_rc=%s reason=%s "
+          "file=%s bytes=%d fresh=%s"
+          % (sorted(_rc) if isinstance(_rc, (set, frozenset)) else _rc,
+             _reason, _path, _size, _fresh))
+    raise SystemExit(1)
+print('WROTE', OUT, _size)

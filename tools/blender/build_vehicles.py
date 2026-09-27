@@ -465,6 +465,10 @@ def build_optimus():
 
 
 if __name__ == "__main__":
+    # A builder stage raising used to leave blender --background at rc=0 with no
+    # VEHICLES_DONE line (5.2 LTS does not propagate uncaught exceptions). crash_guard
+    # names the crash and forces rc=1; export refusals keep their own named lines.
+    from rsbkit import crash_guard; crash_guard("VEHICLES")
     export(build_rover(), "crew_rover.glb")
     export(build_optimus(), "optimus_bot.glb")
     print("VEHICLES_DONE")

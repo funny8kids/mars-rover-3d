@@ -79,7 +79,7 @@ def uv_face(o, w_m, h_m, scrap=(0.114, 0.909)):
     field. A placard is the one asset here whose map does not tile: cube-projected, the 12 mm
     rim would sample a wrapped copy of the lettering, and a sign with a stripe of upside-down
     text down its edge is worse than a sign with no edge at all."""
-    uvl = o.data.uv_layers.active
+    uvl = o.data.uv_layers.active or o.data.uv_layers.new()
     for poly in o.data.polygons:
         front = poly.normal.y > 0.90
         for li in poly.loop_indices:
@@ -160,6 +160,10 @@ def build_panel():
 
 
 if __name__ == "__main__":
+    # A builder stage raising used to leave blender --background at rc=0 with no
+    # HAZARD_SIGN_DONE line (5.2 LTS does not propagate uncaught exceptions). crash_guard
+    # names the crash and forces rc=1; export refusals keep their own named lines.
+    from rsbkit import crash_guard; crash_guard("HAZARD_SIGN")
     purge()
     root = empty("hazard_sign")
     build_foot()

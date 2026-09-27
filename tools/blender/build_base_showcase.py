@@ -25,11 +25,23 @@
 # ============================================================================
 import bpy, bmesh, math, os, re, sys, time
 from mathutils import Vector, Matrix
+# Reproducibility guard, same measurement and mechanism as rsbkit.RSBKIT_REPIN:
+# two plain runs of this builder differ by 1-ULP TEXCOORD bytes unless str-hash
+# iteration is pinned, and the seed must be set before the interpreter starts —
+# so repin and re-exec blender once with the same command line. The *_REPIN line
+# is what says a run did that.
+if os.environ.get("PYTHONHASHSEED") != "0":
+    os.environ["PYTHONHASHSEED"] = "0"
+    print("BASE_SHOWCASE_REPIN re-exec'ing under PYTHONHASHSEED=0: %s" % " ".join(__import__("sys").argv))
+    import sys as _sys
+    _sys.stdout.flush()
+    os.execv(bpy.app.binary_path, list(__import__("sys").argv))
+
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 ORIG_DIR = os.path.join(REPO, "public", "assets")
-OUT = "/tmp/rsb_stage2"
+OUT = os.environ.get("RSB_OUT") or "/tmp/rsb_stage2"
 os.makedirs(OUT, exist_ok=True)
 
 TAU = math.tau
@@ -701,6 +713,10 @@ def export(root, name):
         if o.type in {'MESH', 'EMPTY'}:
             o.select_set(True)
     path = os.path.join(OUT, name + ".glb")
+    # Freshness joins rc and size in the bar: a cancelled exporter leaves the
+    # PREVIOUS run's file at the path, and bytes on disk alone are not evidence
+    # this run wrote them (same failure class rsbkit.export() documents).
+    t_start = time.time() - 2.0
     rc = bpy.ops.export_scene.gltf(filepath=path, export_format='GLB',
                                    use_selection=True, export_yup=True,
                                    export_apply=True)
@@ -710,10 +726,11 @@ def export(root, name):
     # (audit 2026-09-26, task #95/3). Both the operator status and the file that
     # is actually on disk have to agree before anything downstream gets to print.
     size = os.path.getsize(path) if os.path.isfile(path) else -1
-    if rc != {'FINISHED'} or size <= 0:
-        print("SHOWCASE_EXPORT_FAILED asset=%r exporter rc=%s file=%s bytes=%d"
+    fresh = size > 0 and os.path.getmtime(path) >= t_start
+    if rc != {'FINISHED'} or size <= 0 or not fresh:
+        print("SHOWCASE_EXPORT_FAILED asset=%r exporter rc=%s file=%s bytes=%d fresh=%s"
               % (name, sorted(rc) if isinstance(rc, (set, frozenset)) else rc,
-                 path, size))
+                 path, size, fresh))
         sys.exit(1)
     tris = sum(tri_of(o) for o in root.children_recursive if o.type == 'MESH')
     print("EXPORTED %s.glb tris=%d bytes=%d" % (name, tris, size))

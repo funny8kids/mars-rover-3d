@@ -91,7 +91,16 @@ def uv_cyl(o, cx=0.0, cy=0.0, R=0.30, u_m=2.5, v_m=2.5):
     v and its brush runs in v too, so this is the only UV under which a horizontal weld ring
     stays a ring on every facet instead of breaking at the quadrant seams."""
     if not o.data.uv_layers:
-        o.data.uv_layers.new()
+        # A mesh can reach here with no UV layer at all (the kit primitives no longer
+        # carry the template's, which used to survive the bevel): create one and make
+        # it active — `uv_layers.new()` alone leaves `.active` at None on this Blender.
+        nl = o.data.uv_layers.new(name="UVMap")
+        o.data.uv_layers.active = nl
+    elif o.data.uv_layers.active is None:
+        # `join` onto a first object with no UV layer can leave the result with layers
+        # and no active pointer (measured on this Blender with the kit no longer
+        # carrying template UVs through the bevel): pin the active explicitly.
+        o.data.uv_layers.active = o.data.uv_layers[0]
     uvl = o.data.uv_layers.active
     for li in range(len(o.data.loops)):
         co = o.data.vertices[o.data.loops[li].vertex_index].co
@@ -108,7 +117,16 @@ def uv_patch(o, cx, cy, z0, w_m, h_m):
     measured handedness build_hazard_sign's `uv_face` documents, for the same +Y-facing
     viewer), v is up, both scaled so the card's exact-metre map lands 1:1 on the shell."""
     if not o.data.uv_layers:
-        o.data.uv_layers.new()
+        # A mesh can reach here with no UV layer at all (the kit primitives no longer
+        # carry the template's, which used to survive the bevel): create one and make
+        # it active — `uv_layers.new()` alone leaves `.active` at None on this Blender.
+        nl = o.data.uv_layers.new(name="UVMap")
+        o.data.uv_layers.active = nl
+    elif o.data.uv_layers.active is None:
+        # `join` onto a first object with no UV layer can leave the result with layers
+        # and no active pointer (measured on this Blender with the kit no longer
+        # carrying template UVs through the bevel): pin the active explicitly.
+        o.data.uv_layers.active = o.data.uv_layers[0]
     uvl = o.data.uv_layers.active
     for li in range(len(o.data.loops)):
         co = o.data.vertices[o.data.loops[li].vertex_index].co
@@ -279,6 +297,10 @@ def build_placard():
 
 
 if __name__ == "__main__":
+    # A builder stage raising used to leave blender --background at rc=0 with no
+    # CRATE_DONE line (5.2 LTS does not propagate uncaught exceptions). crash_guard
+    # names the crash and forces rc=1; export refusals keep their own named lines.
+    from rsbkit import crash_guard; crash_guard("CRATE")
     purge()
     root = empty("drum_crate")
     build_skid()

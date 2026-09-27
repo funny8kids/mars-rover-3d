@@ -2884,6 +2884,12 @@ window.__RSB = {
     lance: !!stormPlay.lance, aim: stormPlay.aim?.key || null,
     lost: +(filmGauge() * FILM.YIELD * 100).toFixed(1) }),
   setFilm: (array, self) => { base.gridRigs.forEach(r => { r.film = array; r.cleaned = false; }); roverFilm = self; },
+  // The other half of the bill. Cleaning an array is only a decision if the act of cleaning costs
+  // something, and the thing it costs is the charge the arrays are there to protect — so a reader has
+  // to be able to see the battery move while `lance` is held. Without this line the loop could be
+  // asserted but not checked.
+  grid: () => ({ battery: +grid.battery.toFixed(4), online: grid.online, of: GRID_COUNT,
+    dead: !!grid.dead, output: +(grid.online / GRID_COUNT).toFixed(3) }),
   // The sample map as the storm is rewriting it. `p` is which side of the island's wake the site sits
   // on for the current heading — the number that decides whether the front scours there or drops its
   // load — and `dust` is what the air currently holds over it. Together they are the whole ledger:

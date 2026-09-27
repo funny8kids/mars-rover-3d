@@ -12,6 +12,13 @@ http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
   if (req.method === 'OPTIONS') { res.end(); return; }
+  // Who owns :8123 answers with where it writes. A sweep that reuses an already-listening collector
+  // would otherwise print its own default OUT and the frames would land somewhere else.
+  if (req.url === '/ping' || req.url === '/health') {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ ok: true, out: OUT }));
+    return;
+  }
   let body = '';
   req.on('data', d => { body += d; });
   req.on('end', () => {

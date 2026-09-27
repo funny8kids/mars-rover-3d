@@ -47,6 +47,10 @@ const CAST_MAX = 1.15;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const OUT = '/tmp/rsb-clip-' + new Date().toISOString().slice(0, 10);
+// The directory the frames actually land in is whichever collector owns :8123 — this run's spawn loses
+// the port race and dies silently when a collector is already up, so the printed path is read back
+// from the collector rather than assumed to be OUT.
+let outDir = OUT;
 // `shot()` POSTs its PNG to the collector on :8123 and awaits the response — without a listener the
 // fetch rejects and every frame "fails" as an exception, which would be a ruler reading its own plumbing.
 const server = spawn('node', ['tools/shot-server.mjs', OUT], { stdio: 'ignore' });
@@ -55,7 +59,7 @@ for (let i = 0; i < 40 && !serverUp; i++) {
   await sleep(100);
   // A `catch` that also sets the flag would make this check unkillable, and the first thing it has to
   // be able to say is "the collector is not there".
-  try { await fetch('http://127.0.0.1:8123/ping'); serverUp = true; } catch { }
+  try { const r = await fetch('http://127.0.0.1:8123/ping'); serverUp = true; outDir = (await r.json()).out || outDir; } catch { }
 }
 if (!serverUp) { console.log('SHOT_SERVER_DOWN — :8123 never answered'); server.kill(); process.exit(1); }
 
@@ -250,7 +254,7 @@ console.log(`COVERAGE vantage-in-geometry=${rows.filter(r => r.inN).length}/${ro
   `census-empty=${rows.filter(r => r.camCheck === null).length}/${rows.length} (no emitter within 70 m of the pose, so nothing to cross-check) · ` +
   `burn-share-measured=${rows.filter(r => r.burnPct !== null).length}/${rows.length} (>= ${BURN_MIN_BLOWN_PX} blown px)`);
 if (camBad.length) console.log(`CENSUS_ANCHOR_FAIL — ${camBad.length} row(s): ${camBad.map(r => `${r.sky}/${r.name}=${r.camCheck}m`).join(' ')} — the "in frame" column there describes a frame other than the one measured, so the sweep cannot be trusted either`);
-console.log(`FRAMES ${OUT}/ (PNG, lossless — shot() stopped encoding JPEG, main.js:5141)`);
+console.log(`FRAMES ${outDir}/ (PNG, lossless — shot() stopped encoding JPEG, main.js:5141)`);
 console.log(bad.length || camBad.length ? `CLIP SWEEP FAIL` : `CLIP SWEEP PASS`);
 ws.close(); server.kill();
 process.exit(bad.length || camBad.length ? 1 : 0);

@@ -60,7 +60,21 @@ void main(){
 
   // sun disc + glow
   float sdot = max(dot(d, uSunDir), 0.0);
-  float disc = smoothstep(0.9993, 0.99965, sdot);
+  // 0.99985/0.99993 puts the disc's hard edge at acos → 0.99°, ramping from 0.68°, instead of the
+  // old band's 1.52°→2.14°. The sun on Mars is 0.35–0.7° across; at 4.2° wide the disc was six times
+  // its real size and was the frame's biggest emitter by pixels even when it only clipped a corner:
+  // raycasting the blown histogram cell by cell (tools/clip-attribution-probe.mjs) puts 49 of 120 and
+  // 70 of 119 blown cells of the day/tap:motor clip frame on the sky sphere itself (that pose, sampled
+  // twice at HEAD), and that is a lower bound — the dome is drawn with depthWrite off, so a cell where
+  // some geometry is nearer gets credited to that geometry even where the sky is what painted it.
+  // After the cut the same vantage, re-passed twice on the bytes that ship, holds 18 and 20 of 32 / 34
+  // blown cells (tools/logs/cell-attribution-2026-09-27.txt; the pass-to-pass drift is the post chain's
+  // grain, which src/fx/post.js:124-125 hashes against elapsed time, not the dome). What is left
+  // there is the glow tail below, not the disc. The 66-frame pair
+  // (clip-sweep-2026-09-27-baseline-head.log → -working-after.log) takes day/pad:motor 1.5 → 0.2 and
+  // day/tap:motor 0.7 → 0.2; day/pad:launch reads 0.3 on both sides of that pair, so whatever it is,
+  // it is not the disc, and it is under the 0.5 bar either way.
+  float disc = smoothstep(0.99985, 0.99993, sdot);
   // The old corona spread 0.30 out to a 20-degree radius on top of a 0.10 hemisphere-wide wash,
   // so the sun read as a white hole rather than a disc with a rim.
   float glow = pow(sdot, 220.0) * 0.9 + pow(sdot, 26.0) * 0.22 + pow(sdot, 3.0) * 0.055;
@@ -74,8 +88,9 @@ void main(){
   // The 2.9 it was measured against is gone: main.js:2566 now lerps the threshold 6.0 → 0.42 with
   // nightF, so at noon the disc at 5.0 no longer feeds the pass at all. What survives here is the
   // second half of that finding — a disc has to stay near the white point or the *sky* around it is the
-  // next thing that gets veiled — and the same vantage still reads 1.5 % blown with the pass off, which
-  // is the sun's own corona at the frame edge plus sunlit white paint, not bloom.
+  // next thing that gets veiled. The 1.5 % the old note ended on is gone: its 187 pixels were the
+  // gantry's sunlit grey metal (fixed in world/assets.js, desun()), and the corona-and-disc remainder
+  // is what the smaller disc above is for.
   sky += sunCol * (disc * 5.0 + glow) * (0.12 + dayF * 0.9) * (1.0 - duskF * 0.15);
   // Forward scattering off suspended fines. Clearing the disc away with the day factor also threw
   // away the only thing that made a dust storm read as *dust* rather than brown fog: the sun still

@@ -23,12 +23,51 @@ const BRDF = {
 // it, because the spike is the direct analytic light, not image-based. 0.62 keeps a readable
 // metallic gradient and removes 96% of the clipped pixels. Darker metals return less of the sun,
 // so they may stay glossier.
+// The bright-metal tier boundary was 1.6 until the gantry service said otherwise: `struct`
+// (the lattice tower's grey paint, authored 0.52/0.50/0.47 → luma 1.49, metal 0.78, rough 0.46)
+// owns the day/pad:motor clip frame — two sunlit mirror strips down the tower legs. That pointer was
+// already in `tools/logs/clip-attribution-2026-09-27.log` (157 of 247 blown pixels in the rightmost
+// eighth of the frame), and the per-cell raycast of the blown histogram names the object outright:
+// `struct` holds 194 of 276 blown cells and 159 of 241 on a repeat of the identical bytes and pose
+// at that vantage (~two-thirds of the frame's white), and 0 of 27, 27, 28 and 27 across four runs with
+// the floor at 1.35 (tools/clip-attribution-probe.mjs; every run archived in
+// tools/logs/cell-attribution-2026-09-27.txt — the totals drift by a cell or two because the post
+// chain's grain is hashed against elapsed time, src/fx/post.js:124-125, not because the tower moved).
+// 1.35 catches it, and scanning the 395 staged GLBs for materials the move changes the finish of
+// (1.35 < luma ≤ 1.6 and glTF metallicFactor > 0.5, defaulting to 1.0 where the key is absent) finds
+// exactly two more: the cryo tank's anodised fittings (`ti_anodised`, 1.45 / rough 0.20) and a
+// `spring` inside the reference Perseverance model (1.57 / rough 0.40). Both were already sitting on
+// the 0.44 floor, so all three names just land on the brushed finish everything above 1.6 has.
+// `rover_alu` (2.21) was never in the band — it was over the old boundary too.
 function desun(mt) {
   if (!mt || mt.metalness <= 0.5 || !mt.color) return;
   const luma = mt.color.r + mt.color.g + mt.color.b;
-  const floor = luma > 1.6 ? 0.62 : 0.44;
+  const floor = luma > 1.35 ? 0.62 : 0.44;
   if (mt.roughness < floor) mt.roughness = floor + (mt.roughness % 0.05);
+  // A pale metal exported at roughness 1.0 is not "matte paint": with no diffuse term left, it
+  // integrates the whole bright day hemisphere and the sun's broad lobe into a white sheet. The foil
+  // sheets own 43 of 120 and 44 of 119 blown cells of the day/tap:motor clip frame this way (36 % and
+  // 37 % of the frame's white — same vantage sampled twice at HEAD, same probe, same log). The roughness
+  // floor cannot reach them: authored at 1.0, they are already above every floor this function offers,
+  // so the only knob left is F0 — a cream tint (0.72) puts the sheet under the white point and still
+  // reads as foil, not plastic. On the archived AFTER runs that same vantage holds 12 cells in each of
+  // four passes (of 30, 33, 32 and 34 total blown), and it is the only sheet name the raycast ever
+  // credited a blown cell to at this pose.
+  if (mt.roughness >= 0.9 && luma > 2.7 && PALE_FOIL.has(mt.name)) mt.color.multiplyScalar(0.72);
 }
+
+// These two names carry the sheet across three GLBs — `crew_metal` (metalness 0.86) on hab_link,
+// crew_rover and optimus_bot, `crew_frame` (0.62) on hab_link and crew_rover — 5 material slots, all
+// at roughness 1.00 and all with no baseColorFactor at all, which is why `luma > 2.7` clears: the
+// colour lives in the texture and THREE leaves `color` at 1,1,1. Name-scoped on purpose: that recipe
+// (0.55 ≤ metal ≤ 0.95, roughness ≥ 0.9, baseColorFactor absent) is 13 names / 25 slots across the
+// staged GLBs — `node tools/pale-foil-scan.mjs --recipe`, appendix in
+// tools/logs/cell-attribution-2026-09-27.txt — and at 0.86 it is also `gate_metal` (spaceport_gate)
+// and `tap_iron` (7 files, reactor_tap among them), at 0.62 `rocket_skin` (starship_stack). None of
+// those is in the set: only these two sheets were raycast holding blown cells, and the one frame of
+// the 66-frame clip sweep still over the bar (night/sample:4) is 100 % crystal001 — 122, 84, 111, 130,
+// 130 and 123 blown cells across six passes at that pose, every one of them the sample crystal.
+const PALE_FOIL = new Set(['crew_metal', 'crew_frame']);
 
 // Blender's glTF exporter stamps `doubleSided: true` onto EVERY material it writes, whatever the
 // model is — all 35 hero GLBs and all 91 Kenney ones, with no exceptions and no art decision behind

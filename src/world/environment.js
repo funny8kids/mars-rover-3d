@@ -21,15 +21,23 @@ const SUN_THROUGH_DUST = new THREE.Color(0.95, 0.40, 0.15);
 // So the night fill goes near-neutral with a hair of rust in the ground bounce, which is both what an
 // unlit Martian slope looks like and the second hue that lets the lamps be the saturated ones.
 const MOONLIGHT = new THREE.Color(0.62, 0.68, 0.80);
-// Cool, but only a shade — the key is what should say "night", and it can do that without being the
-// only thing in the frame that says it.
-const NIGHT_SKY = new THREE.Color(0.152, 0.158, 0.192);
+// The rust side of near-neutral rather than the cool side: this value used to be blue-led (b was
+// 1.26× r), which made the sky half of the hemisphere a third copy of the violet the block above is
+// about. Brightness is essentially unchanged by the measure that matters for a hemisphere colour —
+// the mean of the three channels, 0.1673 → 0.1740, 1.040× — and the night's lift is carried by the
+// intensity terms below instead, so the lamps still have the only saturated hue to own. (Perceived
+// luminance, Rec.709-weighted, moves 1.091×; green leads, so the two measures do not agree.)
+const NIGHT_SKY = new THREE.Color(0.190, 0.170, 0.162);
 // Bounce off regolith the sun left hours ago. Deliberately *not* blue: this is the colour of every
 // moon-shadow face in the frame, and while it was COOL_GROUND all night those faces were a third
-// sample of the same violet.
-const NIGHT_GROUND = new THREE.Color(0.072, 0.058, 0.052);
+// sample of the same violet. This one does go up — channel mean 0.0607 → 0.0773, 1.275× — because
+// the hemisphere's ground side is what a shadow face actually reads against, and the dead-black pair
+// measured below (bin0 at pad:science) was taken with this value in it.
+const NIGHT_GROUND = new THREE.Color(0.095, 0.075, 0.062);
 // Near-neutral and one step above black, because this value doubles as the night ambient's colour.
-const NIGHT_FOG = new THREE.Color(0.054, 0.051, 0.058);
+// Same lift in kind, 1.178× on the channel mean (0.0543 → 0.0640), and blue exactly level with red
+// now (b/r was 1.074) rather than a fourth copy of the cool cast.
+const NIGHT_FOG = new THREE.Color(0.066, 0.060, 0.066);
 // Metres out along the sun's ground track where the air is probed for dust. The slab a storm drags
 // behind its leading edge is ~260 m deep, so the probes straddle it and one beyond.
 const SUN_PATH = [45, 110, 190, 285, 400];
@@ -167,7 +175,26 @@ export class Environment {
     // as much as every face, and the measured histogram collapsed from seven luminance bins into
     // three: the gate became a silhouette because nothing in the frame was *not* lit any more.
     // Dust scatters, it does not replace the sun, so the fill now climbs about half as hard.
-    this.hemi.intensity = THREE.MathUtils.lerp(0.42, 0.62, dayF) * (1 + stormMix * 0.7) + nightF * 0.52;
+    //
+    // That sentence is only about the storm term. The nightF terms on this line and the ambient below
+    // went the other way, 0.52 -> 2.0 and 0.22 -> 0.75, because the bottom of the night histogram was
+    // dead black: in the 66-frame pair of 2026-09-27, at HEAD pad:science sat at bin0 38‰ dusk / 31‰
+    // night — the only two frames over the 30‰ blackness gate, with pad:comms next at 21‰ — while at
+    // these values the same three poses read 21/18, 12/11 and 14/15, and no frame in either run trips
+    // that gate. The two numbers per pose are two runs of these same pixels: the pair is
+    // tools/logs/clip-sweep-2026-09-27-baseline-head.log against
+    // tools/logs/clip-sweep-2026-09-27-working-after.log and -working-after2.log (same 22 vantages x
+    // 3 skies, all headed buffer 1810x740 — that field is the drawing buffer at the moment the sweep
+    // attaches, and the game drops it to 0.72 of the window mid-run if fpsAvg stays under 30,
+    // main.js:2658-2663, so read it as "which window", not "which cap"). The run-to-run spread is the
+    // ruler's own noise floor, not a lighting change: the final pass adds a grain term hashed against
+    // uTime (src/fx/post.js:124-125), so the same pose sampled a second later puts a few more pixels
+    // across a bin edge. ±3‰ on a bin0 reading is as dark as this measurement gets; if this line and
+    // those logs disagree, the logs are right.
+    // Only these two terms and the NIGHT_GROUND / NIGHT_FOG colours above touch bin0 — the day-side
+    // edits shipped with this run darken pale albedo and shrink the sun's own disc, neither of which
+    // can lift a shadow out of black.
+    this.hemi.intensity = THREE.MathUtils.lerp(0.42, 0.62, dayF) * (1 + stormMix * 0.7) + nightF * 2.0;
     this._c.sky.setRGB(0.46, 0.33, 0.27).lerp(new THREE.Color(0.74, 0.57, 0.46), dayF);
     this._c.sky.lerp(NIGHT_SKY, nightF);
     // The ground side of the hemisphere used to be one constant for the whole 24 hours, so after dusk
@@ -175,7 +202,7 @@ export class Environment {
     // exists. At night the ground is the unlit half of the frame, and it is the only warm thing left
     // once the sun is gone; leaving it cool is what made every shadow in the night render one hue.
     this.hemi.groundColor.copy(COOL_GROUND).lerp(NIGHT_GROUND, nightF);
-    this.amb.intensity = 0.13 + dayF * 0.09 + nightF * 0.22 + stormMix * 0.13;
+    this.amb.intensity = 0.13 + dayF * 0.09 + nightF * 0.75 + stormMix * 0.13;
     // The blocked key does not vanish, it is scattered — and a front a kilometre wide that has the
     // sun behind it is the largest lamp in the scene. So the fill climbs on the same signal that
     // dims the sun: the ground loses its shadows and gains a flat, sourceless glow, which is the

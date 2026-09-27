@@ -2044,23 +2044,31 @@ export async function buildBase(scene, quality) {
     lightStrips.push(wash.material); lightRings.push(wash);
 
     // light-show searchlights: five narrow, near-vertical shafts ringing the pad
+    // This was the last place in the base that answered "what does a shaft of light look like" a second
+    // way, and the census named it (#104). The five were `CylinderGeometry(0.5, 2.6, 56, 12, 1, true)` on
+    // an opacity-driven `MeshBasicMaterial`: a DoubleSide additive shell stacking its own two walls into
+    // a bright seam down the middle, ending in a straight rim 56 m up, and converging as it rose (2.6 m
+    // at the ground, 0.5 m at the top) — the opposite of light leaving a lamp.
+    // `UNIT_BEAM` is datumed at its lens and diverges, so the foot moved inboard to the pad's own wash
+    // ring (r 13.5, crown 0.72 above it) and each shaft now visibly rises out of a strobing lamp rather
+    // than out of 17 m of empty air. The 0.14 rad lean also pivots at the foot now instead of at the
+    // column's middle: tip at r 21.3, 56 m up.
+    // Flare 3.9 m over that reach is the ~4° half-angle the seven grid-rig shafts use (1.05 m / 15 m); the pad
+    // floods' 7.6° would widen each of these to 7.5 m and the five columns would overlap into a drum of
+    // light over the deck. Wander 0.15 unit radii is ~0.6 m of drift at the tip against the grid rigs'
+    // 0.23 m, which is what a show that spins at 0.6 rad/s is for.
     showBeams = new THREE.Group();
-    showBeams.position.set(px, 0, pz);
+    showBeams.position.set(px, py, pz);
     for (let i = 0; i < 5; i++) {
       const a = i / 5 * Math.PI * 2 + 0.6;
-      // NOT a retained primitive — the census names it as an offender (#104). This is the shape
-      // `fx/beams.js` was written to kill: a 12-segment open cone on a `MeshBasicMaterial` whose opacity
-      // is the only thing driven, so at 56 m it draws its own straight rim and, being DoubleSide and
-      // additive, stacks its two walls into a brighter seam down the middle. The five tap shafts got the
-      // shader version; these five did not, and the fix needs main.js's `showBeamMats` writes moved from
-      // `.opacity` to the material's `uLevel` uniform — which is in the file #75 has open.
-      const bm = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 2.6, 56, 12, 1, true), new THREE.MeshBasicMaterial({
-        color: [0x8fd4ff, 0xffb066, 0xc79cff, 0x8fffe0, 0xff9ab0][i], transparent: true, opacity: 0,
-        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-      }));
-      bm.position.set(Math.cos(a) * 17, 28, Math.sin(a) * 17);
+      const bm = new THREE.Mesh(UNIT_BEAM, shaftMaterial([0x8fd4ff, 0xffb066, 0xc79cff, 0x8fffe0, 0xff9ab0][i], 0, 0.15));
+      // `UNIT_BEAM` is a unit shaft: metres go in through the scale, y = length, x/z = tip radius.
+      bm.scale.set(3.9, 56, 3.9);
+      bm.position.set(Math.cos(a) * 13.5, 0.72, Math.sin(a) * 13.5);
       bm.rotation.z = -Math.cos(a) * 0.14;
       bm.rotation.x = Math.sin(a) * 0.14;
+      // The VS pushes the far end of the column sideways past the geometry's own bounding sphere.
+      bm.frustumCulled = false;
       showBeams.add(bm); showBeamMats.push(bm.material);
     }
     G.add(showBeams);
@@ -3227,9 +3235,10 @@ export async function buildBase(scene, quality) {
       // side, and because the shell is DoubleSide and additive the two walls stacked into a brighter
       // seam down the middle. `fx/beams.js` was written to remove exactly that from the launch pad;
       // this was the last of the seven grid rigs still doing it (the loop walks `teleports`, and there
-      // are seven of them). It is not the last place in the base:
-      // the launch pad's five light-show searchlights (the `showBeams` loop, in the launch block) are still a
-      // 12-segment open cone on an opacity-driven `MeshBasicMaterial`, and that one is a job of its own.
+      // are seven of them). The launch pad's five light-show searchlights (the `showBeams` loop, in the
+      // launch block) were the other answer, and they joined this one on the same shader, so inside this
+      // file there is no second way left to draw a shaft — every column of light in the base is a
+      // `UNIT_BEAM` on `shaftMaterial`, driven through `uLevel`.
       const beamMat = shaftMaterial(0x6fe8ff, 0, 0.22);
       const beam = new THREE.Mesh(UNIT_BEAM, beamMat);
       // shallow flare, and it dies away in daylight — the cone opens to 1.05 m over 15 m of rise

@@ -2298,12 +2298,57 @@ function update(dt) {
     base.lightStrips.forEach((m, i) => { m.emissiveIntensity = beat * gp * (0.5 + 0.5 * Math.sin(elapsed * 4 + i * 1.7)); });
     base.lightRings.forEach(r => r.visible = true);
     base.showBeams.rotation.y += dt * 0.6;
-    const beamA = (0.016 + 0.012 * Math.sin(elapsed * 2.4)) * st.nightF;
-    base.showBeamMats.forEach((m, i) => { m.opacity = beamA * (0.55 + 0.45 * Math.sin(elapsed * 5 + i * 2.1)); });
+    // The drive is the shader's `uLevel`, not `opacity`: a ShaderMaterial has no use for the latter, so
+    // the five searchlights' old write did the one thing the cone could do and nothing else (#104).
+    // The amplitude cannot be carried across that swap, so it was matched — matched by whole-frame lift:
+    // the mean luminance of the same 16 000-px (160x100) sample with the layer present minus absent, the
+    // two renders taken inside one eval at a pinned camera, sky and uTime, both tabs on a 1303x532 buffer.
+    // tools/logs/beam-level-ladder-2026-09-27.txt prints the runs and anchors them with `node
+    // tools/anchor-hash.mjs src/main.js`: the sha256 of this file's executable text, so this comment may
+    // be reworded without invalidating the run and no line of code may. `tools/beam-level-ladder.mjs` ran
+    // over this text, `tools/legacy-beam-layer-probe.mjs` over a mirror of 79775a0 — the last build with
+    // the cones — driven at its shipped crest, 0.028.
+    // `node tools/beam-ladder-pool.mjs` re-pools every block of that log and is the reader of the parity
+    // claim. It passes only while both layers light the apron frame by at least 1.5 of 255 on average, so
+    // a swap that delivered nothing cannot pass, and only while the difference between the two means is
+    // smaller than the spread the layers show between their own blocks — which they do, by more than that
+    // difference. So parity is a comparison here, never a number to copy: any band printed in a comment
+    // would go red on a build that looks identical, and the fix would be to widen the band, which is not
+    // a judgement at all.
+    // Parity of brightness, then, and nothing else: the crest was set by the lift, the shape was left to
+    // change. The shape did — the cones touch about 13 % of the sample at ~+20 on those pixels, the
+    // shafts about 7 % at ~+36: about half the pixels at about twice the strength, which is the
+    // difference between a column and a veil. The raw multiply had to grow tenfold (0.16±0.12 where the
+    // cone wore 0.016±0.012) because the shaft shader spends most of it before the frame sees anything:
+    // grazing falloff at the silhouette, exp(-s·1.15) down the column, run-out instead of a cap. The
+    // per-shaft strobe, ×(0.55±0.45), is untouched.
+    // The ceiling is not what stopped it here, and the pool gates that as well: clip% matches the dark
+    // frame's own self% to within its 0.05 % tolerance at the crest and at rung 0.45 at every vantage
+    // measured, so this layer blows no pixel the scene was not already blowing. The numbers differ per
+    // build (0.1 % over this text at the plaza and the pad centre, up to 0.75 % on the mirror's plaza
+    // frame and 0.07 % on its pad centre, all 0 at the apron, where the frame is about four of 255
+    // brighter at 0.45 than its dark pair). Every frame the ladder drew over this text is under the
+    // sweep's 0.5 % gate; the mirror's 0.75 % is its own scene, and clip == self% is what says so.
+    // Reach is what moves: at the plaza 88 m out the same crest carries about double the light in the
+    // frame the show is meant to be watched from — the pool gates that as an ordering, every shaft block
+    // above every cone block, rather than as a ratio to quote.
+    // And one vantage serves neither layer: from the pad centre, looking up, these five shafts put exactly
+    // 0 in the frame at every rung to 0.45 — and so did the old cones; the pool fails if either ever
+    // stops reading 0 there. Nine rays across that frame reach no sky: six land on the booster's hull at
+    // 2.4–7.5 m and three on the high platform at 6.1–7.2 m. The ship itself stands between the audience
+    // and the ring there. That is a staging question, not an amplitude one, and it belongs to #75.
+    const beamA = (0.16 + 0.12 * Math.sin(elapsed * 2.4)) * st.nightF;
+    base.showBeamMats.forEach((m, i) => {
+      const u = m.uniforms;
+      u.uLevel.value = beamA * (0.55 + 0.45 * Math.sin(elapsed * 5 + i * 2.1));
+      u.uTime.value = elapsed;
+      u.uCam.value.copy(camera.position);
+      u.uFogDen.value = scene.fog ? scene.fog.density : 0;
+    });
     if (showOn <= 0) {
       base.lightStrips.forEach(m => m.emissiveIntensity = 2.5 * gp);
       base.lightRings.forEach(r => r.visible = false);
-      base.showBeamMats.forEach(m => { m.opacity = 0; });
+      base.showBeamMats.forEach(m => { m.uniforms.uLevel.value = 0; });
     }
   }
   // E at ship at night = light show
@@ -2938,6 +2983,30 @@ window.__RSB = {
   beams: (hide = false) => {
     beams?.setLit(!hide);
     return beams?.probe(camera) ?? null;
+  },
+  // The light show is a 14-second timer that only a rover parked at the pad can start, so a screenshot
+  // rig cannot wait for it: pass seconds to open the show and read back the five searchlight shafts.
+  // `foot`/`axisR` are the claim #104 made — every shaft stands on the pad's own wash ring, not on a
+  // hand-typed radius — and `level` is what the frame loop last wrote to `uLevel`.
+  // `pin` writes a rung of brightness by hand so the ceiling can be measured one level at a time, the
+  // way `emissive-ladder` pins a material's `emissiveIntensity`. It only holds while the show is closed
+  // (`secs: 0`): while it runs the frame loop overwrites `uLevel` every tick, exactly as the pulse does
+  // to the crystal, and the ladder would be photographing the strobe rather than the rung. `id` is the
+  // material's own uuid, so the probe addresses these five and not the thirteen other `uLevel` shaders
+  // in the scene (the pad's six flood shafts and the grid rigs' seven answer to the same name).
+  show: (secs = 14, pin = null) => {
+    showOn = secs;
+    if (pin !== null && !(secs > 0)) for (const m of base.showBeamMats) m.uniforms.uLevel.value = pin;
+    const [px, , pz] = base.launchRig.pad;
+    return {
+      on: showOn > 0, secs: +showOn.toFixed(1), pinned: pin !== null && !(secs > 0),
+      shafts: base.showBeamMats.map((m, i) => {
+        const p = base.showBeams.children[i].getWorldPosition(new THREE.Vector3());
+        return { id: m.uuid, hue: '#' + m.uniforms.uColor.value.getHexString(),
+          level: +m.uniforms.uLevel.value.toFixed(4),
+          foot: p.toArray().map(n => +n.toFixed(2)), axisR: +Math.hypot(p.x - px, p.z - pz).toFixed(2) };
+      }),
+    };
   },
   // The flight, as the integrator sees it. `log` is the same record the telemetry panel will render
   // and `touch` is what the booster's return actually cost, so a claim about the sequence can be

@@ -40,7 +40,6 @@ const CALL = /new THREE\.([A-Za-z]+Geometry)\(/;
 // `src/world/sky.js`'s dome carried the last entry until its marker arrived in the same commit.
 const EXEMPT = [
   { file: 'src/world/props.js', anchor: 'PlaneGeometry(2.3, 1.35', why: 'the plaza flag cloth', ticket: '#101', owner: '#101 (a Blender cloth asset, not an excuse)' },
-  { file: 'src/world/props.js', anchor: 'CylinderGeometry(0.5, 2.6, 56', why: 'the five light-show searchlights', ticket: '#104', owner: '#104 (move them onto fx/beams.js; needs main.js:2280 off `.opacity`)' },
 ];
 
 function walk(dir, out = []) {

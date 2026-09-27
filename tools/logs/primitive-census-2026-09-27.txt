@@ -81,3 +81,102 @@ C4 分母口径：注释里引用一条调用不得进分母、真调用必须�
 
 C5 四道对照跑完、两份源文件还原后的终读：CHECK_RC=0（期望 0），git diff 对 beams.js/props.js 的行数=73
 （本文件里的每个数都由上面这四道对照当场产出；不符时以重跑为准：node tools/primitive_census.mjs --check）
+
+────────────────────────────────────────────────────────────────────────────
+第二跑（#105 的最后一条豁免当场撤销：天空穹顶把理由写回了自己身上）
+生成时间：2026-09-27T11:31:19+08:00
+被验字节：src/world/sky.js sha256 前 16 位 904f5168956c9d7f（对照跑前后各取一次，两者相等 ⇒ 红跑跑在
+  /tmp/pcq-1790479848 的 src 副本上，出货树全程没被动过）
+
+本跑的改动：sky.js 的 SphereGeometry(7000, 48, 32) 上方落了 RETAINED RUNTIME PRIMITIVE 标记，
+tools/primitive_census.mjs 的 EXEMPT 表里 #105 那一行删掉。#101 / #104 两条照旧挂着票。
+
+命令：
+  node tools/primitive_census.mjs --check        # 出货树，退出码即判据
+  node tools/dome-direction-error.mjs            # 标记里两个数（弦误差 / 视差）的出处
+
+整跑读数（stdout + stderr 合并）：
+primitive census — 2026-09-27 — /home/dominic-jamil/GIthub_Code/mars-rover-3d
+command: node tools/primitive_census.mjs --check   (its exit code is not in this file; the run that produced these lines printed CHECK_RC on stderr)
+
+total live hand-built geometry call sites: 28
+  marked   26
+  exempt   2   (#101, #104)
+  UNMARKED 0
+
+per file (call sites):
+   16  src/world/props.js
+    2  src/main.js
+    2  src/world/terrain.js
+    1  src/fx/beams.js
+    1  src/fx/particles.js
+    1  src/fx/plume.js
+    1  src/fx/skids.js
+    1  src/fx/staging.js
+    1  src/world/rim_veil.js
+    1  src/world/sky.js
+    1  src/world/storm.js
+
+exempt:
+  src/world/props.js:1309 PlaneGeometry  → the plaza flag cloth [#101] #101 (a Blender cloth asset, not an excuse)
+  src/world/props.js:2038 CylinderGeometry  → the five light-show searchlights [#104] #104 (move them onto fx/beams.js; needs main.js:2280 off `.opacity`)
+
+marked (the exception written on the thing it excuses):
+  src/fx/beams.js:27 CylinderGeometry
+  src/fx/particles.js:46 BufferGeometry
+  src/fx/plume.js:30 CylinderGeometry
+  src/fx/skids.js:27 PlaneGeometry
+  src/fx/staging.js:35 TorusGeometry
+  src/main.js:410 TorusGeometry
+  src/main.js:1476 TorusGeometry
+  src/world/props.js:476 CircleGeometry
+  src/world/props.js:604 IcosahedronGeometry
+  src/world/props.js:645 CylinderGeometry
+  src/world/props.js:1189 CircleGeometry
+  src/world/props.js:1246 PlaneGeometry
+  src/world/props.js:1755 RingGeometry
+  src/world/props.js:1775 CylinderGeometry
+  src/world/props.js:1851 TorusGeometry
+  src/world/props.js:2022 TorusGeometry
+  src/world/props.js:2545 PlaneGeometry
+  src/world/props.js:2736 BufferGeometry
+  src/world/props.js:2801 RingGeometry
+  src/world/props.js:3193 OctahedronGeometry
+  src/world/props.js:3203 CircleGeometry
+  src/world/rim_veil.js:83 BufferGeometry
+  src/world/sky.js:224 SphereGeometry
+  src/world/storm.js:516 PlaneGeometry
+  src/world/terrain.js:797 PlaneGeometry
+  src/world/terrain.js:1216 IcosahedronGeometry
+
+stale exemptions: 0
+
+VERDICT PASS
+CHECK_RC=0
+
+对照矩阵（三条红/绿都在 /tmp/pcq-1790479848 的副本里跑，出货树字节未动）
+D1 出货字节 → 期望 0：实际 CENSUS_RC=0
+D2 抹掉穹顶标记的 RETAINED 字样 → 期望 1：实际 CENSUS_RC=1（CHECK_RC=1 — 1 unmarked call site(s)）
+D3 把已删的 #105 豁免塞回表里、站点已带标记 → 期望 2：实际 CENSUS_RC=2（CHECK_RC=2 — 1 stale exemption(s)）
+D4 假阳对照：豁免表回到删后状态、src 未改动 → 期望 0：实际 CENSUS_RC=0（CHECK_RC=0）
+
+D3 就是这条豁免不能留着的理由：标记一落地，那张票立刻变成掩护，工具自己会红。
+
+穹顶标记里两个数的出处（逐字取自 /home/dominic-jamil/GIthub_Code/mars-rover-3d/tools/logs/dome-direction-error-2026-09-27.txt；PROBE_RC=0，每档 10 000 条视向全部命中）：
+  eye 118, 1.7, 0 m from the dome's centre — ISLAND.radius 118 — the flat playfield (src/config.js:32)
+      SphereGeometry(7000,  48,  32)  verts   1617  tris   2976  hits 10000  | tessellation-only: max 0.0032°  mean 0.00129°  | vs the true view direction: max 0.969°  mean 0.760°   ← shipped
+  eye 118, 1.7, 0 m from the dome's centre — ISLAND.radius 118 — the flat playfield (src/config.js:32)
+      SphereGeometry(7000,  96,  64)  verts   6305  tris  12096  hits 10000  | tessellation-only: max 0.0008°  mean 0.00032°  | vs the true view direction: max 0.967°  mean 0.759°
+  eye 132, 1.7, 0 m from the dome's centre — ISLAND.rim 132 — the last ground the rover is allowed on
+      SphereGeometry(7000,  48,  32)  verts   1617  tris   2976  hits 10000  | tessellation-only: max 0.0036°  mean 0.00144°  | vs the true view direction: max 1.084°  mean 0.850°   ← shipped
+  eye 132, 1.7, 0 m from the dome's centre — ISLAND.rim 132 — the last ground the rover is allowed on
+      SphereGeometry(7000,  96,  64)  verts   6305  tris  12096  hits 10000  | tessellation-only: max 0.0009°  mean 0.00036°  | vs the true view direction: max 1.081°  mean 0.849°
+  eye 250, 1.7, 0 m from the dome's centre — 132 + photo mode 120 m — the worst reachable eye
+      SphereGeometry(7000,  48,  32)  verts   1617  tris   2976  hits 10000  | tessellation-only: max 0.0068°  mean 0.00273°  | vs the true view direction: max 2.053°  mean 1.610°   ← shipped
+  eye 250, 1.7, 0 m from the dome's centre — 132 + photo mode 120 m — the worst reachable eye
+      SphereGeometry(7000,  96,  64)  verts   6305  tris  12096  hits 10000  | tessellation-only: max 0.0017°  mean 0.00068°  | vs the true view direction: max 2.048°  mean 1.608°
+
+标记引的是 eye 132 那一档（漫游车能到的最后一块地）：弦误差 0.0036° 对太阳盘 0.314° 的斜坡
+≈ 1/87，再细 4 倍只买回 0.0027°（0.0036 → 0.0009）。对真视向那一列在四档细分下几乎不动
+（0.969 → 0.967），随 1/radius 收缩 ⇒ 它是穹顶钉在世界原点、眼睛离心 132 m 的视差，不是网格；
+能在意它的只有半径，而半径还要留在相机 far=9000（src/main.js:35）以内。

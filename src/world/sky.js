@@ -211,6 +211,16 @@ void main(){
 }`;
 
 export function createSky(scene) {
+  // RETAINED RUNTIME PRIMITIVE — the sky, not a prop: SKY_VS throws the position away the moment it
+  // reads it (`vDir = normalize(position)`, line 6) and SKY_FS colours each fragment from that
+  // direction alone — no UV, no vertex data, no light, no fog — so a GLB shell would be this same
+  // sphere wearing this same shader, and the shader is live: Environment.update() rewrites its whole
+  // uniform block every frame (environment.js:259) and the storm billows are fbm in uTime. Both
+  // numbers below are ray-measured, not guessed (tools/dome-direction-error.mjs, output archived in
+  // tools/logs/dome-direction-error-2026-09-27.txt): 48 × 32 leaves 0.0036° of chord error on the
+  // direction at the rim, under a ninetieth of the sun disc's 0.314° ramp, and going 4 × finer buys back
+  // 0.0027° of it; 7000 is a parallax knob instead — the dome never moves and the eye gets up to
+  // 132 m off its centre, so the sky lands up to 1.08° off the true view direction (offset/radius).
   const geo = new THREE.SphereGeometry(7000, 48, 32);
   const mat = new THREE.ShaderMaterial({
     vertexShader: SKY_VS, fragmentShader: SKY_FS,

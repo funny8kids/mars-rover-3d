@@ -1,0 +1,27 @@
+# 天空穹顶：网格误差与视差 —— node tools/dome-direction-error.mjs（stdout+stderr 合并，/home/dominic-jamil/GIthub_Code/mars-rover-3d/tools/logs/dome-direction-error-2026-09-27.txt）
+# 生成时间：2026-09-27T11:30:48+08:00  ·  口径见脚本头：从偏心机位向 48×32 / 24×16 / 12×8 / 96×64
+#   四档球各投 10 000 条视向，射线打平直三角形取命中点再 normalize（=SKY_VS 交给碎片的方向），与
+#   (a) 该视向本身、(b) 同半径解析球面的命中方向 比较。后者之差＝纯弦误差；前者之差含视差。
+# 本跑不读 src/world/sky.js（自己 new SphereGeometry），所以该文件的注释改动不作废本读数。
+
+eye 118, 1.7, 0 m from the dome's centre — ISLAND.radius 118 — the flat playfield (src/config.js:32)
+  SphereGeometry(7000,  12,   8)  verts    117  tris    168  hits 10000  | tessellation-only: max 0.0510°  mean 0.02127°  | vs the true view direction: max 1.004°  mean 0.780°
+  SphereGeometry(7000,  24,  16)  verts    425  tris    720  hits 10000  | tessellation-only: max 0.0128°  mean 0.00519°  | vs the true view direction: max 0.976°  mean 0.764°
+  SphereGeometry(7000,  48,  32)  verts   1617  tris   2976  hits 10000  | tessellation-only: max 0.0032°  mean 0.00129°  | vs the true view direction: max 0.969°  mean 0.760°   ← shipped
+  SphereGeometry(7000,  96,  64)  verts   6305  tris  12096  hits 10000  | tessellation-only: max 0.0008°  mean 0.00032°  | vs the true view direction: max 0.967°  mean 0.759°
+
+eye 132, 1.7, 0 m from the dome's centre — ISLAND.rim 132 — the last ground the rover is allowed on
+  SphereGeometry(7000,  12,   8)  verts    117  tris    168  hits 10000  | tessellation-only: max 0.0570°  mean 0.02379°  | vs the true view direction: max 1.123°  mean 0.872°
+  SphereGeometry(7000,  24,  16)  verts    425  tris    720  hits 10000  | tessellation-only: max 0.0143°  mean 0.00580°  | vs the true view direction: max 1.092°  mean 0.854°
+  SphereGeometry(7000,  48,  32)  verts   1617  tris   2976  hits 10000  | tessellation-only: max 0.0036°  mean 0.00144°  | vs the true view direction: max 1.084°  mean 0.850°   ← shipped
+  SphereGeometry(7000,  96,  64)  verts   6305  tris  12096  hits 10000  | tessellation-only: max 0.0009°  mean 0.00036°  | vs the true view direction: max 1.081°  mean 0.849°
+
+eye 250, 1.7, 0 m from the dome's centre — 132 + photo mode 120 m — the worst reachable eye
+  SphereGeometry(7000,  12,   8)  verts    117  tris    168  hits 10000  | tessellation-only: max 0.1083°  mean 0.04508°  | vs the true view direction: max 2.132°  mean 1.653°
+  SphereGeometry(7000,  24,  16)  verts    425  tris    720  hits 10000  | tessellation-only: max 0.0273°  mean 0.01100°  | vs the true view direction: max 2.070°  mean 1.618°
+  SphereGeometry(7000,  48,  32)  verts   1617  tris   2976  hits 10000  | tessellation-only: max 0.0068°  mean 0.00273°  | vs the true view direction: max 2.053°  mean 1.610°   ← shipped
+  SphereGeometry(7000,  96,  64)  verts   6305  tris  12096  hits 10000  | tessellation-only: max 0.0017°  mean 0.00068°  | vs the true view direction: max 2.048°  mean 1.608°
+
+scale: the sun disc's ramp spans 0.314° (0.68° → 0.99° half-angle, SKY_FS smoothstep 0.99985→0.99993).
+the second column is the same number at every tessellation and shrinks as 1/radius — it is parallax, not the mesh; the first column is the mesh, and at the shipped 48 × 32 it is a ninety-eighth of the disc ramp quoted above.
+PROBE_RC=0

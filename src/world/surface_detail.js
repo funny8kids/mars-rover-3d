@@ -93,9 +93,12 @@ function patch(panel) {
 `;
 }
 
-// Grown or broken, not built: no module, no fasteners. `rock_basalt` is the forged rim/clast kit, and it
-// is the only natural material in here — the drift sand has its own shader and is skipped above.
-const NATURAL = /^rock_basalt$/;
+// Grown, woven or broken, not built: no module, no fasteners. `rock_basalt` is the forged rim/clast
+// kit, and `flag_cloth` is the plaza banner's solved panel (tools/blender/build_flag_cloth.py) — a
+// sheet of 150 g/m^2 cloth has no panel seams and no rivets, and the grid override would put a
+// regular fastener pattern across a painted insignia. The drift sand has its own shader and is
+// skipped above.
+const NATURAL = /^(rock_basalt|flag_cloth)$/;
 
 const skip = (mt) => !mt || !mt.isMeshStandardMaterial || mt.transparent === true
   || /^light_|glass|plant|leaf|crystal|pad_glow|drift_/.test(mt.name || '')

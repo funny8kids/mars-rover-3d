@@ -106,7 +106,7 @@ export async function buildBase(scene, quality) {
   resetLots();
   const HERO = ['habitat_dome', 'hab_link', 'greenhouse', 'launch_tower', 'cryo_tank', 'starship_stack',
     'crew_rover', 'optimus_bot', 'watch_deck', 'spaceport_gate', 'hub_plaza', 'reactor_tap', 'lox_stand', 'roadster', 'lamp',
-    'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut', 'barrier_kit', 'flag_mast',
+    'crystal', 'lander', 'teleport_pad', 'gantry_service', 'astronaut', 'barrier_kit', 'flag_mast', 'flag_cloth',
     'hazard_sign', 'telemetry_board', 'feeder_pillar', 'rim_rock', 'beacon_kit', 'telescope', 'site_kit',
     'drum_crate'];
   // Authored elsewhere and licensed CC0, so it is listed apart from our own heroes: every entry here
@@ -1323,19 +1323,15 @@ export async function buildBase(scene, quality) {
     const mastY = heightAt(hx + 5.5, hz + 4);
     put('flag_mast', hx + 5.5, hz + 4, 1, 0, 0);
     {
-      // A flat quad on a pole is the one prop that guarantees the whole plaza looks like a
-      // placeholder. Cloth hanging off a mast has a catenary droop and a wind ripple in it.
-      const fg = new THREE.PlaneGeometry(2.3, 1.35, 14, 6);
-      const fp = fg.attributes.position;
-      for (let i = 0; i < fp.count; i++) {
-        const u = (fp.getX(i) + 1.15) / 2.3, v = (fp.getY(i) + 0.675) / 1.35;
-        fp.setZ(i, Math.sin(u * 7.4 - 0.5) * 0.11 * u + Math.pow(u, 2.4) * 0.20);
-        fp.setY(i, fp.getY(i) - Math.pow(u, 2.2) * 0.26);
-      }
-      fg.computeVertexNormals();
-      // The droop was already in the geometry; what made it read as a placeholder was the flat
-      // single colour. A base flag carries an insignia, a stitched hem, a hoist sleeve and
-      // sun-bleached folds along the weave, and no amount of shading on a plain colour adds those.
+      // The panel itself is solved, not drawn: `tools/blender/build_flag_cloth.py` holds the hoist
+      // edge on the halyard, lets gravity and a wind field run, and freezes the frame whose
+      // silhouette carries the window's own mean angle. That is where the catenary droop, the
+      // creases from the hoist corners and the wavelength that changes across the field come from —
+      // none of which a plane and a sine in a loop can produce. What stays here is the printed
+      // face: the insignia, the stitched hem, the hoist sleeve and the sun-bleached folds, attached
+      // to the loaded material the way the telemetry board's live face reaches its screen mesh.
+      // Weave is neither modelled nor forged: at the plaza's nearest vantage a 1.6 mm thread is
+      // well under a pixel, so a weave field would rasterise to noise.
       const flagTex = (() => {
         const cv = document.createElement('canvas');
         cv.width = 460; cv.height = 270;
@@ -1382,14 +1378,23 @@ export async function buildBase(scene, quality) {
         t.colorSpace = THREE.SRGBColorSpace;
         return t;
       })();
-      const flag = new THREE.Mesh(fg, new THREE.MeshStandardMaterial({
-        map: flagTex, roughness: 0.8, metalness: 0, side: THREE.DoubleSide,
-      }));
-      // The cloth's hoist edge is set to the mast's own halyard line (0.20 m off the pole axis,
-      // where the asset's rings are threaded), so the sleeve hangs on the rings instead of
-      // floating inside the tube the way it did when both were placed by eye.
-      flag.position.set(hx + 6.85, mastY + 6.35, hz + 4); flag.castShadow = true; flag.receiveShadow = true;
-      G.add(flag);
+      // Rigged by the corner the halyard leaves the sheave at, which is the asset's own origin:
+      // `flag_cloth` opts out of recentring in assets.js because a flag hangs from that point, not
+      // from the middle of its box. It is the same datum the quad was hung at — that plane put its
+      // *centre* at (hx + 6.85, mastY + 6.35), so its hoist-top corner stood at (hx + 5.70,
+      // mastY + 7.025), 0.20 m off the pole axis where the mast's rings are threaded. The solved
+      // sheet hangs 6.02 deg off horizontal with its leech averaging 1.879 m downwind of that line
+      // and its farthest hem point 2.089 m (`CLOTH exported` / `CLOTH blender x`, run 10), so the
+      // banner's outer edge lands 0.21 m inboard of where the flat quad's did. That is the catenary
+      // being paid for: the quad's bottom edge was straight because nothing had pulled on it.
+      const flag = put('flag_cloth', hx + 5.70, hz + 4, 1, 0, 0, mastY + 7.025);
+      flag.traverse((o) => {
+        if (!o.isMesh) return;
+        for (const mt of (Array.isArray(o.material) ? o.material : [o.material])) {
+          mt.map = flagTex;
+          mt.needsUpdate = true;
+        }
+      });
     }
     // The pad is authored where the siting pass would put it, not merely where it looks right, and the
     // reason is a dependency: the lamp ring below sites its bearings against this pad's keep-out, and a

@@ -209,7 +209,12 @@ function recentre(root) {
 // is (−0.77, +1.98) — so recentring dragged the whole stand back off its own collision discs and
 // left the line short of the pad it feeds. The same footprint-centre lie as the Kenney cells, but
 // here the correct datum is the authored one.
-const NO_RECENTRE = new Set(['rim_rock', 'lox_stand']);
+// `flag_cloth` opts out for the same reason in its strictest form: its origin is the head of the flag,
+// the one point a cloth is actually rigged by, where the halyard leaves the mast's sheave truck. The
+// panel then runs downwind and down from it, so a footprint centre sits roughly a metre out along the
+// fly direction — recentring would pull the hoist edge off the rings and put the sleeve back inside
+// the pole, which is the exact fault the asset was built to remove.
+const NO_RECENTRE = new Set(['rim_rock', 'lox_stand', 'flag_cloth']);
 
 // name may carry a subfolder prefix, e.g. 'kenney/space/hangar_largeA'
 export function loadModel(name) {

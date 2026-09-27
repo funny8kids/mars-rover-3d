@@ -38,9 +38,11 @@ const CALL = /new THREE\.([A-Za-z]+Geometry)\(/;
 // marker lands: the staleness check above goes red on exactly that pairing (marked *and* exempt),
 // so an entry cannot quietly outlive the hunk it was written for. Nothing here excuses a whole file;
 // `src/world/sky.js`'s dome carried the last entry until its marker arrived in the same commit.
-const EXEMPT = [
-  { file: 'src/world/props.js', anchor: 'PlaneGeometry(2.3, 1.35', why: 'the plaza flag cloth', ticket: '#101', owner: '#101 (a Blender cloth asset, not an excuse)' },
-];
+//
+// Empty as of 2026-09-27. An empty list is not a pass: the verdict is carried by `unmarked`, which
+// is enumerated from every .js under src/ regardless of what is written here, so a new hand-built
+// call site is red on the run that adds it.
+const EXEMPT = [];
 
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {

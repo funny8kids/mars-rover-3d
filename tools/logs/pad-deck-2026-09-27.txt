@@ -1,0 +1,18 @@
+[6.1s] pad roots 7 · teleports in the ledger 7 · marking decals found beside them 7 · meshes per pad 8/8/8/8/8/8/8 · colliders 694
+  pad hub       @-6.8,10.0 pad0 drawn deck top 0.600 (deck) · surfaceAt(centre) 0.600 · stand(platform, r≤3.4) 0.600 · Δ drawn−ground -0.000 · Δ drawn−stand -0.000 · kerb ring above plateau 0.075
+      pose root.y 0.225 ×s 1.25 → deck should read 0.600 · tallest rim inside r 2.3: bowl +0.031 m at r 2.15 · marking 0.082 m · rim hardware beyond r 2.3 +1.094 m (8 meshes, bar 0.02, ride height 0.46)
+  pad launch    @-56.0,-43.0 pad1 drawn deck top 0.600 (deck) · surfaceAt(centre) 0.600 · stand(platform, r≤3.4) 0.600 · Δ drawn−ground -0.000 · Δ drawn−stand -0.000 · kerb ring above plateau 0.066
+      pose root.y 0.270 ×s 1.10 → deck should read 0.600 · tallest rim inside r 2.3: toothglow +0.143 m at r 2.06 · marking 0.073 m · rim hardware beyond r 2.3 +0.963 m (8 meshes, bar 0.02, ride height 0.46)
+  pad habitat   @-42.6,61.6 pad2 drawn deck top 0.500 (deck) · surfaceAt(centre) 0.500 · stand(platform, r≤3.4) 0.500 · Δ drawn−ground +0.000 · Δ drawn−stand +0.000 · kerb ring above plateau 0.063
+      pose root.y 0.185 ×s 1.05 → deck should read 0.500 · tallest rim inside r 2.3: toothglow +0.136 m at r 1.96 · marking 0.069 m · rim hardware beyond r 2.3 +0.919 m (8 meshes, bar 0.02, ride height 0.46)
+  pad industry  @54.1,79.2 pad3 drawn deck top 0.526 (deck) · surfaceAt(centre) 0.526 · stand(platform, r≤3.4) 0.526 · Δ drawn−ground +0.000 · Δ drawn−stand +0.000 · kerb ring above plateau 0.063
+      pose root.y 0.211 ×s 1.05 → deck should read 0.526 · tallest rim inside r 2.3: toothglow +0.136 m at r 1.96 · marking 0.069 m · rim hardware beyond r 2.3 +0.919 m (8 meshes, bar 0.02, ride height 0.46)
+  pad comms     @51.0,-68.0 pad4 drawn deck top 0.500 (deck) · surfaceAt(centre) 0.500 · stand(platform, r≤3.4) 0.500 · Δ drawn−ground +0.000 · Δ drawn−stand +0.000 · kerb ring above plateau 0.060
+      pose root.y 0.200 ×s 1.00 → deck should read 0.500 · tallest rim inside r 2.3: toothglow +0.130 m at r 1.87 · marking 0.066 m · rim hardware beyond r 2.3 +0.875 m (8 meshes, bar 0.02, ride height 0.46)
+  pad science   @4.6,72.4 pad5 drawn deck top 0.400 (deck) · surfaceAt(centre) 0.400 · stand(platform, r≤3.4) 0.400 · Δ drawn−ground +0.000 · Δ drawn−stand +0.000 · kerb ring above plateau 0.060
+      pose root.y 0.100 ×s 1.00 → deck should read 0.400 · tallest rim inside r 2.3: toothglow +0.130 m at r 1.87 · marking 0.066 m · rim hardware beyond r 2.3 +0.875 m (8 meshes, bar 0.02, ride height 0.46)
+  pad motor     @1.5,-51.5 pad6 drawn deck top 0.500 (deck) · surfaceAt(centre) 0.500 · stand(platform, r≤3.4) 0.500 · Δ drawn−ground +0.000 · Δ drawn−stand +0.000 · kerb ring above plateau 0.063
+      pose root.y 0.185 ×s 1.05 → deck should read 0.500 · tallest rim inside r 2.3: toothglow +0.136 m at r 1.96 · marking 0.069 m · rim hardware beyond r 2.3 +0.919 m (8 meshes, bar 0.02, ride height 0.46)
+  control · hub (pad0) lifted +0.30 m: Δ drawn−ground -0.000 → 0.300 (response 0.300 m, want > 0.25) · Δ drawn−stand -0.000 → 0.300  → FIRED
+[6.1s] pads 7 · mismatch 0 · worst |Δ| 0.000 m · bar 0.02 m
+PAD_DECK_AGREE

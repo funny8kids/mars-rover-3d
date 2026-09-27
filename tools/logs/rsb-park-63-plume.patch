@@ -1,0 +1,101 @@
+diff --git a/src/fx/particles.js b/src/fx/particles.js
+index 542545d..b5a7a92 100644
+--- a/src/fx/particles.js
++++ b/src/fx/particles.js
+@@ -222,7 +222,15 @@ export function createFX(scene, quality) {
+   // whole cloud back to identical discs, which is the string-of-pearls defect the size law was
+   // written to kill. 340 device px is half the frame's height: past that a puff is a fade, not a
+   // shape, and `nearFade` dissolves what gets closer to the lens than that anyway.
+-  fx.smoke = new ParticlePool(scene, Math.round(2400 * P), { color0: 0xd8c8bc, color1: 0x5a4a42, opacity: 0.26, gravity: 1.6, drag: 0.975, sizeGrow: 2.6, fadeIn: 0.14, inner: 0, phys: true, maxSize: 340 });
++  // The cap itself went 2400 → 3000 (std: 1 680 → 2 100) with the trail census in. The pool spent
++  // the deck phase and the whole ascent pinned at its ceiling — 1 613/1 680 alive at MET 8.9,
++  // 1 539–1 563 through the ship's burn — and a ring buffer that wraps under live particles erases
++  // the *oldest still-drawn* puff on every emit, which is this file's own documented wrap-strobing
++  // failure mode (see the flame-pool note above the seeding in main.js). Raising the ceiling, not
++  // cutting the seeding, is the cheap side of the trade: hiding all eleven pools at once on the
++  // hold-down window moved the autoReset-off Date.now ruler (1 920×1080, real GPU) by ±1 ms, so the
++  // draw headroom costs no frame time — only the Float32Arrays the extra slots occupy.
++  fx.smoke = new ParticlePool(scene, Math.round(3000 * P), { color0: 0xd8c8bc, color1: 0x5a4a42, opacity: 0.26, gravity: 1.6, drag: 0.975, sizeGrow: 2.6, fadeIn: 0.14, inner: 0, phys: true, maxSize: 340 });
+   // A near-white puff at 0.45 opacity over a dark deck drew as a cotton ball with a visible
+   // polygon outline. Vapour off a cryo leak is loaded with suspended dust, so it is dim, warm-grey
+   // and much larger by the time it leaves the plume.
+diff --git a/src/main.js b/src/main.js
+index 4c23d77..b691501 100644
+--- a/src/main.js
++++ b/src/main.js
+@@ -763,18 +763,14 @@ const SAND = {
+ function exposure(x, z) {
+   return THREE.MathUtils.clamp(-stormField.along(x, z) / SAND.WAKE, -1, 1);
+ }
+-// Is a site's spire standing inside the rover's band right now? Two things take it out of the band:
+-// the drift it is buried under (the taller `k`, the deeper the same rock sits) and the sample having
+-// been collected, which hides the group. Written as one predicate because both of them change it, in
+-// two different places, and a wall with no geometry behind it is the defect — not a detail to be
+-// remembered at each call site separately. Read off the *measured* crown, not the sink depth: the
+-// drift's hiding depth has a 0.9 m floor so a short spire still vanishes, and a predicate borrowed
+-// from it would wall a rock out taller than it stands. `rise` and `sink` are re-sampled in props.js
+-// against the finished ground for the same reason — a seat taken mid-build goes stale under every
+-// footing claimed afterwards, and a stale one reported this line true over a crown already at
+-// 0.358 m, i.e. under the hull floor at RIDE 0.46. tools/site-wall-probe.js is the ruler.
+-const siteK = s => THREE.MathUtils.smoothstep(s.buried, 0.03, 0.85);
+-const siteWallUp = s => s.group.visible && s.rise - s.sink * siteK(s) > RIDE;
++// Is a site's spire standing inside the rover's band right now? The predicate is `base.siteK` and
++// `base.siteWallUp`, defined in props.js beside the ledger whose numbers they read. They are reached
++// through `base` rather than copied here because tools/offline-world.mjs has to reproduce exactly this
++// membership with no browser: a second host of `0.03 / 0.85 / RIDE` in the app would be a wall the
++// offline census cannot see, and the page would arm a ring the harness then reports as phantom.
++const siteK = s => base.siteK(s);
++const siteWallUp = s => base.siteWallUp(s);
++const siteSinkY = s => base.siteSinkY(s);
+ // Put the site's own discs in or out of the list the solver reads, by object identity. Membership
+ // rather than a flag on the disc: then the physics step, the unstick planner, the tour and seam
+ // drivers and the audit probe all see the wall that is actually there without any of them having to
+@@ -792,7 +788,7 @@ function syncSiteWall(s) {
+ // Put a site where its ledger says it should be: sunk into its own drift by that drift's height.
+ function dressSample(s) {
+   const k = siteK(s);
+-  s.crystal.position.y = s.seatY - k * s.sink;
++  s.crystal.position.y = siteSinkY(s);
+   syncSiteWall(s);
+   s.ring.material.opacity = 0.10 * (1 - k);
+   s.lens.visible = s.buried > SAND.SHOW;
+@@ -1444,7 +1440,20 @@ function seedPlumes(F, dt) {
+       // The band broadens with distance because that is what an entraining plume does, and because the
+       // silhouette it has to cover broadens too: the core layer ends at 0.40 mouths of radius, the
+       // barrel at 1.00.
+-      const a = Math.random() * 6.283, rr = mouth * (0.30 + Math.random() * (0.55 + 0.85 * dn));
++      // The band was a third of its own width too wide, and that — not the along-path spacing, not the
++      // lifetime — is what made the trail bead. Two rulers said so on the same live flight (real GPU,
++      // 1080p, `?auto=std&demo=launch`, no `fly()`): walking the smoke pool's sprites along the axis
++      // with a screen-space nearest-neighbour test, the along-path gaps between consecutive puffs never
++      // exceeded the drawn disc (0 breaks in 172 gaps at MET 5.7), but 15–57 % of the *visible* puffs
++      // between MET 16 and 27 had no overlapping neighbour at all (`space2` census: 42 isolated of 288
++      // on-screen at MET 16.7, 106 of 185 at MET 22.8, dark gaps up to 26 px). The old band threw a
++      // puff up to 1.80 mouths off-axis; `plume().cover` samples its ring at 0.4 mouths and its filter
++      // discards anything past 1.4, so most of the mass could not be seen by the repo's own coverage
++      // probe even when it was in frame — `pmin` read 0.00 at every MET from 1 to 49 while the column
++      // "looked" continuous near the mouth. Narrowing the spread to 0.15–1.07 mouths puts the puffs
++      // back inside the bell the shell actually draws (core 0.40, barrel 1.00 radius) and back inside
++      // the ruler's window at the same time.
++      const a = Math.random() * 6.283, rr = mouth * (0.15 + Math.random() * (0.30 + 0.55 * dn));
+       _pv.copy(_pt).multiplyScalar(Math.cos(a) * rr).addScaledVector(_pr, Math.sin(a) * rr);
+       _pq.copy(p.pos).addScaledVector(p.axis, d);
+       if (_pq.y < deckY + 1) continue;
+@@ -1457,10 +1466,13 @@ function seedPlumes(F, dt) {
+         // puffs any more, but a scalloped silhouette, because `0.6-1.15 mouth` only lets a puff
+         // differ from its neighbour by 1.9×, and same-size puffs overlapping at any offset average to
+         // one flat mass. A volume needs a 2 m puff inside a 9 m one to leave a core at all, so the
+-        // band is now a power law over 0.30-1.55 mouths — neighbours differ by up to 5×, and the mean
+-        // birth size drops a little rather than a lot, which keeps `pctMax` (the drawn puff against
+-        // the drawn flame column, 21 % here) well inside the ceiling the sheath was sized against.
+-        trailLife, mouth * (0.30 + Math.pow(Math.random(), 1.7) * 1.25)
++        // band stays a power law — but its floor moved from 0.30 to 0.45 mouths with the screen-space
++        // trail census in: a 1.6 m birth puff at the ship's 2.2 m mouth projects to a 4–6 px dot at
++        // tracking range, and 100-odd lonely dots of those is what the "string of pearls" frames at
++        // MET 14–27 actually were. The top stays at 1.6 mouths, which keeps `pctMax` (the drawn puff
++        // against the drawn flame column, 21 % at the old band) inside the ceiling the sheath was
++        // sized against.
++        trailLife, mouth * (0.45 + Math.pow(Math.random(), 1.5) * 1.15)
+       );
+     }
+   }

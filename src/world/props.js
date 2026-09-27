@@ -1838,9 +1838,17 @@ export async function buildBase(scene, quality) {
     }
 
     // ── Starship riding a Super Heavy: 71 m of stainless on the pad ──
-    // Authored in Blender at real vehicle scale, so the only fit numbers here are the ones
-    // the pad itself has to supply: the deck the mount stands on, and the engine bells that
-    // hang three metres below the vehicle's own datum.
+    // Not "real vehicle scale", whatever the builder's header says. Both halves were read, not
+    // assumed (2026-09-27): the diameter is real — `R = 4.5` at tools/blender/build_starship.py:28,
+    // and `hull_r()` returns that constant below the ogive (:125-126), so the hull does not taper —
+    // while the height is 0.59× it: `TIP = STAGE + SHIP` = 71.4 m (:32), and the accessor bounds of
+    // the shipped `starship_stack.glb` (198 meshes, 81 436 triangles, read in node) put the nose tip
+    // at y = 71.40. A real two-stage stack is ~121 m, so the aspect here is 7.9:1 where the vehicle
+    // is 13.4:1. That is a silhouette-level error and this repo disagrees with itself about it:
+    // src/main.js:2438 tunes the chase cam's lift and +14° fov for "the 120 m stack". Which side
+    // moves is #73, to be settled on rendered frames at the pad beats, not on prose.
+    // The pad-side fit numbers below hold either way: the deck the mount stands on, and the engine
+    // bells that hang three metres below the vehicle's own datum.
     const SHIP_H = 71.4, SHIP_R = 5.1;
     // Where the export cuts the loft, matched to STAGE in tools/blender/build_starship.py. Every
     // fitting on the stack has to be assigned to a side by this line, or staging leaves half of them

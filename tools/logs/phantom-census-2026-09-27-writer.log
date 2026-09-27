@@ -1,0 +1,118 @@
+[9.4s] shipped probe quoted from tools/logs/disc-audit-2026-09-27-live.txt: bandFaces 89070 discs 693 phantom 0 overWide 0 blanket 0 merged 0 hollow 0 exposed 0 · instancing swept 3600/3600 in 88 InstancedMeshes
+[9.4s] world: 693 solid discs + 1 driveable floor discs, 141 lots · live census 694 rows, 0 live-only keys, 0 offline-only
+[9.4s] sweeping the drawn geometry…
+[10.4s] faces: band 89026 (shipped mesh-bbox filter would print 89026), bbox-rejected meshes 1 holding 2976 walked faces, of which 0 sit on the island inside the hull band
+[10.4s] judging 693 discs…
+[10.5s] nearest-drawn-triangle pass over 0 unlicensed discs…
+[10.5s] flooding reachability three ways…
+[12.3s] reach: probe flood 124949/233958 cells · shipped census 211672 standable in 23 regions (0 pockets) · shipped config-BFS 7797/13555 cells
+[15.5s] positive controls (rc 0 = the ruler went red when the data was broken on purpose; rc 2 = it stayed blind):
+  1 phantom · synthetic r1.2 disc in proven-open sand at -18,84 (clearance 18.53 m > hull ring 2.80) → reading kind=phantom, bare=1/1 → rc 0
+  2 overWide · real island disc watch:watch-deck @-11.51,-21.59 r8.823, lot halves [8.56,8.56] → [5.06,5.06], licence 6.683 unchanged
+      before kind ok unlicensed 0/48 maxPast -0.001 → after kind overWide unlicensed 13/48 (0.271 of the rim, bar overWide needs unlicensed/48 > 0.25 — the shipped judge's own bar, disc-audit-probe.js:448) maxPast 3.499 (bare 0.646) → rc 0
+      the arm's dead band, same disc shrunk only 1.5 m: maxPast -0.001 → 1.499 but unlicensed 7/48 = 0.146 < 0.25 so the reading stays "ok" — a real 1.5 m collider/footprint disagreement is INVISIBLE to the shipped overWideCount on a disc this size
+      blind spot, same disc mutated the other way · r +1.5 m, lot and share untouched: maxPast -0.001 → -0.001 (Δ -0.000 of the 1.5 m grown), kind still ok, unlicensed 0/48. The shipped arm is r-invariant because entitled = r − min(share) moves with r; this file's overshootLot does see it (0.263 → 1.763) → arm detected it: false
+  3 exposure gate · injected 1.2 × 1.0 m quad at -18,84: past 17.09 / 16.768 m (> 0 = the hull walks through drawn geometry), vertical run 1 / 1 m ≥ BAND_STEP 0.12, probe-flood reach true / true, shipped-BFS reach true / true → rc 0
+  4 licence arithmetic · coverDiscs' own middle disc: centred maxPast 0 m ≤ TOL 0.6, slid 3 m along its lot maxPast 1.17 m > 0.6 → rc 0
+  5 exposure sign gate · one-disc world outside/inside/touching = 0.6/-0.2/0 (want >0 / <0 / 0) → rc 0
+  6 pocket detector · 61 standable cells ringed by 25 discs: pivot cells 0, max clear 2.200 m < TURN 4.24 → the census must call it a sealed pocket → rc 0
+  7 pose/collider agreement · 9 sample sites: drawn crown over own ground vs. ring membership — 0:1.67W 1:1.61W 2:1.73W 3:1.15W 4:1.68W 5:1.48W 6:0.06- 7:0.06- 8:0.06- (own 4, buried 0.00 own 4, buried 0.00 own 5, buried 0.00 own 1, buried 0.00 own 5, buried 0.00 own 3, buried 0.00 own 4, buried 0.75 own 2, buried 0.75 own 4, buried 0.75) · all agree · leave a ring-out site standing at full height (site 6, crown 1.43 m) and the check must fire: true → rc 0
+  controls overall → ALL SEVEN FIRED
+REPLACED tools/logs/phantom-census-2026-09-27.json -> tools/logs/phantom-census-2026-09-27-被2026-09-27第1次取代.json
+
+═══ PHANTOM: discs with no drawn geometry anywhere near them ═══
+count 0 · families 0
+
+═══ BARE RIM: every disc with a bare rim sample, split by licence ═══
+  discs with any bare sample : 90
+  …all of it tiling-licensed  : 90   (legitimate convexity: max past beyond the licence ≤ 0.6 m)
+  …past the licence           : 0
+  …emitted (no rect licence)  : 0
+  families with bare rims (unlicensed | licensed-only | discs):
+    scatter:rock                    0 |  10 |  198  max overshoot vs lot 1.03 m @-86.08,-13.35,1.5
+    grid:grid-rig                   0 |   7 |    7  max overshoot vs lot 0.538 m @-11.15,16.43,1.84
+    industry:cryo-farm              0 |   6 |   10  max overshoot vs lot 0.333 m @75.84,46.63,2.79
+    hub:ring-gantry-180             0 |   4 |   12  max overshoot vs lot 0.289 m @-15.85,5.89,1.15
+    launch:cargo-umbilical          0 |   4 |   14  max overshoot vs lot 0.289 m @-51.23,-49.08,1.15
+    habitat:hab-module              0 |   4 |    7  max overshoot vs lot 0.906 m @-72.99,52,6.88
+    industry:fab-substation         0 |   4 |   12  max overshoot vs lot 0.28 m @61.76,80.32,0.28
+    comms:array-feed                0 |   4 |   12  max overshoot vs lot 0.26 m @76,-59.2,0.26
+    watch:watch-deck                0 |   4 |    4  max overshoot vs lot 0.263 m @-11.51,-21.59,8.82
+    launch:chopstick-tower          0 |   3 |    6  max overshoot vs lot 0.194 m @-75.8,-60.17,1.93
+    hub:spaceport-gate              0 |   2 |   20  max overshoot vs lot 0.393 m @-5.2,-20.49,0.57
+    hub:ring-45                     0 |   2 |    2  max overshoot vs lot 0.383 m @10.32,12.34,2.86
+    hub:ring-90                     0 |   2 |    2  max overshoot vs lot 0.542 m @0,19.63,2.71
+    hub:works-generator             0 |   2 |    2  max overshoot vs lot 0.303 m @-19.08,20.52,1.88
+    habitat:hab-domeB               0 |   2 |    2  max overshoot vs lot 0.716 m @-46.5,76.52,4.79
+    habitat:hab-drum                0 |   2 |    2  max overshoot vs lot 0.997 m @-70.52,72.4,7.44
+    industry:genset-a               0 |   2 |    2  max overshoot vs lot 0.405 m @54.65,48.76,2.5
+    science:anomaly-07              0 |   2 |    2  max overshoot vs lot 0.336 m @-3.37,57,2.96
+    science:shard-74                0 |   2 |    2  max overshoot vs lot 0.136 m @7.53,64.15,1.2
+    science:shard-39                0 |   2 |    2  max overshoot vs lot 0.08 m @3.1,69.31,0.71
+
+═══ scatter:rock, disc by disc ═══
+  198 discs in the family · 10 with a bare rim · 0 past the licence · 0 phantom
+  family max overshoot (r − min(w,d)/2 over the lot outline): 1.030 m
+  the rock disc whose bare rim stands furthest from any drawn face: scatter:rock#17 @-83.6,-17.1 r1.61 — a bare rim point at -82.59,-18.34 is 1.56 m from the nearest drawn band face (Mesh @-82.59,-18.34)
+
+═══ THE SINGLE LARGEST UNLICENSED OVERSHOOT ═══
+  none. 90 discs have a bare rim sample and 90 of them are inside the tiling licence, so the population the ask calls "the remaining ~60" measures 0. The largest bare rim anywhere, licensed or not: 0.000 m past its licence — i.e. nothing is past it.
+
+═══ EXPOSURE: reachable subset, and whether the two floods agree ═══
+  band faces 89026 · past > 0: 5 · probe flood says reachable: 5 · shipped config-BFS says reachable: 5 · neither: 0
+  category flips over ALL band faces: both 21397 · neither 14683 · probe-only 2 · bfs-only 52944
+  worst exposed cells:
+    20,30 n2 past 8.24 m at 25.9,31.3 meshes Mesh
+    -80,-40 n3 past 6.14 m at -71.9,-37 meshes Mesh
+  exposed faces by drawn root: stone-field 5
+  instancing coverage of the two rulers: node 3600/3600 in 88 InstancedMeshes · the page's own run 3600/3600 in 88 InstancedMeshes → AGREE
+  why they can agree at all: 88 'stone-field' THREE.LOD tiles hold the same chips twice (80 and 20 facets, terrain.js:1268-1282) and only the renderer's LOD.update() picks a level. A headless build has no camera, so before tools/offline-world.mjs resolved them it swept 88 InstancedMeshes this frame never draws and counted every pebble twice. Equal counts are still not the same triangles: the page chooses per tile by camera distance, the harness always takes the near level.
+  the exposure arm's own error bar, measured on this run: 265658 ground lookups answering from 4731 cached 1 m cells (260927 hits). Of the 89026 band faces the gate tested, the one it was handed had drifted 0.391 m on average and 1.363 m at worst from the point whose height it is holding — worst anywhere in the sweep 1.363 m.
+  against the page's 0: 5 of 89026 band faces, all of them stone-field, run 0.19-0.28 m, poking at most 0.009 m into the hull's swept volume (RIDE 0.46 m).
+    @-71.78,-37.09 Mesh · poke 0.003 m · same face re-judged at its own centre: pokeExact 0.002 m · ground drift 0.360 m × slope 0.00 = the cache is worth 0.001 m here · stands, however thin · LOD level 0 of a tile 77 m from the page's camera (switch 45 m, 32 m past it) → that camera draws level 1, so this triangle was never drawn there
+    @-71.77,-37.19 Mesh · poke 0.003 m · same face re-judged at its own centre: pokeExact 0.002 m · ground drift 0.400 m × slope 0.00 = the cache is worth 0.001 m here · stands, however thin · LOD level 0 of a tile 77 m from the page's camera (switch 45 m, 32 m past it) → that camera draws level 1, so this triangle was never drawn there
+    @-71.91,-36.99 Mesh · poke 0.003 m · same face re-judged at its own centre: pokeExact 0.002 m · ground drift 0.230 m × slope 0.01 = the cache is worth 0.002 m here · stands, however thin · LOD level 0 of a tile 77 m from the page's camera (switch 45 m, 32 m past it) → that camera draws level 1, so this triangle was never drawn there
+    @25.99,31.13 Mesh · poke 0.009 m · same face re-judged at its own centre: pokeExact 0.009 m · ground drift 0.400 m × slope 0.00 = the cache is worth 0.000 m here · stands, however thin · LOD level 0 of a tile 71.9 m from the page's camera (switch 45 m, 26.9 m past it) → that camera draws level 1, so this triangle was never drawn there
+    @25.94,31.3 Mesh · poke 0.009 m · same face re-judged at its own centre: pokeExact 0.009 m · ground drift 0.520 m × slope 0.00 = the cache is worth 0.000 m here · stands, however thin · LOD level 0 of a tile 71.9 m from the page's camera (switch 45 m, 26.9 m past it) → that camera draws level 1, so this triangle was never drawn there
+  disposition: 0/5 within the drift×slope error bar · 0/5 sealed at pokeExact ≤ 0 (the cache-order hypothesis is FALSIFIED if this is 0: the poke survives the exact ground) · 5/5 only in a far LOD level · every face is disposed of by a ruler reading, not by argument: 0 sealed when judged exactly, 5 sitting in an LOD level the page's camera never resolves → nothing left that both rulers can see
+  band-face counts differ (node 89026 · page 89070 = +44 = 0.05%). Where, per root, from each side's own coverage table:
+    Group: node 79532 · page 79583 → only the page has these
+    stone-field: node 9 · page 2 → only the headless sweep has these
+  A root with two LOD levels is the one place the difference is *geometry*, not mesh inventory: this build has no
+  camera, so tools/offline-world.mjs resolves every tile to its near level while the page's LOD.update(camera)
+  resolves a far tile to its coarse one. Equal instance counts (both 3600) cannot show that — each level holds
+  the same instances, only with different triangles per chip.
+  faces whose category flips between the two floods (probe flood vs shipped nearReach), first 8:
+    Group/Mesh @9.5,-14.7 probe=false shippedBFS=true past -2.49 m
+    Group/Mesh @9.5,-14.7 probe=false shippedBFS=true past -2.49 m
+    Group/Mesh @9.5,-14.7 probe=false shippedBFS=true past -2.49 m
+    Group/Mesh @9.5,-14.6 probe=false shippedBFS=true past -2.5 m
+    Group/Mesh @9.6,-14.6 probe=false shippedBFS=true past -2.52 m
+    Group/Mesh @9.6,-14.6 probe=false shippedBFS=true past -2.53 m
+    Group/Mesh @9.6,-14.6 probe=false shippedBFS=true past -2.57 m
+    Group/Mesh @9.6,-14.5 probe=false shippedBFS=true past -2.58 m
+
+═══ THE TWO NAMED SUSPECTS, measured against the shipped step predicate ═══
+  src has NO ≤0.2 m collider-step rule. RoverPhysics is surface-locked (physics.js:194 ungrounds
+  only when y − groundH > 0.30) and the hull rides surfaceAt, so a disc's top never gates a climb.
+  The shipped bars are BAND_STEP 0.12 (plan.js:280) for step-vs-wall on drawn band faces,
+  and crest > 0.2 (main.js:4991) for TERRAIN bumps only. RIDE 0.46 BODY_R 1.6.
+  teleport_pad hub       @-6.8,10  band faces within 3 m: 246, tallest vertical run 0.613 m at -9.3,8.4  → step-vs-wall at BAND_STEP 0.12: WALL (the band ruler treats it as a wall)  EXPOSED among them (past > 0 and run ≥ BAND_STEP): 0  ground span over 3 m: 0.000 m (terrain crest bar 0.2)  path reaches it: shipped config-BFS YES, probe flood yes  clearance at the pad anchor: past 1.12 m = open drivable space, no collider under the hull ring there  discs within 8 m: 4 widest r 1.84
+  teleport_pad launch    @-56,-43  band faces within 3 m: 156, tallest vertical run 0.539 m at -58.2,-44.4  → step-vs-wall at BAND_STEP 0.12: WALL (the band ruler treats it as a wall)  EXPOSED among them (past > 0 and run ≥ BAND_STEP): 0  ground span over 3 m: 0.000 m (terrain crest bar 0.2)  path reaches it: shipped config-BFS YES, probe flood yes  clearance at the pad anchor: past 0.93 m = open drivable space, no collider under the hull ring there  discs within 8 m: 5 widest r 1.84
+  teleport_pad habitat   @-42.6,61.6  band faces within 3 m: 72, tallest vertical run 0.515 m at -44.7,60.3  → step-vs-wall at BAND_STEP 0.12: WALL (the band ruler treats it as a wall)  EXPOSED among them (past > 0 and run ≥ BAND_STEP): 0  ground span over 3 m: 0.000 m (terrain crest bar 0.2)  path reaches it: shipped config-BFS YES, probe flood yes  clearance at the pad anchor: past 0.82 m = open drivable space, no collider under the hull ring there  discs within 8 m: 3 widest r 0.11
+  teleport_pad industry  @54.1,79.2  band faces within 3 m: 408, tallest vertical run 0.515 m at 52,77.9  → step-vs-wall at BAND_STEP 0.12: WALL (the band ruler treats it as a wall)  EXPOSED among them (past > 0 and run ≥ BAND_STEP): 0  ground span over 3 m: 0.000 m (terrain crest bar 0.2)  path reaches it: shipped config-BFS YES, probe flood yes  clearance at the pad anchor: past 0.82 m = open drivable space, no collider under the hull ring there  discs within 8 m: 10 widest r 1.84
+  teleport_pad comms     @51,-68  band faces within 3 m: 138, tallest vertical run 0.490 m at 49,-69.3  → step-vs-wall at BAND_STEP 0.12: WALL (the band ruler treats it as a wall)  EXPOSED among them (past > 0 and run ≥ BAND_STEP): 0  ground span over 3 m: 0.000 m (terrain crest bar 0.2)  path reaches it: shipped config-BFS YES, probe flood yes  clearance at the pad anchor: past 0.7 m = open drivable space, no collider under the hull ring there  discs within 8 m: 6 widest r 1.84
+  teleport_pad science   @4.6,72.4  band faces within 3 m: 570, tallest vertical run 0.490 m at 2.6,71.1  → step-vs-wall at BAND_STEP 0.12: WALL (the band ruler treats it as a wall)  EXPOSED among them (past > 0 and run ≥ BAND_STEP): 0  ground span over 3 m: 0.000 m (terrain crest bar 0.2)  path reaches it: shipped config-BFS YES, probe flood yes  clearance at the pad anchor: past 0.71 m = open drivable space, no collider under the hull ring there  discs within 8 m: 6 widest r 1.84
+  teleport_pad motor     @1.5,-51.5  band faces within 3 m: 521, tallest vertical run 0.515 m at -0.6,-52.8  → step-vs-wall at BAND_STEP 0.12: WALL (the band ruler treats it as a wall)  EXPOSED among them (past > 0 and run ≥ BAND_STEP): 0  ground span over 3 m: 0.000 m (terrain crest bar 0.2)  path reaches it: shipped config-BFS YES, probe flood yes  clearance at the pad anchor: past 0.81 m = open drivable space, no collider under the hull ring there  discs within 8 m: 10 widest r 1.84
+  crystal_site 8         @49.2,95.8  band faces within 3 m: 0, tallest vertical run 0.000 m at —  → step-vs-wall at BAND_STEP 0.12: STEP (the hull rides over it)  EXPOSED among them (past > 0 and run ≥ BAND_STEP): 0  ground span over 3 m: 0.547 m (terrain crest bar 0.2)  path reaches it: shipped config-BFS YES, probe flood yes  crystal rise 1.546 m sink 1.546 m
+  crystal_site 0         @81.8,66.4  band faces within 3 m: 689, tallest vertical run 0.201 m at 81.6,66.2  → step-vs-wall at BAND_STEP 0.12: WALL (the band ruler treats it as a wall)  EXPOSED among them (past > 0 and run ≥ BAND_STEP): 0  ground span over 3 m: 0.394 m (terrain crest bar 0.2)  path reaches it: shipped config-BFS YES, probe flood yes  crystal rise 1.672 m sink 1.672 m
+  crystal_site 1         @-85.4,61.3  band faces within 3 m: 183, tallest vertical run 0.196 m at -85.5,61  → step-vs-wall at BAND_STEP 0.12: WALL (the band ruler treats it as a wall)  EXPOSED among them (past > 0 and run ≥ BAND_STEP): 0  ground span over 3 m: 0.688 m (terrain crest bar 0.2)  path reaches it: shipped config-BFS YES, probe flood no  crystal rise 1.608 m sink 1.608 m
+  crystal_site 2         @98.3,-33.9  band faces within 3 m: 251, tallest vertical run 0.212 m at 99.1,-33.7  → step-vs-wall at BAND_STEP 0.12: WALL (the band ruler treats it as a wall)  EXPOSED among them (past > 0 and run ≥ BAND_STEP): 0  ground span over 3 m: 0.598 m (terrain crest bar 0.2)  path reaches it: shipped config-BFS YES, probe flood no  crystal rise 1.730 m sink 1.730 m
+  total suspect sites measured: 11 (11 reachable under the shipped BFS, 10 read as a WALL at BAND_STEP, 0 with at least one exposed band face in the 3 m window, total exposed faces around the suspects 0)
+
+═══ DOME FILTER, mesh bbox vs face position ═══
+  shipped (mesh bbox): 1 meshes skipped; walking their faces anyway puts 0 of their faces inside the island AND inside the hull band → band faces 89026 (bbox) vs 89026 (per-face), delta 0
+  per-face filters on the swept meshes: off-island 94963 · flat (>BAND_NY 0.7) 702009 · thin (<BAND_STEP 0.12) 997523 · outside the RIDE..ROOF band 176627
+    rejected mesh lives in root Mesh#0: 0 band faces on the island
+
+[15.6s] wrote /home/dominic-jamil/GIthub_Code/mars-rover-3d/tools/logs/phantom-census-2026-09-27.tsv (693 rows) and /home/dominic-jamil/GIthub_Code/mars-rover-3d/tools/logs/phantom-census-2026-09-27.json

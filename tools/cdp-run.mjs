@@ -38,17 +38,49 @@ await send('Network.setCacheDisabled', { cacheDisabled: true });
 if (url !== '-') await send('Page.navigate', { url });
 
 const readyDeadline = Date.now() + Number(readyStr || 60000);
+let lastReason = 'no poll', clickedStart = false;
 for (;;) {
   const r = await send('Runtime.evaluate', {
     // the accessors exist long before the sim does — `phys` is still undefined until the loader,
     // the quality menu and the GLB bundles have all finished, so the readiness test has to be the
-    // sim itself or the first scripted move throws on a half-booted world
-    expression: `(function(){const R=window.__RSB;if(typeof R?.place!=='function')return '';
-      const p=typeof R.phys==='function'?R.phys():R.phys;return p?location.href:''})()`,
+    // sim itself or the first scripted move throws on a half-booted world.
+    // `phys` alone is not far enough into boot: it is set at main.js:279 by `boot()`, but the render
+    // pipeline — `applyQuality()` at main.js:339, which creates `stormField` at :349 — only runs from
+    // the START button's handler (main.js:2793-2799). So a freshly navigated page has a complete world
+    // model and NO weather: `__RSB.sites()` reaches `exposure()` (main.js:763) and throws on
+    // `stormField.along`. Earlier runs did not hit that only because the reused tab had been left
+    // started by whoever used it last, which is luck, not a harness.
+    // So the gate presses the button itself and then waits for the consequence it cares about. The
+    // press is checked against the menu actually going away, and a probe that wants to study the menu
+    // should navigate with `-` and read the DOM before this gate runs.
+    // A bare `NOT_READY` told the reader nothing about which clause failed, so the gate returns the
+    // reason it stopped at and the timeout prints it: the difference between "the page is slow" and
+    // "the gate is wrong" is only knowable from the page's own answer.
+    expression: `(function(){const R=window.__RSB;
+      if(!R)return 'no __RSB at '+location.href;
+      if(typeof R.place!=='function')return 'no .place ('+typeof R.place+')';
+      const p=typeof R.phys==='function'?R.phys():R.phys;
+      if(!p)return 'phys still null';
+      const btn=document.getElementById('start-btn'), menu=document.getElementById('menu');
+      if(btn && menu && !menu.classList.contains('hidden')){ btn.click(); return 'CLICK'; }
+      if(typeof R.stormRef!=='function')return 'no .stormRef ('+typeof R.stormRef+')';
+      const s=R.stormRef();
+      if(!s)return 'stormRef() is '+String(s);
+      return location.href})()`,
     returnByValue: true,
   });
-  if (r.result?.value) { console.log('READY ' + r.result.value); break; }
-  if (Date.now() > readyDeadline) { console.log('NOT_READY'); process.exit(1); }
+  const v = r.result?.value;
+  if (typeof v === 'string' && /^https?:/.test(v)) {
+    console.log('READY ' + v + (clickedStart ? ' (gate pressed #start-btn)' : ''));
+    break;
+  }
+  if (v === 'CLICK') {
+    if (clickedStart) { console.log('START_CLICK_DID_NOT_TAKE: #menu still visible after a second press'); process.exit(1); }
+    clickedStart = true;
+    console.log('GATE pressed #start-btn (page was sitting at the menu, so the render pipeline had not run)');
+  }
+  lastReason = String(v ?? r.exceptionDetails?.exception?.description ?? 'no value');
+  if (Date.now() > readyDeadline) { console.log('NOT_READY after poll: ' + lastReason); process.exit(1); }
   await new Promise(r2 => setTimeout(r2, 1000));
 }
 

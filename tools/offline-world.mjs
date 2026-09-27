@@ -170,6 +170,12 @@ export async function buildOfflineWorld({ rocks = true, stones = true, sky = fal
   // so this line cannot drift from the page it copies.
   for (const s of base.samples) {
     s.wallUp = base.siteWallUp(s);
+    // The other half of the same `k`. Taking only the membership above leaves the spire drawn at its
+    // raised height over sand the page has buried it under, and the exposure census then counts the
+    // faces of a rock this frame never renders: the run before this line existed filed 407 exposed
+    // band faces under drawn root `Group`, and its two worst cells were both `crystal001`, at 8.63 m
+    // and 8.57 m past (`tools/logs/phantom-census-2026-09-27-full.log:63,64,70`).
+    s.crystal.position.y = base.siteSinkY(s);
     if (s.wallUp) continue;
     for (const d of s.discs) {
       const i = base.colliders.indexOf(d);
@@ -177,6 +183,29 @@ export async function buildOfflineWorld({ rocks = true, stones = true, sky = fal
     }
   }
   scene.updateMatrixWorld(true);
+  // `stone-field` is 88 THREE.LOD tiles, each holding the SAME 3 600 chips twice — once at 80 facets,
+  // once at 20 (terrain.js:1268-1282). The renderer picks a level per frame in `LOD.update(camera)`; a
+  // headless build has no camera and calls nothing, so both children stay `visible` and a sweep walks
+  // 176 InstancedMeshes / 7 200 instances where the page drew 88 / 3 600: one pebble counted twice.
+  // Resolve to the near level — the one a player at driving distance sees — and hand the hidden level
+  // count to the caller. That choice has a consequence worth stating: this harness always takes level
+  // 0, while the shipped page takes it only inside STONE_LOD_D (45 m, terrain.js:1281). So a face this
+  // sweep flags inside a far tile is a triangle the page did not draw at the camera point it measured
+  // from, and the census now says so per face instead of leaving the two readings to be argued apart
+  // (`out.exposure.faces[].lod` / `out.exposure.ruler.notDrawnAtPageCam` in tools/phantom-census.mjs,
+  // which is what disposed of the last 5 `stone-field` faces: 2 chips, 0.002-0.009 m into the hull's
+  // swept volume, in tiles 71.9 m and 77 m out). Equal instance counts do not settle it — both levels
+  // hold the same instances, only with different triangles per chip.
+  let lodTiles = 0, lodLevelsHidden = 0;
+  scene.traverse(o => {
+    if (!o.isLOD || !o.levels?.length) return;
+    lodTiles++;
+    for (const lvl of o.levels.slice(1)) {
+      if (lvl.object && lvl.object.visible) { lvl.object.visible = false; lodLevelsHidden++; }
+    }
+  });
+  stats.lodTiles = lodTiles;
+  stats.lodLevelsHidden = lodLevelsHidden;
   return { THREE, scene, terrain, base, colliders: base.colliders, lots: base.lots, stats };
 }
 

@@ -1,0 +1,1228 @@
+{
+ "meta": {
+  "started": "2026-09-27T14:18:51.904Z",
+  "anchors": {
+   "RIDE": 0.46,
+   "BODY_R": 1.6,
+   "ROOF": 2.72,
+   "BAND_NY": 0.7,
+   "BAND_STEP": 0.12,
+   "ISLAND_R": 112,
+   "TOL": 0.6,
+   "islandConfig": {
+    "radius": 118,
+    "rim": 132
+   },
+   "start": [
+    0,
+    -26,
+    0.6
+   ]
+  },
+  "files": {}
+ },
+ "counters": {
+  "meshesSeen": 1775,
+  "meshesWithNoPosition": 0,
+  "meshesExcludedByRoot": 1,
+  "meshesTransparent": 109,
+  "meshesBboxRejected": 1,
+  "facesOfBboxRejectedMeshes": 2976,
+  "bandFacesOfBboxRejectedMeshes": 0,
+  "onIslandBandFacesOfBboxRejectedMeshes": 0,
+  "instancedMeshes": 88,
+  "instancesSeen": 3600,
+  "instancesSwept": 3600,
+  "instancesTruncated": 0,
+  "trisWalked": 2060148,
+  "offIslandFaces": 94963,
+  "flatFaces": 702009,
+  "thinFaces": 997523,
+  "outsideBand": 176627,
+  "bandFaces": 89026,
+  "nanFaces": 0,
+  "skippedHidden": 95,
+  "bboxRejectedFacesOnIsland": 0,
+  "bandFacesShippedMeshFilter": 89026
+ },
+ "liveRun": {
+  "file": "tools/logs/disc-audit-2026-09-27-live.txt",
+  "discs": 693,
+  "bandFaces": 89070,
+  "offIslandFaces": 22992,
+  "domeMeshes": 1,
+  "instancing": {
+   "seenMeshes": 88,
+   "seenInstances": 3600,
+   "sweptMeshes": 88,
+   "sweptInstances": 3600,
+   "truncatedMeshes": 0,
+   "covered": true
+  },
+  "exposedFaces": 0,
+  "phantomCount": 0,
+  "overWideCount": 0,
+  "blanketCount": 0,
+  "mergedCount": 0,
+  "hollowCount": 0,
+  "discSide": {
+   "rectless": 136,
+   "licensedBulgeSamples": 1294,
+   "rimSamples": 6483
+  },
+  "reachability": {
+   "seed": "START@0,-26",
+   "seeded": true,
+   "freeCells": 233958,
+   "reachedCells": 124949,
+   "reachFrac": 0.534,
+   "atSpawn": true,
+   "atWidestDiscCentre": false,
+   "widestDiscR": 8.82,
+   "atSandBeyondRim": false,
+   "pois": 22,
+   "poisSealed": 0,
+   "sealedPois": [],
+   "pass": true
+  },
+  "controls": {
+   "cleanPast": 0,
+   "brokenPast": 1.17,
+   "slid": 3,
+   "tol": 0.6,
+   "gate": {
+    "outside": 0.6,
+    "inside": -0.2,
+    "touch": 0,
+    "pass": true
+   },
+   "pass": true,
+   "coverRuler": {
+    "r": 2.6,
+    "latticeStep": 4,
+    "openest": {
+     "at": [
+      -106,
+      -26
+     ],
+     "clearToFace": 6
+    },
+    "fullest": {
+     "at": [
+      -18,
+      -22
+     ],
+     "faceCellsInBodyWindow": 145
+    },
+    "parked": {
+     "merged": true,
+     "pocketSamples": 48
+    },
+    "drawn": {
+     "merged": false,
+     "pocketSamples": 0
+    },
+    "emittedDiscs": 119,
+    "pass": true
+   }
+  }
+ },
+ "censusVsLive": {
+  "file": "tools/logs/census-2026-09-27-refactor.txt",
+  "liveRows": 694,
+  "liveKeys": 694,
+  "offlineColliders": 694,
+  "offlineDiscs": 693,
+  "offlineFloors": 1,
+  "mineKeys": 694,
+  "onlyLive": 0,
+  "onlyMine": 0,
+  "onlyLiveSample": [],
+  "onlyMineSample": []
+ },
+ "discs": 693,
+ "sweep": {
+  "perRoot": [
+   {
+    "root": "Group#2",
+    "faces": 79532,
+    "strays": 0,
+    "maxAbove": 23.924999976158144,
+    "skippedBy": "transparent",
+    "why": null,
+    "meshes": 1589,
+    "bboxRejectedMeshes": 0,
+    "bboxRejectedBandFaces": 0,
+    "bboxRejectedOnIslandFaces": 0,
+    "tris": 0,
+    "trisWalked": 0
+   },
+   {
+    "root": "rock-scatter#3",
+    "faces": 9485,
+    "strays": 0,
+    "maxAbove": 5.3529892372559305,
+    "skippedBy": null,
+    "why": null,
+    "meshes": 1,
+    "bboxRejectedMeshes": 0,
+    "bboxRejectedBandFaces": 0,
+    "bboxRejectedOnIslandFaces": 0,
+    "tris": 0,
+    "trisWalked": 0
+   },
+   {
+    "root": "stone-field#4",
+    "faces": 9,
+    "strays": 0,
+    "maxAbove": 0.4890988307596865,
+    "skippedBy": null,
+    "why": null,
+    "meshes": 88,
+    "bboxRejectedMeshes": 0,
+    "bboxRejectedBandFaces": 0,
+    "bboxRejectedOnIslandFaces": 0,
+    "tris": 0,
+    "trisWalked": 0
+   },
+   {
+    "root": "Mesh#0",
+    "faces": 0,
+    "strays": 0,
+    "maxAbove": 0,
+    "skippedBy": null,
+    "why": null,
+    "meshes": 1,
+    "bboxRejectedMeshes": 1,
+    "bboxRejectedBandFaces": 0,
+    "bboxRejectedOnIslandFaces": 0,
+    "tris": 0,
+    "trisWalked": 0
+   },
+   {
+    "root": "terrain#1",
+    "faces": 0,
+    "strays": 0,
+    "maxAbove": 0,
+    "skippedBy": "root",
+    "why": "the surface being driven on; a slope is not a wall",
+    "meshes": 1,
+    "bboxRejectedMeshes": 0,
+    "bboxRejectedBandFaces": 0,
+    "bboxRejectedOnIslandFaces": 0,
+    "tris": 0,
+    "trisWalked": 0
+   }
+  ]
+ },
+ "strays": {
+  "bandFaces": 2440,
+  "byRoot": [
+   [
+    "Group",
+    2040
+   ],
+   [
+    "rock-scatter",
+    395
+   ],
+   [
+    "stone-field",
+    5
+   ]
+  ]
+ },
+ "discSide": {
+  "onIsland": 693,
+  "skippedOffIsland": 0,
+  "rectless": 136,
+  "bareAny": 90,
+  "bareLicensedOnly": 90,
+  "bareUnlicensed": 0,
+  "phantom": 0,
+  "overWide": 0,
+  "blanket": 0,
+  "merged": 0,
+  "hollow": 0,
+  "rimSamples": 33264,
+  "licensedBulgeSamples": 1305,
+  "emitted": 119,
+  "withLot": 557,
+  "withShare": 557,
+  "withBoth": 557
+ },
+ "reach": {
+  "probeFlood": {
+   "seed": "START@0,-26",
+   "seeded": true,
+   "grid": [
+    540,
+    540
+   ],
+   "extent": [
+    -135,
+    135
+   ],
+   "freeCells": 233958,
+   "reachedCells": 124949,
+   "reachFrac": 0.534
+  },
+  "shippedCensus": {
+   "cell": 0.5,
+   "grid": [
+    519,
+    519
+   ],
+   "extent": [
+    -129.4,
+    129.4,
+    -129.4,
+    129.4
+   ],
+   "regions": 23,
+   "standableCells": 211672,
+   "pocketRegions": 0,
+   "pocketCells": 0
+  },
+  "shippedConfigBfs": {
+   "cell": 2,
+   "headings": 16,
+   "grid": [
+    131,
+    131
+   ],
+   "states": 110053,
+   "freeCells": 13555,
+   "reachedCells": 7797
+  }
+ },
+ "faceCategoryFlips": {
+  "probeYesBfsNo": 2,
+  "probeNoBfsYes": 52944,
+  "probeYesCensusNo": 0,
+  "both": 21397,
+  "neither": 14683,
+  "totalBandFaces": 89026,
+  "examples": [
+   {
+    "at": [
+     9.5,
+     -14.7
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.49
+   },
+   {
+    "at": [
+     9.5,
+     -14.7
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.49
+   },
+   {
+    "at": [
+     9.5,
+     -14.7
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.49
+   },
+   {
+    "at": [
+     9.5,
+     -14.6
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.5
+   },
+   {
+    "at": [
+     9.6,
+     -14.6
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.52
+   },
+   {
+    "at": [
+     9.6,
+     -14.6
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.53
+   },
+   {
+    "at": [
+     9.6,
+     -14.6
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.57
+   },
+   {
+    "at": [
+     9.6,
+     -14.5
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.58
+   },
+   {
+    "at": [
+     9.6,
+     -14.5
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.62
+   },
+   {
+    "at": [
+     9.6,
+     -14.5
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.64
+   },
+   {
+    "at": [
+     9.5,
+     -14.5
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.68
+   },
+   {
+    "at": [
+     9.5,
+     -14.4
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.69
+   },
+   {
+    "at": [
+     9.5,
+     -14.4
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.72
+   },
+   {
+    "at": [
+     9.5,
+     -14.4
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.73
+   },
+   {
+    "at": [
+     9.4,
+     -14.4
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.74
+   },
+   {
+    "at": [
+     9.4,
+     -14.4
+    ],
+    "mesh": "Mesh",
+    "root": "Group",
+    "probe": false,
+    "bfs": true,
+    "past": -2.74
+   }
+  ]
+ },
+ "exposure": {
+  "exposedFaces": 5,
+  "probeReachable": 5,
+  "bfsReachable": 5,
+  "neither": 0,
+  "wholeBodyFaces": 5,
+  "cells": 2,
+  "faces": [
+   {
+    "at": [
+     -71.78,
+     -37.09
+    ],
+    "past": 5.98,
+    "run": 0.28,
+    "aboveGround": 0.46,
+    "poke": 0.0026,
+    "pokeExact": 0.0018,
+    "groundDrift": 0.36,
+    "slope": 0,
+    "cacheWorth": 0.001,
+    "lod": {
+     "level": 0,
+     "switchAt": [
+      0,
+      45
+     ],
+     "tileAt": [
+      -74.9,
+      -43.8
+     ],
+     "distFromPageCam": 77,
+     "pageLevel": 1,
+     "pageDrew": false,
+     "pastSwitch": 32
+    },
+    "mesh": "Mesh",
+    "root": "stone-field",
+    "ownerDisc": "grid:grid-rig@-63.7,-42.0 r1.84",
+    "probeReach": true,
+    "bfsReach": true,
+    "inCoveredRaster": false
+   },
+   {
+    "at": [
+     -71.77,
+     -37.19
+    ],
+    "past": 5.92,
+    "run": 0.28,
+    "aboveGround": 0.46,
+    "poke": 0.0026,
+    "pokeExact": 0.0018,
+    "groundDrift": 0.4,
+    "slope": 0,
+    "cacheWorth": 0.001,
+    "lod": {
+     "level": 0,
+     "switchAt": [
+      0,
+      45
+     ],
+     "tileAt": [
+      -74.9,
+      -43.8
+     ],
+     "distFromPageCam": 77,
+     "pageLevel": 1,
+     "pageDrew": false,
+     "pastSwitch": 32
+    },
+    "mesh": "Mesh",
+    "root": "stone-field",
+    "ownerDisc": "grid:grid-rig@-63.7,-42.0 r1.84",
+    "probeReach": true,
+    "bfsReach": true,
+    "inCoveredRaster": false
+   },
+   {
+    "at": [
+     -71.91,
+     -36.99
+    ],
+    "past": 6.14,
+    "run": 0.25,
+    "aboveGround": 0.46,
+    "poke": 0.0026,
+    "pokeExact": 0.0022,
+    "groundDrift": 0.23,
+    "slope": 0.01,
+    "cacheWorth": 0.002,
+    "lod": {
+     "level": 0,
+     "switchAt": [
+      0,
+      45
+     ],
+     "tileAt": [
+      -74.9,
+      -43.8
+     ],
+     "distFromPageCam": 77,
+     "pageLevel": 1,
+     "pageDrew": false,
+     "pastSwitch": 32
+    },
+    "mesh": "Mesh",
+    "root": "stone-field",
+    "ownerDisc": "grid:grid-rig@-63.7,-42.0 r1.84",
+    "probeReach": true,
+    "bfsReach": true,
+    "inCoveredRaster": false
+   },
+   {
+    "at": [
+     25.99,
+     31.13
+    ],
+    "past": 8.1,
+    "run": 0.19,
+    "aboveGround": 0.47,
+    "poke": 0.0085,
+    "pokeExact": 0.0085,
+    "groundDrift": 0.4,
+    "slope": 0,
+    "cacheWorth": 0,
+    "lod": {
+     "level": 0,
+     "switchAt": [
+      0,
+      45
+     ],
+     "tileAt": [
+      14.4,
+      44.4
+     ],
+     "distFromPageCam": 71.9,
+     "pageLevel": 1,
+     "pageDrew": false,
+     "pastSwitch": 26.9
+    },
+    "mesh": "Mesh",
+    "root": "stone-field",
+    "ownerDisc": "road:lamp-1-19@21.8,21.9 r0.45",
+    "probeReach": true,
+    "bfsReach": true,
+    "inCoveredRaster": false
+   },
+   {
+    "at": [
+     25.94,
+     31.3
+    ],
+    "past": 8.24,
+    "run": 0.22,
+    "aboveGround": 0.47,
+    "poke": 0.0085,
+    "pokeExact": 0.0085,
+    "groundDrift": 0.52,
+    "slope": 0,
+    "cacheWorth": 0,
+    "lod": {
+     "level": 0,
+     "switchAt": [
+      0,
+      45
+     ],
+     "tileAt": [
+      14.4,
+      44.4
+     ],
+     "distFromPageCam": 71.9,
+     "pageLevel": 1,
+     "pageDrew": false,
+     "pastSwitch": 26.9
+    },
+    "mesh": "Mesh",
+    "root": "stone-field",
+    "ownerDisc": "road:lamp-1-19@21.8,21.9 r0.45",
+    "probeReach": true,
+    "bfsReach": true,
+    "inCoveredRaster": false
+   }
+  ],
+  "instancing": {
+   "node": "3600/3600 in 88 InstancedMeshes",
+   "page": "3600/3600 in 88 InstancedMeshes",
+   "agrees": true,
+   "lodTiles": 88,
+   "lodLevelsHidden": 88
+  },
+  "ruler": {
+   "groundCalls": 265658,
+   "groundCells": 4731,
+   "cacheHits": 260927,
+   "bandSamples": 89026,
+   "bandDriftMean": 0.391,
+   "bandDriftMax": 1.363,
+   "maxDriftAnyFace": 1.363,
+   "insideErrorBar": 0,
+   "sealedWhenExact": 0,
+   "pageCam": [
+    0,
+    -26
+   ],
+   "notDrawnAtPageCam": 5,
+   "nodeBandFaces": 89026,
+   "pageBandFaces": 89070,
+   "pageExposedFaces": 0,
+   "perRoot": [
+    {
+     "root": "Group",
+     "node": 79532,
+     "page": 79583
+    },
+    {
+     "root": "rock-scatter",
+     "node": 9485,
+     "page": 9485
+    },
+    {
+     "root": "stone-field",
+     "node": 9,
+     "page": 2
+    }
+   ]
+  }
+ },
+ "suspects": {
+  "note": "no ≤0.2 m collider-step rule exists in src; BAND_STEP 0.12 is the shipped step predicate",
+  "bandStep": 0.12,
+  "mainJsTerrainCrestBar": 0.2,
+  "items": [
+   {
+    "kind": "teleport_pad",
+    "at": [
+     -6.8,
+     10
+    ],
+    "key": "hub",
+    "families": [
+     "hub:pad0"
+    ],
+    "discs": 4,
+    "widestDiscR": 1.84,
+    "step": {
+     "run": 0.613,
+     "at": [
+      -9.3,
+      8.4
+     ],
+     "groundSpan": 0,
+     "ground": 0.6,
+     "bandFacesInWindow": 246,
+     "exposed": 0,
+     "exposedPast": 0,
+     "exposedMesh": null
+    },
+    "reachedByBfs": true,
+    "probeReach": true,
+    "exposurePastAtPad": 1.12
+   },
+   {
+    "kind": "teleport_pad",
+    "at": [
+     -56,
+     -43
+    ],
+    "key": "launch",
+    "families": [
+     "launch:pad1"
+    ],
+    "discs": 5,
+    "widestDiscR": 1.84,
+    "step": {
+     "run": 0.539,
+     "at": [
+      -58.2,
+      -44.4
+     ],
+     "groundSpan": 0,
+     "ground": 0.6,
+     "bandFacesInWindow": 156,
+     "exposed": 0,
+     "exposedPast": 0,
+     "exposedMesh": null
+    },
+    "reachedByBfs": true,
+    "probeReach": true,
+    "exposurePastAtPad": 0.93
+   },
+   {
+    "kind": "teleport_pad",
+    "at": [
+     -42.6,
+     61.6
+    ],
+    "key": "habitat",
+    "families": [
+     "habitat:pad2"
+    ],
+    "discs": 3,
+    "widestDiscR": 0.11,
+    "step": {
+     "run": 0.515,
+     "at": [
+      -44.7,
+      60.3
+     ],
+     "groundSpan": 0,
+     "ground": 0.5,
+     "bandFacesInWindow": 72,
+     "exposed": 0,
+     "exposedPast": 0,
+     "exposedMesh": null
+    },
+    "reachedByBfs": true,
+    "probeReach": true,
+    "exposurePastAtPad": 0.82
+   },
+   {
+    "kind": "teleport_pad",
+    "at": [
+     54.1,
+     79.2
+    ],
+    "key": "industry",
+    "families": [
+     "industry:pad3"
+    ],
+    "discs": 10,
+    "widestDiscR": 1.84,
+    "step": {
+     "run": 0.515,
+     "at": [
+      52,
+      77.9
+     ],
+     "groundSpan": 0,
+     "ground": 0.526,
+     "bandFacesInWindow": 408,
+     "exposed": 0,
+     "exposedPast": 0,
+     "exposedMesh": null
+    },
+    "reachedByBfs": true,
+    "probeReach": true,
+    "exposurePastAtPad": 0.82
+   },
+   {
+    "kind": "teleport_pad",
+    "at": [
+     51,
+     -68
+    ],
+    "key": "comms",
+    "families": [
+     "comms:pad4"
+    ],
+    "discs": 6,
+    "widestDiscR": 1.84,
+    "step": {
+     "run": 0.49,
+     "at": [
+      49,
+      -69.3
+     ],
+     "groundSpan": 0,
+     "ground": 0.5,
+     "bandFacesInWindow": 138,
+     "exposed": 0,
+     "exposedPast": 0,
+     "exposedMesh": null
+    },
+    "reachedByBfs": true,
+    "probeReach": true,
+    "exposurePastAtPad": 0.7
+   },
+   {
+    "kind": "teleport_pad",
+    "at": [
+     4.6,
+     72.4
+    ],
+    "key": "science",
+    "families": [
+     "science:pad5"
+    ],
+    "discs": 6,
+    "widestDiscR": 1.84,
+    "step": {
+     "run": 0.49,
+     "at": [
+      2.6,
+      71.1
+     ],
+     "groundSpan": 0,
+     "ground": 0.4,
+     "bandFacesInWindow": 570,
+     "exposed": 0,
+     "exposedPast": 0,
+     "exposedMesh": null
+    },
+    "reachedByBfs": true,
+    "probeReach": true,
+    "exposurePastAtPad": 0.71
+   },
+   {
+    "kind": "teleport_pad",
+    "at": [
+     1.5,
+     -51.5
+    ],
+    "key": "motor",
+    "families": [
+     "motor:pad6"
+    ],
+    "discs": 10,
+    "widestDiscR": 1.84,
+    "step": {
+     "run": 0.515,
+     "at": [
+      -0.6,
+      -52.8
+     ],
+     "groundSpan": 0,
+     "ground": 0.5,
+     "bandFacesInWindow": 521,
+     "exposed": 0,
+     "exposedPast": 0,
+     "exposedMesh": null
+    },
+    "reachedByBfs": true,
+    "probeReach": true,
+    "exposurePastAtPad": 0.81
+   },
+   {
+    "kind": "crystal_site",
+    "at": [
+     49.2,
+     95.8
+    ],
+    "id": 8,
+    "rFromCentre": 107.7,
+    "rise": 1.546,
+    "sink": 1.546,
+    "step": {
+     "run": 0,
+     "at": null,
+     "groundSpan": 0.547,
+     "ground": -0.175,
+     "bandFacesInWindow": 0,
+     "exposed": 0,
+     "exposedPast": 0,
+     "exposedMesh": null
+    },
+    "reachedByBfs": true,
+    "probeReach": true,
+    "discsNear": 0,
+    "discsOwned": 4,
+    "wallUp": false
+   },
+   {
+    "kind": "crystal_site",
+    "at": [
+     81.8,
+     66.4
+    ],
+    "id": 0,
+    "rFromCentre": 105.4,
+    "rise": 1.672,
+    "sink": 1.672,
+    "step": {
+     "run": 0.201,
+     "at": [
+      81.6,
+      66.2
+     ],
+     "groundSpan": 0.394,
+     "ground": 0.572,
+     "bandFacesInWindow": 689,
+     "exposed": 0,
+     "exposedPast": 0,
+     "exposedMesh": null
+    },
+    "reachedByBfs": true,
+    "probeReach": true,
+    "discsNear": 4,
+    "discsOwned": 4,
+    "wallUp": true
+   },
+   {
+    "kind": "crystal_site",
+    "at": [
+     -85.4,
+     61.3
+    ],
+    "id": 1,
+    "rFromCentre": 105.1,
+    "rise": 1.608,
+    "sink": 1.608,
+    "step": {
+     "run": 0.196,
+     "at": [
+      -85.5,
+      61
+     ],
+     "groundSpan": 0.688,
+     "ground": 0.206,
+     "bandFacesInWindow": 183,
+     "exposed": 0,
+     "exposedPast": 0,
+     "exposedMesh": null
+    },
+    "reachedByBfs": true,
+    "probeReach": false,
+    "discsNear": 4,
+    "discsOwned": 4,
+    "wallUp": true
+   },
+   {
+    "kind": "crystal_site",
+    "at": [
+     98.3,
+     -33.9
+    ],
+    "id": 2,
+    "rFromCentre": 104,
+    "rise": 1.73,
+    "sink": 1.73,
+    "step": {
+     "run": 0.212,
+     "at": [
+      99.1,
+      -33.7
+     ],
+     "groundSpan": 0.598,
+     "ground": -0.147,
+     "bandFacesInWindow": 251,
+     "exposed": 0,
+     "exposedPast": 0,
+     "exposedMesh": null
+    },
+    "reachedByBfs": true,
+    "probeReach": false,
+    "discsNear": 5,
+    "discsOwned": 5,
+    "wallUp": true
+   }
+  ]
+ },
+ "controls": {
+  "openSpot": [
+   -18,
+   84
+  ],
+  "openSpotReach": 18.53,
+  "syntheticDisc": {
+   "kind": "phantom",
+   "bare": 1,
+   "phantomFired": true,
+   "rc": 0
+  },
+  "mutateRealDisc": {
+   "prop": "watch:watch-deck",
+   "at": [
+    -11.51,
+    -21.59
+   ],
+   "r": 8.823446471352787,
+   "lotBefore": [
+    8.56,
+    8.56
+   ],
+   "entitled": 6.683,
+   "armBar": "overWide needs unlicensed/48 > 0.25 — the shipped judge's own bar, disc-audit-probe.js:448",
+   "shrinkLo": {
+    "mutation": "lot hw/hd −1.5 m, r and share untouched",
+    "kindBefore": "ok",
+    "unlicensedBefore": 0,
+    "maxPastBefore": -0.0005828096357838319,
+    "kindAfter": "ok",
+    "unlicensedAfter": 7,
+    "unlicensedFrac": 0.146,
+    "bareAfter": 0.646,
+    "maxPastAfter": 1.499
+   },
+   "shrink": {
+    "mutation": "lot hw/hd −3.5 m, r and share untouched",
+    "kindBefore": "ok",
+    "unlicensedBefore": 0,
+    "maxPastBefore": -0.0005828096357838319,
+    "kindAfter": "overWide",
+    "unlicensedAfter": 13,
+    "unlicensedFrac": 0.271,
+    "bareAfter": 0.646,
+    "maxPastAfter": 3.499,
+    "fired": true
+   },
+   "grow": {
+    "mutation": "r +1.5 m, lot and share untouched",
+    "kindBefore": "ok",
+    "unlicensedBefore": 0,
+    "maxPastBefore": -0.0005828096357838319,
+    "kindAfter": "ok",
+    "unlicensedAfter": 0,
+    "unlicensedFrac": 0,
+    "bareAfter": 0.667,
+    "maxPastAfter": -0.001,
+    "overshootLotBefore": 0.263,
+    "overshootLotAfter": 1.763,
+    "detected": false
+   },
+   "rc": 0
+  },
+  "syntheticFace": {
+   "faces": [
+    {
+     "at": [
+      -18.2,
+      84
+     ],
+     "past": 17.09,
+     "run": 1,
+     "probeReach": true,
+     "bfsReach": true
+    },
+    {
+     "at": [
+      -17.8,
+      84
+     ],
+     "past": 16.768,
+     "run": 1,
+     "probeReach": true,
+     "bfsReach": true
+    }
+   ],
+   "n": 2,
+   "faceCaught": true,
+   "rc": 0
+  },
+  "bulge": {
+   "cleanPast": 0,
+   "brokenPast": 1.17,
+   "pass": true,
+   "rc": 0
+  },
+  "gate": {
+   "outside": 0.6,
+   "inside": -0.2,
+   "touch": 0,
+   "pass": true,
+   "rc": 0
+  },
+  "sealedRing": {
+   "cells": 61,
+   "pivot": 0,
+   "maxClear": 2.199999999999996,
+   "n": 25,
+   "pocketFired": true,
+   "rc": 0
+  },
+  "poseGate": {
+   "rows": [
+    {
+     "id": 0,
+     "crown": 1.67,
+     "wallUp": true,
+     "buried": 0,
+     "discs": 4
+    },
+    {
+     "id": 1,
+     "crown": 1.61,
+     "wallUp": true,
+     "buried": 0,
+     "discs": 4
+    },
+    {
+     "id": 2,
+     "crown": 1.73,
+     "wallUp": true,
+     "buried": 0,
+     "discs": 5
+    },
+    {
+     "id": 3,
+     "crown": 1.15,
+     "wallUp": true,
+     "buried": 0,
+     "discs": 1
+    },
+    {
+     "id": 4,
+     "crown": 1.68,
+     "wallUp": true,
+     "buried": 0,
+     "discs": 5
+    },
+    {
+     "id": 5,
+     "crown": 1.48,
+     "wallUp": true,
+     "buried": 0,
+     "discs": 3
+    },
+    {
+     "id": 6,
+     "crown": 0.06,
+     "wallUp": false,
+     "buried": 0.75,
+     "discs": 4
+    },
+    {
+     "id": 7,
+     "crown": 0.06,
+     "wallUp": false,
+     "buried": 0.75,
+     "discs": 2
+    },
+    {
+     "id": 8,
+     "crown": 0.06,
+     "wallUp": false,
+     "buried": 0.75,
+     "discs": 4
+    }
+   ],
+   "disagreements": [],
+   "agree": true,
+   "mutate": {
+    "id": 6,
+    "crown": 1.43,
+    "wallUp": false,
+    "fired": true
+   },
+   "agreeFired": true,
+   "mutateFired": true,
+   "rc": 0
+  },
+  "pass": true
+ }
+}

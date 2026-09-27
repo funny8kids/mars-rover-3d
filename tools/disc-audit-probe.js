@@ -225,6 +225,32 @@
   // gravel field was standing right there with 3 600 of them, because the counter lived past the
   // per-root exclusion — a 0 that meant "the counter never looked" and read as "nothing truncated".
   const inst = { seenMeshes: 0, seenInstances: 0, sweptMeshes: 0, sweptInstances: 0, truncated: 0 };
+  // Every way a mesh or a face can leave this sweep WITHOUT becoming a band face, named and counted.
+  // This block exists because `bandFaces: 89 070` and `exposedFaces: 0` are only the same statement as
+  // "the island is clean" if nothing was thrown away on the way there — and the last time a filter
+  // threw geometry away silently (the mesh bounding-box test below, tools/float-audit-probe.js:10-24)
+  // it manufactured 268 phantom floaters out of nothing. Each counter here answers one question: how
+  // much of the island did this ruler NOT look at, and would looking have changed the reading?
+  const skip = {
+    notMeshNoGeometry: 0,     // line 235's `!o.isMesh || !o.geometry`
+    hidden: 0,                // line 235's `!o.visible` — an LOD tile the page is not drawing today
+    noPositionAttr: 0,        // line 237
+    roverExempt: 0,           // line 239, counted in full by `exemptRover`
+    excludedRoot: 0,          // line 244, per-root reason in `coverage[].why`
+    transparentMat: 0,        // line 246 — WAS SILENT: glass, dust veils, glow quads
+    domeBBox: 0,              // line 250, the mesh-level bbox filter; see `domeAudit` underneath
+    fewerThanThreeTris: 0,    // line 253 — WAS SILENT
+    flatNormal: 0,            // line 277 |n.y| > 0.7: floor/ceiling, driven over not through
+    thinRun: 0,               // line 279 run < 0.12: a plate's own rim, a step not a wall
+    outsideRideBand: 0,       // line 283 lo > ground+ROOF or hi < ground+RIDE
+  };
+  // The dome filter measured rather than assumed: the bbox test rejects a whole MESH on the size of
+  // its bounding box, which for a merged bucket is a meaningless point in space (float-audit-probe.js
+  // says so at :119-123, where it is filtered per face instead). So the rejected meshes are walked
+  // again here with the face's OWN position, and the report prints how many of their faces would have
+  // qualified as on-island band faces. If that is 0 the mesh-level filter costs nothing; if it is not,
+  // `bandFaces` has been under-counting by that much.
+  const domeRejectedMeshes = [];
   // The player's own vehicle, exempted by identity: its hull triangles are in the scene and no
   // collider is meant to cover them. Skipping the whole subtree means nothing else loses its
   // exemption because of where the rover happens to be parked — a 5 m radius around the parked
@@ -232,25 +258,31 @@
   const self = new Set();
   { const rr = R.roverRoot?.(); if (rr) rr.traverse(o => self.add(o)); }
   scene.traverse(o => {
-    if (!o.isMesh || !o.visible || !o.geometry) return;
+    if (!o.isMesh) return;                       // Groups and lights: not a denominator member at all
+    if (!o.geometry) { skip.notMeshNoGeometry++; return; }
+    if (!o.visible) { skip.hidden++; return; }
     const g = o.geometry, pos = g.attributes?.position;
-    if (!pos) return;
+    if (!pos) { skip.noPositionAttr++; return; }
     if (o.isInstancedMesh) { inst.seenMeshes++; inst.seenInstances += o.count; }
-    if (self.has(o)) { roverMeshes++; roverTris += (g.index ? g.index.count : pos.count) / 3; return; }
+    if (self.has(o)) { roverMeshes++; skip.roverExempt++;
+      roverTris += (g.index ? g.index.count : pos.count) / 3; return; }
     const root = rootOf(o), key = rootKey.get(root);
     seenNames.add(root.name);
     const ex = EXCLUDE[root.name];
     swept.set(key, swept.get(key) || { skipped: !!ex, why: ex || null, tris: 0, faces: 0, strays: 0, maxAbove: 0 });
-    if (ex) return;
+    if (ex) { skip.excludedRoot++; return; }
     const m = o.material;
-    if (m && (Array.isArray(m) ? m.some(x => x?.transparent) : m.transparent)) return;
+    if (m && (Array.isArray(m) ? m.some(x => x?.transparent) : m.transparent)) { skip.transparentMat++; return; }
     const w = new THREE.Box3().setFromObject(o);
     // A mesh bigger than the island cannot be a prop: it is a sky dome, a star shell or an
-    // orbit-fx shell, and its faces land kilometres off the grid.
-    if (w.max.x - w.min.x > 2 * ISLAND || w.max.z - w.min.z > 2 * ISLAND) { domes++; return; }
+    // orbit-fx shell, and its faces land kilometres off the grid. Rejected on the MESH box, so the
+    // mesh is parked in `domeRejectedMeshes` and re-judged per face below — see `skip.domeBBox`.
+    if (w.max.x - w.min.x > 2 * ISLAND || w.max.z - w.min.z > 2 * ISLAND) {
+      domes++; skip.domeBBox++; domeRejectedMeshes.push(o); return;
+    }
     const idx = g.index;
     const tri = idx ? idx.count : pos.count;
-    if (tri < 3) return;
+    if (tri < 3) { skip.fewerThanThreeTris++; return; }
     meshes++;
     const mats = [];
     if (o.isInstancedMesh) {
@@ -274,13 +306,13 @@
         const mx = (a.x + b.x + c.x) / 3, mz = (a.z + b.z + c.z) / 3;
         if (Math.hypot(mx, mz) > ISLAND + 4) { offIsland++; continue; }
         ab.subVectors(b, a); ac.subVectors(c, a); n.crossVectors(ab, ac).normalize();
-        if (Math.abs(n.y) > 0.7) continue;                    // floor/ceiling facing: driven over
+        if (Math.abs(n.y) > 0.7) { skip.flatNormal++; continue; }     // floor/ceiling facing: driven over
         const lo = Math.min(a.y, b.y, c.y), hi = Math.max(a.y, b.y, c.y);
-        if (hi - lo < 0.12) continue;                         // a plate's own rim: a step, not a wall
+        if (hi - lo < 0.12) { skip.thinRun++; continue; }              // a plate's own rim: a step, not a wall
         const gy = groundAt(mx, mz);
         const rec = swept.get(key);
         if (hi - gy > rec.maxAbove) rec.maxAbove = hi - gy;
-        if (lo > gy + ROOF || hi < gy + RIDE) continue;       // outside the rover's band
+        if (lo > gy + ROOF || hi < gy + RIDE) { skip.outsideRideBand++; continue; }   // outside the rover's band
         bandFaces++;
         rec.faces++;
         const ai = gi(mx), bi = gi(mz);
@@ -350,6 +382,52 @@
     }
   });
 
+  // ─── the dome filter, measured instead of assumed ───
+  // The sweep above rejects a whole mesh on its bounding box (`skip.domeBBox`). That is the exact
+  // shape of the bug tools/float-audit-probe.js records at :10-24 — after `mergeInto` a bucket can
+  // hold geometry scattered over the island and one star-shell triangle, and its bbox centre is "a
+  // meaningless point in space" — so the rejected meshes are re-walked here with each FACE's own
+  // position. The rasters are not touched: this pass can only ever change what the report admits it
+  // did not look at, never the headline `bandFaces`.
+  const domeAudit = { meshes: domeRejectedMeshes.length, trisWalked: 0, offIsland: 0,
+    onIslandBandFaces: 0, exposed: 0, worstPast: 0, worstAt: null, worstMesh: null,
+    names: domeRejectedMeshes.map(o => o.name || o.type) };
+  for (const o of domeRejectedMeshes) {
+    const g = o.geometry, pos = g.attributes.position, idx = g.index;
+    const tri = idx ? idx.count : pos.count;
+    const mats = [];
+    if (o.isInstancedMesh) {
+      const mm = new THREE.Matrix4();
+      for (let q = 0; q < o.count; q++) { o.getMatrixAt(q, mm); mats.push(mm.clone()); }
+    } else mats.push(new THREE.Matrix4());
+    for (const im of mats) {
+      const wm = new THREE.Matrix4().multiplyMatrices(o.matrixWorld, im);
+      for (let t = 0; t + 2 < tri; t += 3) {
+        const i0 = idx ? idx.getX(t) : t, i1 = idx ? idx.getX(t + 1) : t + 1, i2 = idx ? idx.getX(t + 2) : t + 2;
+        a.fromBufferAttribute(pos, i0).applyMatrix4(wm);
+        b.fromBufferAttribute(pos, i1).applyMatrix4(wm);
+        c.fromBufferAttribute(pos, i2).applyMatrix4(wm);
+        domeAudit.trisWalked++;
+        const mx = (a.x + b.x + c.x) / 3, mz = (a.z + b.z + c.z) / 3;
+        if (Math.hypot(mx, mz) > ISLAND + 4) { domeAudit.offIsland++; continue; }
+        ab.subVectors(b, a); ac.subVectors(c, a); n.crossVectors(ab, ac).normalize();
+        if (Math.abs(n.y) > 0.7) continue;
+        const lo = Math.min(a.y, b.y, c.y), hi = Math.max(a.y, b.y, c.y);
+        if (hi - lo < 0.12) continue;
+        const gy = groundAt(mx, mz);
+        if (lo > gy + ROOF || hi < gy + RIDE) continue;
+        // A face this mesh's bounding box hid from the ruler. Counted, and then put through the very
+        // same exposure gate, because one on-island band face with past > 0 is a live bug the shipped
+        // `exposedFaces: 0` would never have said out loud.
+        domeAudit.onIslandBandFaces++;
+        const past = pastAt(mx, mz);
+        if (past > 0) { domeAudit.exposed++;
+          if (past > domeAudit.worstPast) { domeAudit.worstPast = +past.toFixed(2);
+            domeAudit.worstAt = [+mx.toFixed(1), +mz.toFixed(1)]; domeAudit.worstMesh = o.name || o.type; } }
+      }
+    }
+  }
+
   // Disc side. Two allowances are built into the sampling, and both come from geometry maths rather
   // than from taste:
   //   the island rim — `rim-veil` draws the playfield edge as travelling dust a mesh sweep cannot
@@ -383,6 +461,10 @@
   };
   const phantom = [], overWide = [], blanket = [], mergedAway = [], hollow = [];
   let licensedBulge = 0, rimSamples = 0, rectlessDiscs = 0;
+  // The disc denominator, same rule as the mesh side: a disc skipped because it stands off the island
+  // is not a disc that passed. `rim-veil`'s own ring discs live out there on purpose.
+  const discSkip = { offIsland: 0, judged: 0, authored: 0, emitted: 0, withLot: 0, withShare: 0,
+    withOutline: 0, rimSamplesDropped: 0 };
   const S = 48;
   // One disc's verdict as a callable, so the polarity controls underneath run through the very same
   // code path the island is judged by. A gate nobody can make red is not a gate.
@@ -448,9 +530,13 @@
            : out && unlicensed / S > 0.25 ? 'overWide' : 'ok' };
   };
   for (const d0 of discs) {
-    if (Math.hypot(d0.x, d0.z) > ISLAND + 4) continue;
+    if (Math.hypot(d0.x, d0.z) > ISLAND + 4) { discSkip.offIsland++; discSkip.rimSamplesDropped += S; continue; }
+    discSkip.judged++;
+    if (d0.emitted) discSkip.emitted++; else discSkip.authored++;
+    if (d0.lot) discSkip.withLot++;
+    if (d0.share) discSkip.withShare++;
     const j = judge(d0);
-    if (!j.out) rectlessDiscs++;
+    if (!j.out) rectlessDiscs++; else discSkip.withOutline++;
     licensedBulge += j.licensed; rimSamples += j.rim;
     const row = { prop: d0.prop, at: [+d0.x.toFixed(1), +d0.z.toFixed(1)], r: +d0.r.toFixed(2),
       bare: +j.bare.toFixed(2), boxed: !!j.out, mesh: d0.mesh || null };

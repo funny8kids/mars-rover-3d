@@ -3195,8 +3195,9 @@ export async function buildBase(scene, quality) {
       const plateMat = new THREE.MeshBasicMaterial({ color: 0x4fe2ff, transparent: true, opacity: 0, alphaMap: lightPool(), blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
       // 1.35 → 1.75 m: the ramp puts most of a flat hexagon's light back on the inside, so the disc
       // has to reach further to pool the same area of deck.
-      // RETAINED RUNTIME PRIMITIVE — the pool of light the rotor throws on its own deck: 42 mm above the
-      // plinth, additive, `depthWrite:false`, alphaMap-carved, and its opacity is written every frame
+      // RETAINED RUNTIME PRIMITIVE — the pool of light the rotor throws on its own deck: local y 0.42
+      // on a rig datumed 60 mm into the graded sand, so 360 mm clear of the deck, additive,
+      // `depthWrite:false`, alphaMap-carved, and its opacity is written every frame
       // with the grid's power and nightF (same driver as the core above). A mesh can be a lampshade;
       // this one only has to be the shape the light is not.
       const plate = new THREE.Mesh(new THREE.CircleGeometry(1.75, 40), plateMat);

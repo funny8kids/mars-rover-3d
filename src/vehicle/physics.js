@@ -31,6 +31,14 @@ const RHO = 0.020;      // kg/m³ — mean Martian surface density, 1.6% of Eart
 const CD_A = 1.9;       // m²·Cd for the boxy chassis and its mirror-flat solar deck
 const MASS = 260;       // kg
 
+// Deadlock detection & rescue parameters (A 项 Phase 3)
+const DEADLOCK_SPEED_TOL = 0.1;        // speed < 0.1 m/s
+const DEADLOCK_TIME_TOL = 2.0;         // duration > 2s at low speed
+const DEADLOCK_INPUT_TOL = 0.05;       // gas/brake/steer > 0.05 means driver is trying
+const RESCUE_REVERSE_SPEED = 4.0;       // m/s reverse to get out
+const RESCUE_TURN_ANG = 0.5;            // rad turn while reversing
+const RESCUE_LIMIT = 3;                  // max rescues per stop before giving up
+
 // Props may publish a driveable platform as a collider `{x, z, r, floor}`. The last 3 m of
 // its radius ramp from terrain up to the deck, so a low pad reads as a curb you roll onto
 // instead of a step you pop through.
@@ -73,6 +81,13 @@ export class RoverPhysics {
     this.windSoft = 0;        // 0..1 dust under the wheels — the term the storm drives through
     this.bodyRoll = 0; this.bodyPitch = 0;   // chassis lean from lateral / longitudinal G
     this._acc = 0;            // fixed-step accumulator
+    
+    // Deadlock detection & rescue state (A 项 Phase 3)
+    this.lastNormalSpeed = 0;       // last recorded normal (non-stuck) speed
+    this.stuckStartTime = 0;        // simulation time when stuck started
+    this.stuckFrames = 0;           // consecutive frames at low speed
+    this.rescueCount = 0;           // number of rescues attempted
+    this.isRescuing = false;        // currently executing rescue maneuver
   }
   // Fixed 120 Hz integration: the feel must not change between a 60 Hz laptop and a stuttering
   // frame, and a surface-locked rig that is stepped with a variable dt is exactly what makes an
@@ -272,6 +287,53 @@ export class RoverPhysics {
     // world bounds
     const rr = Math.hypot(this.x, this.z);
     if (rr > 1180) { const s = 1180 / rr; this.x *= s; this.z *= s; this.vx *= 0.5; this.vz *= 0.5; }
+    
+    // Deadlock detection & rescue (A 项 Phase 3)
+    const nowFrames = performance.now();
+    const inputActive = inp.gas > DEADLOCK_INPUT_TOL || inp.brake > DEADLOCK_INPUT_TOL || Math.abs(inp.steer) > DEADLOCK_INPUT_TOL;
+    
+    if (this.speed < DEADLOCK_SPEED_TOL && inputActive) {
+      if (this.stuckFrames === 0) {
+        this.stuckStartTime = nowFrames;
+      }
+      this.stuckFrames++;
+      
+      // Check if we need rescue (>2s stuck duration)
+      if (this.stuckFrames > DEADLOCK_TIME_TOL * 120 && !this.isRescuing && this.rescueCount < RESCUE_LIMIT) {
+        this.isRescuing = true;
+        this.rescueCount++;
+        console.log(`⚠️ [DEADLOCK] Rover stuck at (${this.x.toFixed(1)}, ${this.z.toFixed(1)}), speed=${this.speed.toFixed(2)}, frames=${this.stuckFrames}, rescue #${this.rescueCount}`);
+      }
+    } else {
+      // Reset stuck state when moving normally
+      if (this.stuckFrames > 0) {
+        this.lastNormalSpeed = this.speed;
+        console.log(`✅ [RESCUED] Rover free after ${this.stuckFrames} frames (${(this.stuckFrames/120).toFixed(1)}s)`);
+      }
+      this.stuckFrames = 0;
+      this.stuckStartTime = 0;
+    }
+    
+    // Execute rescue maneuver
+    if (this.isRescuing && this.rescueCount < RESCUE_LIMIT) {
+      // Reverse with slight turn to get out of tight spot
+      const reverseDir = -1.0;
+      const steerWhileReversing = this.yaw % Math.PI > Math.PI ? 0.3 : -0.3; // slight turn
+      
+      // Override throttle to reverse
+      inp.gas = 0;
+      inp.brake = 0.8; // hard brake to force reverse direction
+      
+      // Apply steering override
+      if (Math.abs(inp.steer) < DEADLOCK_INPUT_TOL) {
+        inp.steer = steerWhileReversing;
+      }
+      
+      this.isRescuing = false; // reset after one maneuver attempt
+      this.stuckFrames = 0; // reset stuck counter
+      
+      console.log(`🆘 [RESCUE_EXEC] Reversing at (${this.x.toFixed(1)}, ${this.z.toFixed(1)}) with yaw=${this.yaw.toFixed(2)}`);
+    }
   }
   // The mesh root sits at the contact point (wheel centres hang exactly one radius above it), so
   // the heave term may lift the body but must never drop the reference under the drawn ground.

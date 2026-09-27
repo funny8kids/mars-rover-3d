@@ -1,0 +1,59 @@
+# tools/emissive-ladder.mjs at night / sample:4 — the crystal's own ceiling, rung by rung
+#
+# Why this file exists: the clip gate (tools/cdp-clip-sweep.mjs, CLIP_MAX 0.5 %) is judged on one frame
+# of a material that pulses, so a green reading can mean the sine was on its way down. The ladder pins
+# emissiveIntensity rung by rung and reads the shipped gate back off each rung. Two ladder sessions are
+# archived here because the second one refutes the first's conclusion: the ceiling was never the defect,
+# the uniformity was.
+#
+# Shipped bytes these readings describe (sha256, verified with `sha256sum -c` after the last run):
+67658db18d4b35c73304023ca997251947069c6cfe6dd7e92c53e682637fbf24  src/main.js
+ede268a1fc6b54a47ff3cec4a0cc8ed3b3230c89debc007f3b8f2a89e30af6fb  src/world/props.js
+# HEAD before this commit: d996fe2
+# Command, both runs:
+#   node tools/emissive-ladder.mjs 5173 9336 '[43.3,2.36,-93.4]' '[39.5,1.96,-85.2]' night '^crystal' <ladder>
+# The two pictures, committed here at the same pose and the same 1810x740 buffer:
+#   crystal-night-uniform-e070.png — the UNIFORM material at RUN 1's gate-green ceiling (live 0.66):
+#     one flat mint cutout, no summit and no flank. Green gate, wrong frame.
+#   crystal-night-facet-shipped.png — the shipped bytes (facet gradient, live pulse 0.64-0.92): the
+#     cluster reads as separate prisms with lit summits.
+# Frames at pinned rungs on the patched material (1303x532, this session's tab): /tmp/crystal-rungs/
+# rung0.7.png rung0.9.png rung1.19.png rung1.48.png — sunAt=null, so the sky's own key lights them.
+
+===== RUN 1 — uniform emissive (before props.js facet patch), ladder 1.19/0.70/0.58/0.46 =====
+TARGET http://127.0.0.1:5173/?auto=std&v=crystal070 · sky=night dayT=0.9 · pose at=[43.3,2.36,-93.4] look=[39.5,1.96,-85.2] · buffer 1303x532
+UNITS clip = % of the 16 000-px (160x100) sample (sweep gate: ≤ 0.5 %) · bins = ‰ · lum = the same 0.2126r+0.7152g+0.0722b ruler
+MATCH /^crystal/ on 14 mesh-material pairs across 1 materials · emissive 36d8bd @ live intensity 0.658
+SKY night settled in 2 frames · nightF=1 dayF=0 clock=21:36
+
+       e   clip%   blown   bin7‰   bin6‰   bin0‰   peakLum  peak cell owner @ its lum
+    1.19     0.8     131       8       1       2     236.2  crystal001 36d8bd@1.19 d=9.87 rgb=[212,243,240]
+     0.7       0       0       0       5       4     205.8  crystal001 36d8bd@0.7 d=9.87 rgb=[148,222,215]
+    0.58       0       0       0       0       5     196.6  crystal001 36d8bd@0.58 d=9.87 rgb=[131,215,208]
+    0.46       0       0       0       0       4     190.6  unnamed d=105.4 rgb=[173,193,218]
+
+bin6‰ is where the crystal has to live to stay a lit stone rather than a white disc; bin0‰ is the sweep's dead-black gate (≤ 30 ‰).
+LADDER_RC=0
+
+===== RUN 2 — shipped bytes (props.js facet gradient + the 0.64–0.92 pulse), ladder 1.48…0.64 =====
+TARGET http://127.0.0.1:5173/?auto=std&v=crystal-final2 · sky=night dayT=0.9 · pose at=[43.3,2.36,-93.4] look=[39.5,1.96,-85.2] · buffer 1303x532
+UNITS clip = % of the 16 000-px (160x100) sample (sweep gate: ≤ 0.5 %) · bins = ‰ · lum = the same 0.2126r+0.7152g+0.0722b ruler
+MATCH /^crystal/ on 14 mesh-material pairs across 1 materials · emissive 36d8bd @ live intensity 0.9174
+SKY night settled in 2 frames · nightF=1 dayF=0 clock=21:36
+
+       e   clip%   blown   bin7‰   bin6‰   bin0‰   peakLum  peak cell owner @ its lum
+    1.48       0       3       0       1       4     226.3  crystal001 36d8bd@1.48 d=8.33 rgb=[185,238,232]
+    1.19       0       0       0       1       4     218.2  crystal001 36d8bd@1.19 d=8.33 rgb=[166,233,225]
+       1       0       0       0       0       4     205.1  crystal001 36d8bd@1 d=8.23 rgb=[139,224,213]
+    0.92       0       0       0       0       5     200.9  crystal001 36d8bd@0.92 d=8.23 rgb=[130,221,210]
+    0.78       0       0       0       0       5     190.6  unnamed d=105.4 rgb=[173,193,218]
+    0.64       0       0       0       0       4     192.3  unnamed d=142.66 rgb=[201,191,180]
+
+bin6‰ is where the crystal has to live to stay a lit stone rather than a white disc; bin0‰ is the sweep's dead-black gate (≤ 30 ‰).
+LADDER_RC=0
+
+Reading: RUN 1's top rung is white (212,243,240) and blows 131 of 16 000 cells; its clean rung 0.70 is
+still the same silhouette, only dimmer. RUN 2 has no rung that blows at all — the up-facing summits are
+a small enough pixel share that 1.48 costs 3 cells — so the gate stopped being the constraint and the
+pinned frames picked the value: 0.90 reads as separate prisms, 1.48 smears the summits into the ground
+ring. bin0 stays 4–5 ‰ against the sweep's 30 ‰ dead-black limit at every rung.

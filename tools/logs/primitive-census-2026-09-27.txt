@@ -180,3 +180,70 @@ D3 就是这条豁免不能留着的理由：标记一落地，那张票立刻�
 ≈ 1/87，再细 4 倍只买回 0.0027°（0.0036 → 0.0009）。对真视向那一列在四档细分下几乎不动
 （0.969 → 0.967），随 1/radius 收缩 ⇒ 它是穹顶钉在世界原点、眼睛离心 132 m 的视差，不是网格；
 能在意它的只有半径，而半径还要留在相机 far=9000（src/main.js:35）以内。
+
+
+—— 第三跑（同日，水晶自发光改动之后）——————————————————————————————
+src/world/props.js 在材质块里插了 18 行（M.crystal 的 facet 梯度 + 它的理由），src/main.js 改了
+水晶的夜间脉冲。普查的标记窗口是调用点上方 10 行，插行会把标记推出窗口，所以这一跑是重做而不是
+例行：28 处、26 处带标记、2 处挂票（#101 旗面、#104 五根光柱）、0 处裸着、0 条过期豁免。
+出货字节（跑前跑后各核一次，sha256 -c 全 OK）：
+  67658db18d4b35c73304023ca997251947069c6cfe6dd7e92c53e682637fbf24  src/main.js
+  ede268a1fc6b54a47ff3cec4a0cc8ed3b3230c89debc007f3b8f2a89e30af6fb  src/world/props.js
+
+primitive census — 2026-09-27 — /home/dominic-jamil/GIthub_Code/mars-rover-3d
+command: node tools/primitive_census.mjs --check   (its exit code is not in this file; the run that produced these lines printed CHECK_RC on stderr)
+
+total live hand-built geometry call sites: 28
+  marked   26
+  exempt   2   (#101, #104)
+  UNMARKED 0
+
+per file (call sites):
+   16  src/world/props.js
+    2  src/main.js
+    2  src/world/terrain.js
+    1  src/fx/beams.js
+    1  src/fx/particles.js
+    1  src/fx/plume.js
+    1  src/fx/skids.js
+    1  src/fx/staging.js
+    1  src/world/rim_veil.js
+    1  src/world/sky.js
+    1  src/world/storm.js
+
+exempt:
+  src/world/props.js:1328 PlaneGeometry  → the plaza flag cloth [#101] #101 (a Blender cloth asset, not an excuse)
+  src/world/props.js:2057 CylinderGeometry  → the five light-show searchlights [#104] #104 (move them onto fx/beams.js; needs main.js:2280 off `.opacity`)
+
+marked (the exception written on the thing it excuses):
+  src/fx/beams.js:27 CylinderGeometry
+  src/fx/particles.js:46 BufferGeometry
+  src/fx/plume.js:30 CylinderGeometry
+  src/fx/skids.js:27 PlaneGeometry
+  src/fx/staging.js:35 TorusGeometry
+  src/main.js:410 TorusGeometry
+  src/main.js:1476 TorusGeometry
+  src/world/props.js:476 CircleGeometry
+  src/world/props.js:623 IcosahedronGeometry
+  src/world/props.js:664 CylinderGeometry
+  src/world/props.js:1208 CircleGeometry
+  src/world/props.js:1265 PlaneGeometry
+  src/world/props.js:1774 RingGeometry
+  src/world/props.js:1794 CylinderGeometry
+  src/world/props.js:1870 TorusGeometry
+  src/world/props.js:2041 TorusGeometry
+  src/world/props.js:2564 PlaneGeometry
+  src/world/props.js:2755 BufferGeometry
+  src/world/props.js:2820 RingGeometry
+  src/world/props.js:3212 OctahedronGeometry
+  src/world/props.js:3222 CircleGeometry
+  src/world/rim_veil.js:83 BufferGeometry
+  src/world/sky.js:224 SphereGeometry
+  src/world/storm.js:516 PlaneGeometry
+  src/world/terrain.js:797 PlaneGeometry
+  src/world/terrain.js:1216 IcosahedronGeometry
+
+stale exemptions: 0
+
+VERDICT PASS
+CHECK_RC=0

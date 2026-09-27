@@ -2226,16 +2226,26 @@ function update(dt) {
   // A mineral outcrop does not spin in place or hover a metre off the deck — that levitating loot-gem
   // animation was the most obviously "gamey" thing on the island, and it unseated every crystal from
   // the scree ring built around it. They stay put and breathe with light instead; the halo beam does
-  // the long-range signalling. The glow has to stay under the sun, not over it: at emissive ~1.0 the
-  // self-light dominated the shading and a 798-triangle faceted cluster drew as three flat mint
-  // pillows. By day it is stone catching the sun; only after dark does the light inside show.
+  // the long-range signalling.
   const cnight = Math.max(env.state.nightF, env.state.stormF * 0.6);
-  // The 0.13 day floor still failed at mid-range: a ~1 m cluster of #36d8bd at any emissive above
-  // ~0.1 draws as a flat mint chip — pure hue, below bloom, exactly the grid-core lesson. Day now
-  // sits at 0.04 so the dark stone body and the sun highlight carry it; dusk restores the glow.
-  // Night ceiling trimmed 1.48→1.05 so the faceted silhouette survives the bloom instead of
-  // collapsing into a flat white blob (V11 forensics).
-  base.crystalMat.emissiveIntensity = 0.04 + cnight * 1.01 + Math.sin(elapsed * 1.9) * (0.02 + cnight * 0.12);
+  // By day the glow has to stay under the sun, not over it: the sun highlight across the prisms is
+  // what carries the stone, and #36d8bd above ~0.1 competes with it and flattens the cluster. So day
+  // sits at 0.04 and dusk restores the light inside.
+  // Night peak 1.19 → 0.92, and the number is the smaller half of the fix. The clip gate samples one
+  // phase of this pulse, so a clean reading can just mean the sine was on its way down;
+  // tools/emissive-ladder.mjs pins the material rung by rung at the vantage that reports red
+  // (night / sample:4) and reads the shipped gate back off each rung. On the uniform emissive the
+  // ladder said: 1.19 → clip 0.8 %, 131 blown cells, peak rgb (212,243,240) — white; 0.70 → clip 0 %,
+  // 0 blown, (148,222,215) — mint. Gate green, and the frame was still wrong: a flat mint cutout. A
+  // uniform emissive adds the same value to all 798 triangles, so no facet differed from any other and
+  // the cluster had no summit, no flank, no body — dimming it to 0.70 only made a smaller flat cutout.
+  // The facet gradient on M.crystal (props.js) is what fixes the picture, and once the facets differ
+  // again the ceiling moves back up: the same ladder re-run on the patched material reads clip 0 % at
+  // every rung from 0.64 through 1.48 — 0 blown cells at 1.19 and below, 3 at 1.48 — so 0.5 was never
+  // the real limit, and neither was the old 1.05.
+  // 0.92 is picked off the pinned rung frames, not off the gate — at 1.48 the summits bloom far enough
+  // to smear into the ground ring, at 0.90 each prism still reads as its own stone.
+  base.crystalMat.emissiveIntensity = 0.04 + cnight * 0.74 + Math.sin(elapsed * 1.9) * (0.02 + cnight * 0.12);
   // beacon blink + night lamps (the pad's flood shafts are driven below, with the exhaust shells)
   // `st` was hoisted to the top of update(); re-declaring it here is what froze the canvas.
   // An aviation beacon exists to be seen against darkness, so its drive belongs to the night: at a

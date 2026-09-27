@@ -592,6 +592,25 @@ export async function buildBase(scene, quality) {
   // term so after-dark output is unchanged.
   M.cyanLight.userData.dimDay = 0.10;
   heroLights.push(M.goldLight, M.cyanLight);
+  // The comment on `crystal` above promises "an emissive that only shows through where the prism is
+  // thin", and a uniform `emissiveIntensity` cannot deliver that: at night every one of the cluster's
+  // 798 triangles got the same value, so the whole thing drew as one flat mint cutout — no summit, no
+  // flank, nothing the eye could read as a body of stone (the night/sample:4 frame, 2026-09-27).
+  // Turning the drive down was tried first and is not a fix: the clip gate was already green at 0.70
+  // and the cutout stayed, only smaller. The mesh has no UV attribute at all, so an emissiveMap is not
+  // available without re-exporting the asset; the facet's own orientation is free, so the glow rides
+  // on that instead: light escapes at the thin summits, the flanks stay dark rock. The facet normal is
+  // recomputed from the view-position derivatives rather than reusing the shader's `normal`, so the
+  // patch does not depend on where in main() it landed.
+  M.crystal.onBeforeCompile = shader => {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `
+      #include <emissivemap_fragment>
+      vec3 rsbFacet = normalize(cross(dFdx(vViewPosition), dFdy(vViewPosition)));
+      rsbFacet *= dot(rsbFacet, vViewPosition) > 0.0 ? -1.0 : 1.0;
+      vec3 rsbUp = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+      totalEmissiveRadiance *= 0.22 + 0.78 * smoothstep(-0.15, 0.85, dot(rsbFacet, rsbUp));
+    `);
+  };
   // A crystal meeting the deck along a clean line looks pasted on. Its own scree gives it geology:
   // mineral fractures into angular chips, and the pile buries the base of the growth. One wide flat
   // collar mesh was the first attempt and it read as a paper mat — the rubble has to be individual

@@ -3601,9 +3601,21 @@ export async function buildBase(scene, quality) {
   solidReport.lampRun = siteStreetLamps();
   solidReport.tapDuct = ductAudit;
 
-  // The mineral sites take the discs their own spires drew. Each one is a prop that moves after this
-  // line — `dressSample` sinks it into its drift and scours it out again — so the wall has to be in
-  // the collider list exactly while the drawn geometry is in the rover's band, and nowhere else.
+  // Is a site's spire standing inside the rover's band right now? Two things take it out of the band:
+  // the drift it is buried under (the taller `k`, the deeper the same rock sits) and the sample having
+  // been collected, which hides the group. Written as one predicate because both of them change it, in
+  // two different places, and a wall with no geometry behind it is the defect — not a detail to be
+  // remembered at each call site separately. Read off the *measured* crown, not the sink depth: the
+  // drift's hiding depth has a 0.9 m floor so a short spire still vanishes, and a predicate borrowed
+  // from it would wall a rock out taller than it stands. `rise` and `sink` are re-sampled above, after
+  // the last grader has moved the sand under this group, for the same reason — a seat taken mid-build
+  // goes stale under every footing claimed afterwards, and a stale one reported this line true over a
+  // crown already at 0.358 m, i.e. under the hull floor at RIDE 0.46. tools/site-wall-probe.js is the
+  // ruler. It lives here rather than in main.js because the numbers are the ledger's own, and
+  // tools/offline-world.mjs has to reach them to reproduce the wall membership the solver reads — a
+  // second copy of `0.03 / 0.85 / RIDE` over there would be a host this census cannot see.
+  const siteK = s => THREE.MathUtils.smoothstep(s.buried, 0.03, 0.85);
+  const siteWallUp = s => s.group.visible && s.rise - s.sink * siteK(s) > RIDE;
   for (const s of samples) s.discs = discsByFamily.get(`samples:site${s.id}`) || [];
 
   // Collapse the hand-built groups and the several hundred loose struts, tiles and crates placed
@@ -3622,7 +3634,7 @@ export async function buildBase(scene, quality) {
   const flamePoint = new THREE.Vector3(SHIP_POS[0], 1.6, SHIP_POS[1]);
   return {
     group: G, colliders, infoZones, samples, sparkPoints, beacons, lightStrips, lightRings, showBeams, showBeamMats, shipGroup, launchRig, teleports, padGlow, heroLights, occluders, gridRigs, crystalMat: M.crystal,
-    plan: auditPlan, lots, solidReport,
+    plan: auditPlan, lots, solidReport, siteK, siteWallUp,
     leakPoint: new THREE.Vector3(LEAK_POS[0], heightAt(LEAK_POS[0], LEAK_POS[1]) + 1.8, LEAK_POS[1]),
     flamePoint,
     // `ZONES.*.pos` is a 2-tuple [x, z], so spreading it into a Vector3 — which the two lines above

@@ -1,0 +1,46 @@
+offline-world selfcheck — 2026-09-27, the harness became a replica of the shipped world
+
+Reference census (live page, GPU Chrome :9334, tools/logs/probe-census.js via tools/cdp-run.mjs):
+  tools/logs/census-2026-09-27-work.txt      gate 694 discs / 120 seams / 25 blocks / 6 intrusions / 0 misses
+  tools/logs/census-2026-09-27-refactor.txt  gate 694 / 120 / 25 / 6 / 0   (after the src move below)
+  the two `census` arrays are LINE-IDENTICAL (694 vs 694, zero differing rows), so the props.js/main.js
+  move of the site-wall predicate shipped no disc change.
+
+Two disagreements were open against work.txt, both measured on the harness, not on the world:
+
+  1. `watch:deck|-16.000|-17.000|9.000` read live-only.
+     Root cause: offline-world.mjs dropped every collider with a `floor` while the probe keeps them and
+     labels them (probe-census.js:6, `c.floor === undefined ? 'solid' : 'floor'`). The two sides were not
+     the same population, so the diff measured the harness. Fixed by using the probe's test verbatim.
+
+  2. `samples:site6#0..3`, `site7#0..1`, `site8#0..3` — ten discs — read harness-only.
+     Root cause: those are the three deliberately buried mineral sites (`masked = si >= 6`,
+     props.js:2800). main.js:274 dresses them at boot and `syncSiteWall` (main.js:777) splices a buried
+     site's discs OUT of `base.colliders`, the list the solver and the probe read. The harness stopped at
+     the build, so it still carried ten walls that the shipped page does not: an invisible wall, which is
+     exactly the defect the census exists to catch.
+     Fixed by reproducing boot's membership step in buildOfflineWorld(), after the scatter has been
+     pushed (live order: buildBase → regrade → createRocks → createStones → dressSample), and reaching it
+     through `base.siteWallUp`, so the rule has one host.
+
+  The predicate moved: main.js:766-771 now forwards to `base.siteK`/`base.siteWallUp`, defined in
+  props.js beside the ledger whose numbers they read (props.js:3600-3615, exported at the return object).
+  A copy on either side of that line would be a second host the offline census cannot see.
+
+Results (all on tools/logs/census-2026-09-27-work.txt unless stated):
+
+  node tools/offline-world.mjs --selfcheck …            SELFCHK_RC=0
+    {colliders:694, censusLines:694, discs:694, censusDiscs:694, onlyLive:0, onlyMine:0}
+  node tools/offline-world.mjs --selfcheck …refactor.txt  SELFCHK_RC=0   (same numbers)
+  stub health from the same runs: canvas 14, ctx calls 8543, pixelsWritten 2, glbReads 62, imageLoads 211
+
+Polarity controls — a mutation must go red, and it must name the rows:
+
+  A) terrain.regrade() removed from the build (tools/scratch-mut-a.mjs, throwaway copy)
+     SELFCHK_RC=2  {colliders:693, onlyLive:25, onlyMine:24}
+     first rows: scatter:rock#18|97.200|42.620|1.060 and four siblings — the boulders re-seat off the
+     surveyed ground, so the survey is load-bearing for the census, not decoration.
+  B) boot's site-wall membership skipped (tools/scratch-mut-b.mjs)
+     SELFCHK_RC=2  {colliders:704, onlyLive:0, onlyMine:10} — the ten buried-site discs, by name.
+  False-positive control: the unmutated harness on both reference files is green with 694 = 694 = 694
+  (colliders, discs counted, census lines), so the ruler is not red on a clean build.

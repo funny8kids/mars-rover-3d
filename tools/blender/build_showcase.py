@@ -19,10 +19,29 @@
 #   - teleport pad keeps an emissive material NAMED "pad_glow".
 #   - arch keeps "rover_dark" on the stone parts (props.js recolors them).
 # ============================================================================
-import bpy, bmesh, math, os
+import bpy, bmesh, math, os, time
+# Same reason as build_heroes.py: this file's ball()/rockblob() are another host of the
+# uv-sphere / ico-sphere emitters whose face order is not repeatable across processes, and the
+# glTF exporter writes triangle indices in that order (#95).
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from rsbkit import canon_polys
 from mathutils import Vector, Matrix, Euler
+# Reproducibility guard, same measurement and mechanism as rsbkit.RSBKIT_REPIN:
+# two plain runs of this builder differ by 1-ULP TEXCOORD bytes unless str-hash
+# iteration is pinned, and the seed must be set before the interpreter starts —
+# so repin and re-exec blender once with the same command line. The *_REPIN line
+# is what says a run did that.
+if os.environ.get("PYTHONHASHSEED") != "0":
+    os.environ["PYTHONHASHSEED"] = "0"
+    print("SHOWCASE_REPIN re-exec'ing under PYTHONHASHSEED=0: %s" % " ".join(__import__("sys").argv))
+    import sys as _sys
+    _sys.stdout.flush()
+    os.execv(bpy.app.binary_path, list(__import__("sys").argv))
 
-OUT = "/tmp/rsb_stage"
+
+# RSB_OUT redirects verification runs; the default staging dir is unchanged.
+OUT = os.environ.get("RSB_OUT") or "/tmp/rsb_stage"
 os.makedirs(OUT, exist_ok=True)
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
@@ -209,6 +228,7 @@ def ball(name, r, loc, m, segs=20, par=None):
                                          ring_count=segs // 2 + 2)
     o = act(bpy.context.object)
     o.name = name
+    canon_polys(o)   # before shading bakes custom normals the rebuild would drop
     bpy.ops.object.shade_smooth()
     o.data.materials.append(m)
     parent(o, par)
@@ -1410,23 +1430,65 @@ def export(root, fname):
     for o in [root] + list(root.children_recursive):
         if o.type == 'MESH':
             fix_slots(o)
+    # Exit-code contract, same shape as rsbkit.export() (audit of the other builders):
+    # the operator can raise or return {'CANCELLED'} and leave an old file at the path
+    # while blender --background still quits 0. Status, size and freshness all have to
+    # agree before "EXPORTED" is allowed to print.
+    #   SHOWCASE_EXPORT_FAILED  asset=... exporter_rc=... reason=raised|missing|empty|stale
+    path = os.path.join(OUT, fname)
+    t_start = time.time() - 2.0
     bpy.ops.object.select_all(action='DESELECT')
     root.select_set(True)
     for o in root.children_recursive:
         if o.type in {'MESH', 'EMPTY'}:
             o.select_set(True)
-    path = os.path.join(OUT, fname)
-    bpy.ops.export_scene.gltf(filepath=path, export_format='GLB',
-                              use_selection=True, export_yup=True,
-                              export_apply=True)
-    print("EXPORTED %s  tris=%d" % (fname, tri_count(root)))
+    rc, reason = None, ""
+    try:
+        rc = bpy.ops.export_scene.gltf(filepath=path, export_format='GLB',
+                                       use_selection=True, export_yup=True,
+                                       export_apply=True)
+    except BaseException as e:
+        reason = "raised %s" % type(e).__name__
+    size, fresh = -1, False
+    if not reason:
+        try:
+            size = os.path.getsize(path)
+            fresh = os.path.getmtime(path) >= t_start
+        except OSError:
+            reason = "missing"
+    if reason or rc != {'FINISHED'} or size <= 0 or not fresh:
+        if not reason:
+            reason = "empty" if size <= 0 else "stale"
+        print("SHOWCASE_EXPORT_FAILED asset=%s exporter_rc=%s reason=%s file=%s bytes=%d fresh=%s"
+              % (fname, sorted(rc) if isinstance(rc, (set, frozenset)) else rc,
+                 reason, path, size, fresh))
+        raise SystemExit(1)
+    print("EXPORTED %s  bytes=%d tris=%d" % (fname, size, tri_count(root)))
 
 if __name__ == "__main__":
+    # SHOWCASE_FAILED names a builder stage raising (blender would otherwise leave rc=0
+    # with no SHOWCASE_DONE); SHOWCASE_INCOMPLETE reconciles the run against the disc.
+    wanted = ["rover.glb", "teleport_pad.glb", "arch.glb", "rocks.glb", "crystal.glb"]
+    failed = []
     for fn, fname in [(build_rover, "rover.glb"),
                       (build_teleport, "teleport_pad.glb"),
                       (build_arch, "arch.glb"),
                       (build_rocks, "rocks.glb"),
                       (build_crystal, "crystal.glb")]:
-        r = fn()
-        export(r, fname)
+        try:
+            r = fn()
+            export(r, fname)
+        except SystemExit:
+            raise
+        except BaseException as e:
+            import traceback
+            traceback.print_exc()
+            print("SHOWCASE_FAILED asset=%s stage raised: %s" % (fname, e))
+            failed.append(fname)
+    nofile = [f for f in wanted
+              if not os.path.isfile(os.path.join(OUT, f)) or os.path.getsize(os.path.join(OUT, f)) <= 0]
+    if failed or nofile:
+        print("SHOWCASE_INCOMPLETE built %d/%d crashed=%s no glb on disk=%s"
+              % (len(wanted) - len(failed), len(wanted), failed, nofile))
+        raise SystemExit(1)
     print("SHOWCASE_DONE")

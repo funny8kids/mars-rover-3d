@@ -1,0 +1,5 @@
+REPRO_PAIR run=1 rc=0 27.0s bytes=45432 sha256=c85fe2269cf1c9d6a8e4e9b13bc619a0365b49cddb9d2fa27019eca7c08db857
+REPRO_PAIR run=2 rc=0 25.8s bytes=45432 sha256=c85fe2269cf1c9d6a8e4e9b13bc619a0365b49cddb9d2fa27019eca7c08db857
+REPRO_PAIR scratch=/tmp/rsb-repro-j4e_m5vv
+REPRO_PAIR_IDENTICAL run1.glb
+PAIR_RC=0

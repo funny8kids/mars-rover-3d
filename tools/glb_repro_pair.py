@@ -78,7 +78,13 @@ def compare(p1, p2):
     json_equal = c1.get(0x4E4F534A) == c2.get(0x4E4F534A)
     b1, b2 = c1.get(0x004E4942, b''), c2.get(0x004E4942, b'')
     if not json_equal:
-        return json_equal, Counter({'json': 1}), 0
+        # The key shape must match the per-buffer branch's 3-tuple, because every caller
+        # unpacks `(typ, target, ct)`. It used to be the bare string 'json', which made the
+        # printer raise `ValueError: too many values to unpack` on exactly the most severe
+        # class this tool exists to report: a structure difference (measured 2026-09-27 on
+        # build_showcase's rover.glb — the drift that should have printed JSON_DRIFT killed
+        # the tool instead, and the run's verdict was lost with it).
+        return json_equal, Counter([('JSON', None, None)]), 0
     j = json.loads(c1[0x4E4F534A])
     per = Counter()
     ulp = 0
@@ -146,6 +152,10 @@ def main():
     json_equal, per, ulp = compare(kept[0], kept[1])
     print('REPRO_PAIR json_equal=%s float_ulp_max=%d' % (json_equal, ulp))
     for (typ, target, ct), n in per.most_common(12):
+        if typ == 'JSON':
+            print('REPRO_PAIR   JSON      the glTF JSON chunk itself differs (nodes, accessors, '
+                  'materials or names)')
+            continue
         kind = 'INDEX' if target == ELEMENT_BUFFER else 'ATTRIBUTE'
         print('REPRO_PAIR   %-9s %-5s compType=%d target=%s differing_bytes=%d'
               % (kind, typ, ct, target, n))

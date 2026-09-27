@@ -1,0 +1,7 @@
+REPRO_PAIR run=1 rc=0 5.0s bytes=372152 sha256=70ae6a8f3a2c2c320cde7657199d56059f95caba02d274ce7646c11312f575c6
+REPRO_PAIR run=2 rc=0 5.3s bytes=372152 sha256=96e087a40e62c9a91a8884efdd3c34bb63cafa7935875e893a2a25e4002b2aec
+REPRO_PAIR scratch=/tmp/rsb-repro-iprkh54i
+REPRO_PAIR json_equal=True float_ulp_max=2
+REPRO_PAIR   ATTRIBUTE VEC2  compType=5126 target=34962 differing_bytes=14
+REPRO_PAIR_FLOAT_DRIFT indices identical; only float attributes move (14 bytes, <=2 ULP)
+PAIR_RC=3

@@ -2263,10 +2263,19 @@ function update(dt) {
   // with 100 % of it hueless, and the paving's seams, colour and texture were gone under a flat white
   // sheet. Widening the cone made it worse (3.8 %, more area lit), softening the penumbra did nothing
   // (3.2 %); only the falloff law moved it — at decay 1.05 this intensity blows 7.7 % of the channel
-  // and empties the bottom two histogram buckets entirely, at decay 2 the same frame is 0.4 %. The
-  // driving image is not what pays for it: from the chase camera the two decays are 0.8 % vs 1.0 %
-  // clip and 408 vs 465 per-mille mid-band. The constants are the old ones times 90/46, so the
-  // night/storm mix ratio is untouched.
+  // and empties the bottom two histogram buckets entirely, at decay 2 the same frame is 0.4 %.
+  // The constants are the old ones times 90/46, so the night/storm mix ratio is untouched.
+  // The 90 is now settled off the driving vantage in the night the player sees (nightF=1, storm
+  // cleared, moon key i=1.7, sunAt:null — the old chase pair "0.8 % vs 1.0 %" was a pre-scale A/B
+  // at unknown sky and is void). Chase cam off the game's own rig at spawn: clip 0.1 %, burn 0
+  // (the blown pixels are the red tail lamps, hue-carrying). Worst case — eye 1.55 m, 3 m ahead
+  // of the nose looking down the beam — reads clip 0.3–0.5 %, and tools/clip-attribution-probe.mjs
+  // names 56/56 blown cells `light_gate_channel` at 12 m, none of them the beam. The falsification
+  // that closes it: the same pose driven through spots 0 / 90 / 135 / 180 (2× the shipped value)
+  // reads clip 0.3 / 0.4 / 0.3 / 0.4 — the blown band is invariant in this constant, so the beam
+  // owns zero pure-white pixels with at least 2× margin — while bin1 moves 526 → 580 ‰ as the
+  // spots go to zero, i.e. the beam is what lifts the near ground out of black and 90 is not
+  // decoration. Frames opened and read: n75_drive_chase / n75_drive_road / n75_lad_0 / n75_lad_180.
   if (spots) for (const sp of spots) sp.intensity = st.nightF * 90 + st.stormF * 43;
   // the lens quads must follow the beam: at full emissive in clear daylight they bloom the whole deck
   rover.lampMat.emissiveIntensity = 0.18 + Math.max(st.nightF, st.stormF * 0.7) * 1.6;

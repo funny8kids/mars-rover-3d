@@ -1,0 +1,181 @@
+# launch_tower's datum: who carries the -2.535 m (#95), measured 2026-09-27
+
+What is being decided. `tools/blender/build_base_v2.py` snaps every asset's lowest point onto Z=0, and
+`ASSET_DATUM_Z` gives one asset an exception at -2.535 so a headless rebuild lands where the file in
+`public/assets/` already sits. The claim to test: does the constant, rather than a post-hoc translate,
+carry the library's datum? Three files answer it.
+
+  A  public/assets/launch_tower.glb                  the shipped asset, mtime 2026-09-25 06:36
+  B  /tmp/rsb95-datum-launch_tower.glb   rebuild with ASSET_DATUM_Z = {"launch_tower": -2.535}
+  C  /tmp/rsb95-nohi-launch_tower.glb     same script with the override emptied — the control
+
+Source bytes each build ran on — B was rebuilt after the comment block above the constant was rewritten,
+because a measurement is only worth the exact text that produced it:
+
+  build_base_v2.py as B ran        ea745cc8564eb9e4bce5c2d1378bfe9057b6c24db314f667ab723cb54bb519f9
+  /tmp/rsb95-ctl/bbv_nohi.py as C  4203461de1671ab2713c7eefac5b4922d1c1a429cfb56061eefea82811b9aa2e   (= the same file with `ASSET_DATUM_Z = {}`)
+
+Both builds: one headless run each, ~8 min apiece, `EXPORTED launch_tower.glb -> /tmp/rsb_stage3/...`.
+
+  blender --background --python tools/blender/build_base_v2.py -- launch_tower
+  blender --background --python /tmp/rsb95-ctl/bbv_nohi.py -- launch_tower
+
+The ruler is tools/glb_datum_probe.py, which walks the node hierarchy and reports FILE space: a POSITION
+accessor on its own is not the asset's shape (its header records what measuring the wrong axis first
+printed).
+
+
+================================================================================
+BUILT — B (override in place), rc=0
+================================================================================
+
+   datum shift applied: dx=+0.459 dy=+0.332 dz=-0.000 (target z0=-2.535)
+EXPORTED launch_tower.glb       -> /tmp/rsb_stage3/launch_tower.glb (4710636 bytes)
+BASE_V2_DONE 1/1 ['launch_tower']
+
+================================================================================
+BUILT — C (override removed), rc=0
+================================================================================
+
+   datum shift applied: dx=+0.459 dy=+0.332 dz=+2.535 (target z0=0)
+EXPORTED launch_tower.glb       -> /tmp/rsb_stage3/launch_tower.glb (4710656 bytes)
+BASE_V2_DONE 1/1 ['launch_tower']
+
+================================================================================
+MEASURED — file space of each file
+================================================================================
+
+--- public/assets/launch_tower.glb (rc=0)
+public/assets/launch_tower.glb  4710836 bytes  sha256 0d7f53f38a689268
+   file-space Y = [-2.535 .. +51.820]  height 54.355  over 129456 verts / 18 primitives
+     lowest  /launch_tower/tower_body#2                           n=10016   y=[-2.535 .. +49.002]
+     lowest  /launch_tower/tower_body#10                          n=574     y=[+0.340 .. +6.250]
+     lowest  /launch_tower/tower_body#17                          n=26800   y=[+0.415 .. +51.820]
+     lowest  /launch_tower/tower_body#4                           n=192     y=[+0.490 .. +0.710]
+     top     /launch_tower/tower_body#17                          n=26800   y=[+0.415 .. +51.820]
+     top     /launch_tower/tower_body#5                           n=33412   y=[+1.000 .. +51.775]
+   file-space AABB = 20.719 x 54.355 x 6.935 m  (x, y, z; y is up)
+   nodes carrying an offset: tower_body=[+0.459 +0.000 -0.332]
+DATUM_PROBE_OK
+
+--- /tmp/rsb95-datum-launch_tower.glb (rc=0)
+/tmp/rsb95-datum-launch_tower.glb  4710636 bytes  sha256 b395d8876a04d864
+   file-space Y = [-2.535 .. +51.820]  height 54.355  over 129450 verts / 18 primitives
+     lowest  /launch_tower/tower_body#2                           n=10016   y=[-2.535 .. +49.002]
+     lowest  /launch_tower/tower_body#10                          n=574     y=[+0.340 .. +6.250]
+     lowest  /launch_tower/tower_body#17                          n=26794   y=[+0.415 .. +51.820]
+     lowest  /launch_tower/tower_body#4                           n=192     y=[+0.490 .. +0.710]
+     top     /launch_tower/tower_body#17                          n=26794   y=[+0.415 .. +51.820]
+     top     /launch_tower/tower_body#5                           n=33412   y=[+1.000 .. +51.775]
+   file-space AABB = 20.719 x 54.355 x 6.935 m  (x, y, z; y is up)
+   nodes carrying an offset: tower_body=[+0.459 +0.000 -0.332]
+DATUM_PROBE_OK
+
+--- /tmp/rsb95-nohi-launch_tower.glb (rc=0)
+/tmp/rsb95-nohi-launch_tower.glb  4710656 bytes  sha256 1d06902e321118c3
+   file-space Y = [+0.000 .. +54.355]  height 54.355  over 129450 verts / 18 primitives
+     lowest  /launch_tower/tower_body#2                           n=10016   y=[+0.000 .. +51.537]
+     lowest  /launch_tower/tower_body#10                          n=574     y=[+2.875 .. +8.785]
+     lowest  /launch_tower/tower_body#17                          n=26794   y=[+2.950 .. +54.355]
+     lowest  /launch_tower/tower_body#4                           n=192     y=[+3.025 .. +3.245]
+     top     /launch_tower/tower_body#17                          n=26794   y=[+2.950 .. +54.355]
+     top     /launch_tower/tower_body#5                           n=33412   y=[+3.535 .. +54.310]
+   file-space AABB = 20.719 x 54.355 x 6.935 m  (x, y, z; y is up)
+   nodes carrying an offset: tower_body=[+0.459 +2.535 -0.332]
+DATUM_PROBE_OK
+
+================================================================================
+PAIRED
+================================================================================
+
+--- C vs B — the polarity: what the constant actually does (rc=0)
+PAIR /tmp/rsb95-nohi-launch_tower.glb vs /tmp/rsb95-datum-launch_tower.glb
+   datum (lowest y) delta = -2.535000 m
+   top (highest y)  delta = -2.535000 m
+   verts delta = +0  (a content difference, not a datum one)
+   AABB shift = +0.0000 x -2.5350 x +0.0000 m
+   AABB size  = +0.0000 x +0.0000 x +0.0000 m
+   DATUM_SAME=False
+   content over 18 shared primitives: 0 verts identical to within 1e-6 m, 129450 moved
+   largest move = 2.535e+00 m at /launch_tower/tower_body#0[0]
+   multiset differs in /launch_tower/tower_body#0: +27928 verts unique to the first file, +27928 to the second
+   multiset differs in /launch_tower/tower_body#1: +10860 verts unique to the first file, +10860 to the second
+   multiset differs in /launch_tower/tower_body#2: +10016 verts unique to the first file, +10016 to the second
+   multiset differs in /launch_tower/tower_body#3: +156 verts unique to the first file, +156 to the second
+   multiset differs in /launch_tower/tower_body#4: +192 verts unique to the first file, +192 to the second
+   multiset differs in /launch_tower/tower_body#5: +33412 verts unique to the first file, +33412 to the second
+   multiset differs in /launch_tower/tower_body#6: +5660 verts unique to the first file, +5660 to the second
+   multiset differs in /launch_tower/tower_body#7: +1642 verts unique to the first file, +1642 to the second
+   multiset differs in /launch_tower/tower_body#8: +524 verts unique to the first file, +524 to the second
+   multiset differs in /launch_tower/tower_body#9: +144 verts unique to the first file, +144 to the second
+   multiset differs in /launch_tower/tower_body#10: +574 verts unique to the first file, +574 to the second
+   multiset differs in /launch_tower/tower_body#11: +822 verts unique to the first file, +822 to the second
+   multiset differs in /launch_tower/tower_body#12: +1560 verts unique to the first file, +1560 to the second
+   multiset differs in /launch_tower/tower_body#13: +40 verts unique to the first file, +40 to the second
+   multiset differs in /launch_tower/tower_body#14: +384 verts unique to the first file, +384 to the second
+   multiset differs in /launch_tower/tower_body#15: +366 verts unique to the first file, +366 to the second
+   multiset differs in /launch_tower/tower_body#16: +8376 verts unique to the first file, +8376 to the second
+   multiset differs in /launch_tower/tower_body#17: +26794 verts unique to the first file, +26794 to the second
+   as multisets: 0/18 shared primitives hold exactly the same vertex set
+   verts 129450 vs 129450
+   CONTENT_IDENTICAL=False
+DATUM_PROBE_OK
+
+--- A vs B — the claim: the rebuild lands on the library (rc=0)
+PAIR public/assets/launch_tower.glb vs /tmp/rsb95-datum-launch_tower.glb
+   datum (lowest y) delta = +0.000000 m
+   top (highest y)  delta = +0.000000 m
+   verts delta = -6  (a content difference, not a datum one)
+   AABB shift = +0.0000 x +0.0000 x +0.0000 m
+   AABB size  = +0.0000 x +0.0000 x +0.0000 m
+   DATUM_SAME=True
+   primitive /launch_tower/tower_body#17: 26800 verts vs 26794 — not compared vertex by vertex
+   content over 18 shared primitives: 33675 verts identical to within 1e-6 m, 95775 moved
+   largest move = 4.835e+01 m at /launch_tower/tower_body#2[9635]
+   multiset differs in /launch_tower/tower_body#5: +386 verts unique to the first file, +386 to the second
+   multiset differs in /launch_tower/tower_body#16: +60 verts unique to the first file, +60 to the second
+   multiset differs in /launch_tower/tower_body#17: +439 verts unique to the first file, +433 to the second
+   as multisets: 15/18 shared primitives hold exactly the same vertex set
+   verts 129456 vs 129450
+   CONTENT_IDENTICAL=False
+DATUM_PROBE_OK
+
+================================================================================
+WHAT THE THREE FILES SAY
+================================================================================
+
+The constant carries the datum. With ASSET_DATUM_Z = {"launch_tower": -2.535} the rebuild (B) matches the
+in-library file's own structure — tower_body at y=+0.000, the -2.535 living in the vertices — while the
+same script with the override emptied (C) lands 2.535 m higher and puts the difference on the node. That
+split is exactly what tools/glb_set_node_y.py used to undo by hand after an export, which is why a rebuild
+and the shipped asset were not interchangeable.
+
+  A vs B:     datum (lowest y) delta = +0.000000 m
+              top (highest y)  delta = +0.000000 m
+              AABB size  = +0.0000 x +0.0000 x +0.0000 m
+  C vs B:     verts delta = +0  (a content difference, not a datum one)
+              AABB shift = +0.0000 x -2.5350 x +0.0000 m
+
+Content is a separate matter and it stays open. B and A agree on most primitives as vertex SETS and not
+on three of them, for a net 6 verts and 200 bytes on the shipped side:
+
+  multiset differs in /launch_tower/tower_body#5: +386 verts unique to the first file, +386 to the second
+  multiset differs in /launch_tower/tower_body#16: +60 verts unique to the first file, +60 to the second
+  multiset differs in /launch_tower/tower_body#17: +439 verts unique to the first file, +433 to the second
+  as multisets: 15/18 shared primitives hold exactly the same vertex set
+  verts 129456 vs 129450
+
+So re-exporting launch_tower is a content change, not a byte-for-byte replay of the library: the tower's
+silhouette and the pad colliders want a look before public/assets/launch_tower.glb is replaced. That is
+the remaining half of #95.
+
+One more reading the same pair gives for free: the two builds of THIS source (the first copied to
+/tmp as 462174c1…, the run quoted above as b395d887…) differ in bytes while agreeing on file-space
+bounds to 0.000000 m and on the per-primitive vertex counts. That is the residual float drift commit
+c9ac99c left deliberately in place after the index-order drift was pinned; it is why reproducibility
+here is stated as bounds and counts, not as a file hash.
+
+Reproduce:
+
+  blender --background --python tools/blender/build_base_v2.py -- launch_tower
+  python3 tools/glb_datum_probe.py public/assets/launch_tower.glb /tmp/rsb_stage3/launch_tower.glb

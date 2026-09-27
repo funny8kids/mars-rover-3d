@@ -1350,22 +1350,27 @@ def cleanup(o):
     return o
 
 
-def snap_datum(root):
+def snap_datum(root, z0=0.0):
     """Guarantee the runtime contract: XY AABB centred on the origin and the
-    lowest point exactly on Z=0. Prints the shift so nothing is silent."""
+    lowest point exactly on Z=z0. The default z0 keeps every asset on the
+    base-at-Z=0 contract from the header; ASSET_DATUM_Z below carries the one
+    documented exception, so the datum a rebuild lands on is authored here
+    rather than bolted onto the exported GLB afterwards. Prints the shift so
+    nothing is silent."""
     bpy.context.view_layer.update()
     mn, mx = extents(root)
     dx = -(mn.x + mx.x) / 2.0
     dy = -(mn.y + mx.y) / 2.0
-    dz = -mn.z
+    dz = z0 - mn.z
     if abs(dx) < 1e-4 and abs(dy) < 1e-4 and abs(dz) < 1e-4:
-        print("   datum: already centred, base on Z=0")
+        print("   datum: already centred, base on Z=%g" % z0)
         return (0.0, 0.0, 0.0)
     for o in root.children_recursive:
         if o.type in {'MESH', 'EMPTY'}:
             o.location = (o.location.x + dx, o.location.y + dy, o.location.z + dz)
     bpy.context.view_layer.update()
-    print("   datum shift applied: dx=%+.3f dy=%+.3f dz=%+.3f" % (dx, dy, dz))
+    print("   datum shift applied: dx=%+.3f dy=%+.3f dz=%+.3f (target z0=%g)"
+          % (dx, dy, dz, z0))
     return (dx, dy, dz)
 
 
@@ -4030,6 +4035,29 @@ def habitat_dome():
 ORDER = ["lamp", "crystal", "cryo_tank", "lander", "greenhouse",
          "habitat_dome", "launch_tower"]
 
+# Per-asset datum overrides for snap_datum (default 0.0 = base on Z=0).
+# launch_tower is the one documented exception, and every number below is a reading of
+# tools/logs/datum-launch-tower-2026-09-27.txt. Ruler: tools/glb_datum_probe.py, which walks the node
+# hierarchy and reports FILE space — a POSITION accessor on its own is not the asset's shape.
+#
+# The in-library public/assets/launch_tower.glb spans Y[-2.535 .. +51.820], height 54.355, with its
+# `tower_body` node at y=+0.000: the datum lives in the vertices. This script's own geometry reaches the
+# same height, so the only question is who carries the -2.535. With the override a fresh build lands on
+# the library to 0.000000 m at both ends and 0.0000 m in box size; with it emptied the same script lands
+# on Y[+0.000 .. +54.355] and moves the gap onto the node (tower_body y=+2.535) — that split is what
+# tools/glb_set_node_y.py used to undo after the export, and why a rebuild was not interchangeable with
+# the shipped file.
+#
+# The value is the placement datum props.js reads, not a decoration: the tower's origin is the graded pad
+# surface and the flame duct plus the footing stack reach below it (props.js:1901-1905 has the duct alone
+# at 1.39 m deep; the lowest primitive, tower_body#2, measures -2.535).
+#
+# Content is a separate finding and it is still open: the shipped mesh matches a rebuild on 15 of its 18
+# primitives as vertex SETS, and not on tower_body#5, #16 and #17 (+/-386, +/-60, 439 vs 433 verts), a net
+# +6 verts and +200 bytes. So re-exporting launch_tower is a content change, not a byte-for-byte replay,
+# and it wants a look at the silhouette and the pad colliders before it ships.
+ASSET_DATUM_Z = {"launch_tower": -2.535}
+
 if __name__ == "__main__":
     # No silent skips (audit 2026-09-26, task #95/2): an ORDER entry or a
     # CLI-requested asset without a builder is a NAMED build failure, not a
@@ -4066,7 +4094,7 @@ if __name__ == "__main__":
             for o in root.children_recursive:
                 if o.type == 'MESH':
                     cleanup(o)
-            snap_datum(root)
+            snap_datum(root, ASSET_DATUM_Z.get(nm, 0.0))
             audit(nm, root)
             export(root, nm + ".glb", nm)
         except SystemExit:

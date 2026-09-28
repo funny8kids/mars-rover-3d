@@ -135,10 +135,11 @@ export class GameAudio {
     this.engNoiseG.gain.setTargetAtTime(0.008 + speed01 * 0.03, t, 0.14);
     // the pad is the room tone: fuller at night, hushed in a storm
     this.padG.gain.setTargetAtTime(0.04 + nightF * 0.035 - stormF * 0.02, t, 0.5);
-    // Wind pressure, not weather mood. `windLoad` is the front's standing pressure at the rover
-    // (wind speed × the dust actually reaching it), so the roar climbs through `watch` — nine
-    // m/s of air with clean sky and zero dust — and that is the warning you hear before the wall
-    // is on top of you. `stormF` on its own could only say "dust is here", one second too late.
+    // Wind pressure, not weather mood. `windLoad` arrives as the dynamic pressure of the air at the
+    // rover — (v/26)² with up to +33 % when dust is standing on it — so the roar climbs through
+    // `watch` (nine m/s of air, clean sky, zero dust), and that is the warning you hear before the
+    // wall is on top of you. A dust-scaled driver could only ever say "dust is here", one second too
+    // late; the reading that pinned the old one is tools/logs/storm-audio-2026-09-29-005906.raw A5.
     const wLoad = windLoad || 0, wGust = windGust || 0;
     const breathe = 0.72 + 0.28 * Math.sin(t * 1.31) + 0.16 * Math.sin(t * 0.53 + 1.7);
     this.windG.gain.setTargetAtTime(0.012 + wLoad * (0.055 + 0.105 * wGust) * breathe + nightF * 0.012 + speed01 * 0.012, t, 0.25);

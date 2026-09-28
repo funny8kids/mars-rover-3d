@@ -39,6 +39,10 @@ const audio = new GameAudio();
 
 let quality, qKey, post, fx, env, sky, terrain, base, rover, phys, chase, skids;
 let stormField = null, stormWall = null, lastWind = null, rimVeil = null, shadowBudget = null;
+// The exact argument the last frame handed to the audio engine. Instrument surface only: `windLoad`
+// is built inline from a value that lives inside the frame closure, so a probe cannot re-derive it
+// from `env`/`storm` accessors, and without the input the output ramp is unattributable.
+let audioIn = null;
 const _viewDir = new THREE.Vector3();
 // The wall's own two poles: dust in shadow is a maroon screen, dust backlit by the sun blazes.
 // The shadow pole has to be *far* darker than the sky the wall stands against. Measured 2026-09-22:
@@ -2588,12 +2592,20 @@ function update(dt) {
   // Shadow casters are budgeted against the lens, not the rover: the picture is what has to pay.
   if (shadowBudget) shadowBudget.update(camera.position);
 
-  // audio — `windLoad` is the pressure the front is standing on right now: wind speed × the dust
-  // fraction at the rover. It rises through `watch` before a single mote arrives, which is the
-  // warning you hear with the radio off.
-  audio.update(dt, {
+  // audio — `windLoad` is the dynamic pressure the air is standing on the rover: (v/26)², with up to
+  // +33 % when dust is actually on it. So a clean-sky `watch` (9 m/s) and the arriving `front` (23 m/s)
+  // both roar above calm before a single mote arrives, which is the warning you hear with the radio
+  // off. It used to be `wind speed × stormF` — structurally 0 while the sky is clear, i.e. the exact
+  // opposite of this promise. The reading that caught it: wind01 0.346/0.885 with wg pinned at the
+  // idle 0.012 (tools/logs/storm-audio-2026-09-29-005906.raw, row A5).
+  const wPress = Math.min(1, stormField.speed / 26);
+  audio.update(dt, (audioIn = {
     speed01: Math.min(1, phys.speed / 28), rpm: 0.3 + phys.enginePower * 0.7, power: phys.enginePower,
-    stormF, windLoad: Math.min(1, stormField.speed / 26) * _wHere, windGust: wind.gust,
+    stormF, windLoad: wPress * wPress * (0.75 + 0.25 * _wHere), windGust: wind.gust,
+    // Two terms the audio driver never used to separate: the air's own pressure and the dust that
+    // was standing on the rover. Kept as instrument fields so a probe can tell "wind rose" from
+    // "dust arrived" instead of reading them as one number.
+    wind01: wPress, dustHere: _wHere,
     nightF: st.nightF, camPos: camera.position,
     camFwd: camera.getWorldDirection(tmpV.set(0, 0, 1)), camUp: camera.up,
     roverPos: rover.group.position, leakActive: !leakFixed,
@@ -2605,7 +2617,7 @@ function update(dt) {
     launchAlt: launch.phase === 'flight' ? launch.audioAlt : 0,
     launchProx: launch.audioProx,
     padPos: base.launchPadPos, blast: stormPlay.lance ? 1 : 0,
-  });
+  }));
 
   // post uniforms
   const fu = post.final.uniforms;
@@ -5146,7 +5158,11 @@ window.__RSB = {
       terrain: { maxSlopeDeg: Math.round(Math.atan(maxSlope) * 180 / Math.PI), maxAt,
         steepCells: steep, steepList, bumpCount: bumpList.length, bumps: bumpList.slice(0, 12) } };
   },
-  audio: () => ({ ready: audio.ready, state: audio.ctx?.state || 'none', lp: Math.round(audio.lowpass?.frequency.value || 0), lvl: +(audio.level?.() || 0).toFixed(3), eng: +(audio.engineG?.gain.value || 0).toFixed(3) }),
+  audio: () => ({ ready: audio.ready, state: audio.ctx?.state || 'none', lp: Math.round(audio.lowpass?.frequency.value || 0), lvl: +(audio.level?.() || 0).toFixed(3), eng: +(audio.engineG?.gain.value || 0).toFixed(3),
+    // The wind voice's own knobs, as the audio graph currently holds them (not the target it was
+    // handed) — `.value` is the proof the ramp actually ran, which requires a *running* context.
+    wg: +(audio.windG?.gain.value || 0).toFixed(5), wf: Math.round(audio.windF?.frequency.value || 0), wq: +(audio.windF?.Q.value || 0).toFixed(3), pad: +(audio.padG?.gain.value || 0).toFixed(5), muted: !!audio.muted }),
+  audioIn: () => audioIn,
   audioCtx: () => audio.ctx,
   hold: (v) => { input.inp.keys[v ? 'add' : 'delete']('KeyE'); },
   photo: (v) => togglePhoto(v),

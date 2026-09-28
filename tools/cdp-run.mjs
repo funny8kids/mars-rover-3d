@@ -56,6 +56,12 @@ for (;;) {
     // A bare `NOT_READY` told the reader nothing about which clause failed, so the gate returns the
     // reason it stopped at and the timeout prints it: the difference between "the page is slow" and
     // "the gate is wrong" is only knowable from the page's own answer.
+    // A probe whose first line is `if(!R.state.started)` used to get answered "READY" and then bail:
+    // `applyQuality()` (which creates `stormField`, so this gate's own last ingredient) runs at the top
+    // of the START handler, while `started = true` is set only after it — past a `raf()` and an audio
+    // init that may wait out its 2 s race (main.js:2791-2802). Measured 2026-09-28: `storm-loop-probe.js`
+    // filed `STORM_LOOPS_UNTRUSTED the page never started` on a page that read `started:true`, 62 FPS and
+    // a live HUD 20 s later. So the gate waits for the consequence, not for one of its ingredients.
     expression: `(function(){const R=window.__RSB;
       if(!R)return 'no __RSB at '+location.href;
       if(typeof R.place!=='function')return 'no .place ('+typeof R.place+')';
@@ -66,6 +72,7 @@ for (;;) {
       if(typeof R.stormRef!=='function')return 'no .stormRef ('+typeof R.stormRef+')';
       const s=R.stormRef();
       if(!s)return 'stormRef() is '+String(s);
+      if(!R.state.started)return 'render pipeline up but sim not started';
       return location.href})()`,
     returnByValue: true,
   });

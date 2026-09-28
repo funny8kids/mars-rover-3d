@@ -1,0 +1,6 @@
+SIGN_PANELS {"matched":1,"inFrameDistanceBand":1}
+baseline                 {"clip":0.86,"px":138,"cols":[3,0,0,9,113,13,0,0],"rows":[73,18,46,1,0]}
+signs hidden             {"clip":0.85,"px":136,"cols":[3,0,0,9,111,13,0,0],"rows":[71,18,46,1,0]}
+after restore            {"clip":0.84,"px":135,"cols":[3,0,0,9,110,13,0,0],"rows":[70,18,46,1,0]}
+view rotated 90deg       {"clip":0,"px":0,"cols":[0,0,0,0,0,0,0,0],"rows":[0,0,0,0,0]}
+POSE at=[-63.1,2.22,-48.5] look=[-56,1.82,-43] rotated=[-57.6,1.82,-55.6]

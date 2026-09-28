@@ -28,7 +28,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const server = spawn('node', ['tools/shot-server.mjs', '/tmp/rsb-skyclip'], { stdio: 'ignore' });
 for (let i = 0; i < 40; i++) { await sleep(100); try { await fetch('http://127.0.0.1:8123/ping'); break; } catch { } }
 const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
-const page = list.find(t => t.type === 'page' && /5173/.test(t.url));
+const page = list.find(t => t.type === 'page' && t.url === url) || list.find(t => t.type === 'page');
+if (!page) { console.log('NO_PAGE_TARGET on :' + PORT); process.exit(2); }
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 let id = 0; const pending = new Map();
 const send = (m, p = {}) => new Promise((res, rej) => { const i = ++id; pending.set(i, { res, rej }); ws.send(JSON.stringify({ id: i, method: m, params: p })); });

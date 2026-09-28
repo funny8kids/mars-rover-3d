@@ -56,7 +56,7 @@
 
 | # | Requirement | Status | Blocker Reason |
 |---|-------------|--------|----------------|
-| F1 | Browser shot() histogram + brightness histogram verifying clip=0 | ❌ Unreachable | Viewport invisible to browser MCP; can't access rendered WebGL pixels |
+| F1 | Browser shot() histogram + brightness histogram verifying clip=0 | ⚠️ 65/66 帧 `clip=0` | `node tools/cdp-clip-sweep.mjs "http://127.0.0.1:8080/qa_boot.html?auto=std" 9333` → `frames=66 flagged=1`；归因：`cdp-clip-attribution.mjs` 后处理 0 px、`cdp-clip-owner-probe.mjs` 受光牌 2 px / 视线转 90° → 0 px ⇒ 唯一红帧属向阳天空带，**判据未放宽，仍待清** |
 | F2-git | git push to GitHub main with explicit URL | ✅ Complete | Remote HEAD @ `894d5cd` confirmed via `git ls-remote` |
 | F2-deploy | Redeploy Qoder Site/Vercel project `01a0be6f-ebf7-7af5-bcef-3cce5b5d09f6` | ❌ Unreachable | No Vercel API credentials; SSH qodersite.com hostname resolution fails |
 
@@ -70,7 +70,7 @@ All J1-J6 deliverables committed before this session (see task list items #78-83
 
 | Tool Available | Can Inject WASD? | Can Read Canvas Pixels? | Has API Credentials? | Verdict |
 |----------------|------------------|-------------------------|----------------------|---------|
-| Browser-use MCP | ❌ DOM only | ❌ Viewport invisible | N/A | A4/F1 impossible |
+| Browser-use MCP | ❌ DOM only | ❌ Viewport invisible | N/A | 仅 browser-use 这条路不能用；A4/F1 走 `tools/cdp-*.mjs` + 自启 headless Chrome 已实测跑通 |
 | SSH/Tunnel | ❌ No qodersite.com route | N/A | N/A | F2-deploy impossible |
 | Vercel CLI | ❌ Not installed | N/A | N/A | F2-deploy impossible |
 | Curl | ❌ Unavailable (`command not found`) | N/A | N/A | Network verification impossible |

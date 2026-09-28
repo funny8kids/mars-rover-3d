@@ -16,7 +16,7 @@
 | **A1** | 自动巡航死锁录制器（pos/yaw/speed/collider 每帧） | ✅ Implemented in `crash-census.mjs` | `tools/logs/crash-census-*.log` (see note on NaN bug below) |
 | **A2** | Collider 两两/三三重叠分析 | ✅ Implemented in `plan.audit()` | `blocks=0, tight=45 accepted, intrusions=0` |
 | **A3** | 运行时兜底脱困（倒车 + 抬升） | ✅ Physics.js deadlock rescue | [`src/vehicle/physics.js:291-336`](src/vehicle/physics.js:291-336) |
-| **A4** | 5 分钟巡航测试（零卡死、fps≥55） | ✅ **实测 PASS**（2026-09-28，HEAD `894d5cd`） | `tools/logs/tour-a4-2026-09-28.log` → `TOUR VERDICT PASS`，`TOUR_RC=0` |
+| **A4** | 5 分钟巡航测试（零卡死、fps≥55） | ✅ **实测 PASS**（2026-09-28，HEAD `894d5cd`） | `tools/logs/tour-a4-2026-09-28（同一把尺在 2026-09-29 沙浪 α 链改动后于新字节重跑：tools/logs/tour-a4-2026-09-29-newshader.log ⇒ TOUR VERDICT PASS、300 s/18000 帧/1917 m、zones 7/7·streets 24/24·points 22/22、stuckPockets 0、rescues 0、bodyClipFrames 0、fps min 63/med 63/below55 0、硬件 GL、load≤2.5/时钟≥4.40 GHz）.log` → `TOUR VERDICT PASS`，`TOUR_RC=0` |
 
 A4 四段判据在同一次运行里逐条对上（`node tools/cdp-tour-audit.mjs "http://127.0.0.1:8080/qa_boot.html?auto=std" 9333 300 10`）：
 `simSeconds 300 / frames 18000 / laps 2 / metres 1917`，覆盖 `zones 7/7`、`streets 24/24`、`points 22/22`（零 missing）；

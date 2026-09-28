@@ -5246,6 +5246,22 @@ window.__RSB = {
         +(n / (q.length / 4)).toFixed(3), +(warm / n).toFixed(3), +(cool / n).toFixed(3)];
     };
     const cast = { shadow: band(40, 104), mid: band(104, 176), lamp: band(176, 256) };
+    // 【E】1 的「色偏随高度」这一条一直没有尺子：`cast` 按**亮度**分带，而沙暴的着色器分支按**画面高度**
+    // 分带（`src/fx/post.js:106-109` 的 `low` 项：贴地暖 `vec3(1.22,0.80,0.44)`、高处灰 `vec3(0.86,0.74,0.72)`），
+    // 两者不是同一个轴——暖色贴近地面时恰好也偏暗，于是它被记进了 shadow 带，读数看起来像"暗部色偏"，
+    // 而不是"低空色偏"。所以这里按**行**切三带，用同一份 q，不额外渲染。
+    // 必须在 `shot()` 内部做：`composer.render()` 之后一旦让出 JS task，drawing buffer 就空了，
+    // 外部探针再 `drawImage` 只能拿到黑帧——那会把"没有色偏"读成一次真读数。
+    const CW = c2.width, CH = c2.height;
+    const rowBand = (y0, y1) => {
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let y = y0; y < y1; y++) for (let x = 0; x < CW; x++) {
+        const i = (y * CW + x) * 4; r += q[i]; g += q[i + 1]; b += q[i + 2]; n++;
+      }
+      const m = (r + g + b) / (3 * n);
+      return [+(r / n / m).toFixed(3), +(g / n / m).toFixed(3), +(b / n / m).toFixed(3)];
+    };
+    const heights = { sky: rowBand(0, Math.round(CH * 0.2)), mid: rowBand(Math.round(CH * 0.4), Math.round(CH * 0.6)), ground: rowBand(Math.round(CH * 0.8), CH) };
     // A lamp band can average neutral for two opposite reasons: the frame genuinely holds cyan *and*
     // amber lights that cancel out, or every one of them has been bleached to white. `cast` cannot
     // tell those apart, so this counts the second case directly — blown pixels that carry no hue at
@@ -5275,7 +5291,7 @@ window.__RSB = {
     // strongest version of it (1.82). A capture that manufactures a weave cannot be used to clear a
     // shader of one, so the QA rig writes PNG and the check measures the render.
     const r = await fetch('http://127.0.0.1:8123/' + name, { method: 'POST', body: cv.toDataURL('image/png') });
-    return { name, status: r.status, key: keyState, bins: bins.map(b => Math.round(b / 1600 * 100)), clip, burn: +(burn / (q.length / 4) * 100).toFixed(1), burnPct, cast };
+    return { name, status: r.status, key: keyState, bins: bins.map(b => Math.round(b / 1600 * 100)), clip, burn: +(burn / (q.length / 4) * 100).toFixed(1), burnPct, cast, heights };
   },
   // what is actually in front of the lens — finds blown-out emitters by screen position
   nearby: (r = 60) => {

@@ -132,8 +132,8 @@ const measure = (fovMul = 1) => evaluate(`(() => {
   const merge = (a, b) => { a.mnX = Math.min(a.mnX,b.mnX); a.mxX = Math.max(a.mxX,b.mxX);
     a.mnY = Math.min(a.mnY,b.mnY); a.mxY = Math.max(a.mxY,b.mxY); a.near = Math.min(a.near,b.near);
     a.wMnY = Math.min(a.wMnY,b.wMnY); a.wMaxY = Math.max(a.wMaxY,b.wMaxY); a.pts += b.pts; };
-  let visible = 0, subject = 0, missed = 0;
-  const byRoot = new Map(), parts = [], mats = new Set();
+  let visible = 0, subject = 0, missed = 0, named = 0;
+  const namedList = [], byRoot = new Map(), parts = [], mats = new Set();
   scene.traverse(o => {
     if (!o.isMesh || !o.visible) return;
     visible++;
@@ -143,6 +143,9 @@ const measure = (fovMul = 1) => evaluate(`(() => {
     const at = o.geometry && o.geometry.attributes && o.geometry.attributes.position;
     if (!at || !at.count) { missed++; return; }
     subject++;
+    // Naming census runs over the FULL subject set, not the parts that survive the top-6 slice, because
+    // the claim "node names cannot label a whole body" needs its own denominator to be checkable.
+    if (o.name) { named++; namedList.push(o.name); }
     hit.forEach(n => mats.add(n));
     // The ancestor path is the attribution evidence printed with every reading, so a booster-vs-ship
     // claim can be checked against the scene graph instead of argued.
@@ -192,7 +195,8 @@ const measure = (fovMul = 1) => evaluate(`(() => {
     seeds: [...g.seeds], ...acc(g.a) })).filter(g => g.hFrac !== null);
   clusters.sort((a, b) => b.aFrac - a.aFrac);
   parts.sort((a, b) => b.aFrac - a.aFrac);
-  return { err: null, fov: +fov0.toFixed(1), visible, subject, missed,
+  return { err: null, fov: +fov0.toFixed(1), visible, subject, missed, named,
+    namedList: namedList.sort(),
     mats: [...mats].sort(), clusters, parts: parts.slice(0, 6) };
 })()`);
 
@@ -235,10 +239,14 @@ for (const [off, tag, kind] of CAPTURES) {
   // filmed subject, not the largest thing in the scene, and after staging both bodies are in frame.
   const held = sub.reduce((a, b) => (b.near < a.near ? b : a));
   rows.push({ tag, off, kind, met: r.met, fov: m.fov, visible: m.visible, subjectMeshes: m.subject,
+    namedMeshes: m.named, namedList: m.namedList,
     mats: m.mats, clusters: sub, parts: m.parts, polarity, reset, hMax,
     held: held.n, hHeld: held.hFrac });
   console.log(`  ${tag}@sep+${off} MET=${r.met} [${kind}] fov=${m.fov} `
-    + `subject=${m.subject}/${m.visible} visible meshes  held=${held.n} hFrac=${(held.hFrac * 100).toFixed(2)}%`);
+    + `subject=${m.subject}/${m.visible} visible meshes  held=${held.n} hFrac=${(held.hFrac * 100).toFixed(2)}%`
+    // The naming denominator is printed with the reading: a claim that node names cannot label a body is
+    // only checkable if the full subject count is visible, not just the top-6 parts below.
+    + `  node-named=${m.named}/${m.subject} ${JSON.stringify(m.namedList)}`);
   for (const g of sub)
     console.log(`      subj ${g.n}  hFrac=${(g.hFrac * 100).toFixed(2)}%  wFrac=${(g.wFrac * 100).toFixed(2)}%  aFrac=${(g.aFrac * 100).toFixed(2)}%  inside h=${g.inH} w=${g.inW}  near=${g.near}m  worldY=${JSON.stringify(g.worldY)}  meshes=${g.meshes}  seeds=${JSON.stringify(g.seeds)}`);
   for (const p of m.parts.slice(0, 3))

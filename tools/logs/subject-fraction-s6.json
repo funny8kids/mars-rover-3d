@@ -1,0 +1,657 @@
+{
+ "label": "s6",
+ "lead": {
+  "met": 22.1,
+  "done": false
+ },
+ "rows": [
+  {
+   "tag": "a",
+   "off": 0.6,
+   "kind": "blend",
+   "met": 22.6,
+   "fov": 76.4,
+   "visible": 1745,
+   "subjectMeshes": 16,
+   "namedMeshes": 3,
+   "namedList": [
+    "aft_skirt",
+    "ship_aft_bulkhead",
+    "wordmark"
+   ],
+   "mats": [
+    "rocket_burnt",
+    "rocket_burnt_tex",
+    "rocket_glass",
+    "rocket_nozzle",
+    "rocket_skin",
+    "rocket_struct",
+    "rocket_wordmark"
+   ],
+   "clusters": [
+    {
+     "n": "booster",
+     "meshes": 8,
+     "seeds": [
+      "rocket_burnt_tex",
+      "rocket_wordmark",
+      "rocket_struct",
+      "rocket_nozzle",
+      "rocket_skin",
+      "rocket_burnt"
+     ],
+     "hFrac": 0.1502,
+     "wFrac": 0.0551,
+     "aFrac": 0.00827,
+     "inH": 0.15,
+     "inW": 0.055,
+     "near": 141.4,
+     "worldY": [
+      1186.6,
+      1226.4
+     ],
+     "pts": 532
+    },
+    {
+     "n": "ship",
+     "meshes": 8,
+     "seeds": [
+      "rocket_burnt",
+      "rocket_skin",
+      "rocket_struct",
+      "rocket_nozzle",
+      "rocket_glass"
+     ],
+     "hFrac": 0.104,
+     "wFrac": 0.0373,
+     "aFrac": 0.00387,
+     "inH": 0.104,
+     "inW": 0.037,
+     "near": 164.3,
+     "worldY": [
+      1229.5,
+      1263.6
+     ],
+     "pts": 535
+    }
+   ],
+   "parts": [
+    {
+     "p": "booster/(anon)",
+     "hFrac": 0.1284,
+     "wFrac": 0.0507,
+     "aFrac": 0.0065,
+     "inH": 0.128,
+     "inW": 0.051,
+     "near": 141.4,
+     "worldY": [
+      1189.6,
+      1226.1
+     ],
+     "pts": 64
+    },
+    {
+     "p": "booster/(anon)",
+     "hFrac": 0.1342,
+     "wFrac": 0.0431,
+     "aFrac": 0.00579,
+     "inH": 0.134,
+     "inW": 0.043,
+     "near": 148.1,
+     "worldY": [
+      1189.5,
+      1226
+     ],
+     "pts": 65
+    },
+    {
+     "p": "ship/(anon)",
+     "hFrac": 0.098,
+     "wFrac": 0.0362,
+     "aFrac": 0.00355,
+     "inH": 0.098,
+     "inW": 0.036,
+     "near": 164.4,
+     "worldY": [
+      1231.3,
+      1263.6
+     ],
+     "pts": 65
+    },
+    {
+     "p": "ship/(anon)",
+     "hFrac": 0.0933,
+     "wFrac": 0.0355,
+     "aFrac": 0.00331,
+     "inH": 0.093,
+     "inW": 0.035,
+     "near": 165.1,
+     "worldY": [
+      1231.2,
+      1259.7
+     ],
+     "pts": 64
+    },
+    {
+     "p": "ship/(anon)",
+     "hFrac": 0.0897,
+     "wFrac": 0.0354,
+     "aFrac": 0.00318,
+     "inH": 0.09,
+     "inW": 0.035,
+     "near": 166.7,
+     "worldY": [
+      1231.6,
+      1259.8
+     ],
+     "pts": 66
+    },
+    {
+     "p": "booster/aft_skirt",
+     "hFrac": 0.0356,
+     "wFrac": 0.0445,
+     "aFrac": 0.00159,
+     "inH": 0.036,
+     "inW": 0.045,
+     "near": 141.7,
+     "worldY": [
+      1187.5,
+      1194
+     ],
+     "pts": 64
+    }
+   ],
+   "polarity": true,
+   "reset": true,
+   "hMax": 0.1502,
+   "held": "booster",
+   "hHeld": 0.1502
+  },
+  {
+   "tag": "b",
+   "off": 2.5,
+   "kind": "beat",
+   "met": 24.5,
+   "fov": 75.6,
+   "visible": 1743,
+   "subjectMeshes": 16,
+   "namedMeshes": 3,
+   "namedList": [
+    "aft_skirt",
+    "ship_aft_bulkhead",
+    "wordmark"
+   ],
+   "mats": [
+    "rocket_burnt",
+    "rocket_burnt_tex",
+    "rocket_glass",
+    "rocket_nozzle",
+    "rocket_skin",
+    "rocket_struct",
+    "rocket_wordmark"
+   ],
+   "clusters": [
+    {
+     "n": "booster",
+     "meshes": 8,
+     "seeds": [
+      "rocket_burnt_tex",
+      "rocket_wordmark",
+      "rocket_struct",
+      "rocket_nozzle",
+      "rocket_skin",
+      "rocket_burnt"
+     ],
+     "hFrac": 0.0878,
+     "wFrac": 0.0813,
+     "aFrac": 0.00714,
+     "inH": 0.088,
+     "inW": 0.081,
+     "near": 141,
+     "worldY": [
+      1417.2,
+      1446.2
+     ],
+     "pts": 532
+    },
+    {
+     "n": "ship",
+     "meshes": 8,
+     "seeds": [
+      "rocket_burnt",
+      "rocket_skin",
+      "rocket_struct",
+      "rocket_nozzle",
+      "rocket_glass"
+     ],
+     "hFrac": 0.0744,
+     "wFrac": 0.0303,
+     "aFrac": 0.00225,
+     "inH": 0.074,
+     "inW": 0.03,
+     "near": 206.2,
+     "worldY": [
+      1511.1,
+      1545.3
+     ],
+     "pts": 535
+    }
+   ],
+   "parts": [
+    {
+     "p": "booster/(anon)",
+     "hFrac": 0.076,
+     "wFrac": 0.0712,
+     "aFrac": 0.00541,
+     "inH": 0.076,
+     "inW": 0.071,
+     "near": 141.3,
+     "worldY": [
+      1420.7,
+      1445.7
+     ],
+     "pts": 64
+    },
+    {
+     "p": "booster/(anon)",
+     "hFrac": 0.0729,
+     "wFrac": 0.0437,
+     "aFrac": 0.00318,
+     "inH": 0.073,
+     "inW": 0.044,
+     "near": 144.9,
+     "worldY": [
+      1419.3,
+      1444.9
+     ],
+     "pts": 65
+    },
+    {
+     "p": "booster/aft_skirt",
+     "hFrac": 0.0491,
+     "wFrac": 0.05,
+     "aFrac": 0.00245,
+     "inH": 0.049,
+     "inW": 0.05,
+     "near": 141.3,
+     "worldY": [
+      1417.4,
+      1426.8
+     ],
+     "pts": 64
+    },
+    {
+     "p": "ship/(anon)",
+     "hFrac": 0.0703,
+     "wFrac": 0.0293,
+     "aFrac": 0.00206,
+     "inH": 0.07,
+     "inW": 0.029,
+     "near": 206.2,
+     "worldY": [
+      1513,
+      1545.3
+     ],
+     "pts": 65
+    },
+    {
+     "p": "ship/(anon)",
+     "hFrac": 0.0669,
+     "wFrac": 0.0287,
+     "aFrac": 0.00192,
+     "inH": 0.067,
+     "inW": 0.029,
+     "near": 207,
+     "worldY": [
+      1512.8,
+      1541.3
+     ],
+     "pts": 64
+    },
+    {
+     "p": "ship/(anon)",
+     "hFrac": 0.0636,
+     "wFrac": 0.0287,
+     "aFrac": 0.00182,
+     "inH": 0.064,
+     "inW": 0.029,
+     "near": 208.4,
+     "worldY": [
+      1513.2,
+      1541.4
+     ],
+     "pts": 66
+    }
+   ],
+   "polarity": true,
+   "reset": true,
+   "hMax": 0.0878,
+   "held": "booster",
+   "hHeld": 0.0878
+  },
+  {
+   "tag": "c",
+   "off": 5,
+   "kind": "blend",
+   "met": 27,
+   "fov": 77.7,
+   "visible": 1743,
+   "subjectMeshes": 16,
+   "namedMeshes": 3,
+   "namedList": [
+    "aft_skirt",
+    "ship_aft_bulkhead",
+    "wordmark"
+   ],
+   "mats": [
+    "rocket_burnt",
+    "rocket_burnt_tex",
+    "rocket_glass",
+    "rocket_nozzle",
+    "rocket_skin",
+    "rocket_struct",
+    "rocket_wordmark"
+   ],
+   "clusters": [
+    {
+     "n": "booster",
+     "meshes": 8,
+     "seeds": [
+      "rocket_burnt_tex",
+      "rocket_wordmark",
+      "rocket_struct",
+      "rocket_nozzle",
+      "rocket_skin",
+      "rocket_burnt"
+     ],
+     "hFrac": 0.1271,
+     "wFrac": 0.0849,
+     "aFrac": 0.01079,
+     "inH": 0.127,
+     "inW": 0.085,
+     "near": 123.8,
+     "worldY": [
+      1697.2,
+      1716.6
+     ],
+     "pts": 532
+    },
+    {
+     "n": "ship",
+     "meshes": 8,
+     "seeds": [
+      "rocket_burnt",
+      "rocket_skin",
+      "rocket_struct",
+      "rocket_nozzle",
+      "rocket_glass"
+     ],
+     "hFrac": 0.0764,
+     "wFrac": 0.0277,
+     "aFrac": 0.00212,
+     "inH": 0,
+     "inW": 0.028,
+     "near": 337.1,
+     "worldY": [
+      1957.6,
+      1991.8
+     ],
+     "pts": 535
+    }
+   ],
+   "parts": [
+    {
+     "p": "booster/(anon)",
+     "hFrac": 0.1224,
+     "wFrac": 0.0734,
+     "aFrac": 0.00899,
+     "inH": 0.122,
+     "inW": 0.073,
+     "near": 128.1,
+     "worldY": [
+      1698.7,
+      1716.5
+     ],
+     "pts": 64
+    },
+    {
+     "p": "booster/(anon)",
+     "hFrac": 0.0897,
+     "wFrac": 0.0454,
+     "aFrac": 0.00407,
+     "inH": 0.09,
+     "inW": 0.045,
+     "near": 125.7,
+     "worldY": [
+      1698,
+      1708.7
+     ],
+     "pts": 65
+    },
+    {
+     "p": "booster/aft_skirt",
+     "hFrac": 0.0477,
+     "wFrac": 0.0517,
+     "aFrac": 0.00247,
+     "inH": 0.048,
+     "inW": 0.052,
+     "near": 124.1,
+     "worldY": [
+      1706.9,
+      1716.6
+     ],
+     "pts": 64
+    },
+    {
+     "p": "ship/(anon)",
+     "hFrac": 0.0731,
+     "wFrac": 0.027,
+     "aFrac": 0.00197,
+     "inH": 0,
+     "inW": 0.027,
+     "near": 337.2,
+     "worldY": [
+      1959.6,
+      1991.8
+     ],
+     "pts": 65
+    },
+    {
+     "p": "ship/(anon)",
+     "hFrac": 0.0659,
+     "wFrac": 0.0256,
+     "aFrac": 0.00169,
+     "inH": 0,
+     "inW": 0.026,
+     "near": 338,
+     "worldY": [
+      1959.3,
+      1987.9
+     ],
+     "pts": 64
+    },
+    {
+     "p": "ship/(anon)",
+     "hFrac": 0.0611,
+     "wFrac": 0.0255,
+     "aFrac": 0.00156,
+     "inH": 0,
+     "inW": 0.025,
+     "near": 339,
+     "worldY": [
+      1959.7,
+      1987.9
+     ],
+     "pts": 66
+    }
+   ],
+   "polarity": true,
+   "reset": true,
+   "hMax": 0.1271,
+   "held": "booster",
+   "hHeld": 0.1271
+  },
+  {
+   "tag": "d",
+   "off": 8,
+   "kind": "beat",
+   "met": 30,
+   "fov": 78.1,
+   "visible": 1743,
+   "subjectMeshes": 16,
+   "namedMeshes": 3,
+   "namedList": [
+    "aft_skirt",
+    "ship_aft_bulkhead",
+    "wordmark"
+   ],
+   "mats": [
+    "rocket_burnt",
+    "rocket_burnt_tex",
+    "rocket_glass",
+    "rocket_nozzle",
+    "rocket_skin",
+    "rocket_struct",
+    "rocket_wordmark"
+   ],
+   "clusters": [
+    {
+     "n": "booster",
+     "meshes": 8,
+     "seeds": [
+      "rocket_burnt_tex",
+      "rocket_wordmark",
+      "rocket_struct",
+      "rocket_nozzle",
+      "rocket_skin",
+      "rocket_burnt"
+     ],
+     "hFrac": 0.0783,
+     "wFrac": 0.031,
+     "aFrac": 0.00243,
+     "inH": 0.078,
+     "inW": 0.031,
+     "near": 236.8,
+     "worldY": [
+      1987.2,
+      2027
+     ],
+     "pts": 532
+    },
+    {
+     "n": "ship",
+     "meshes": 8,
+     "seeds": [
+      "rocket_burnt",
+      "rocket_skin",
+      "rocket_struct",
+      "rocket_nozzle",
+      "rocket_glass"
+     ],
+     "hFrac": 0.0086,
+     "wFrac": 0.0074,
+     "aFrac": 0.00006,
+     "inH": 0.009,
+     "inW": 0.007,
+     "near": 847.6,
+     "worldY": [
+      2607.1,
+      2641.2
+     ],
+     "pts": 535
+    }
+   ],
+   "parts": [
+    {
+     "p": "booster/(anon)",
+     "hFrac": 0.073,
+     "wFrac": 0.0279,
+     "aFrac": 0.00204,
+     "inH": 0.073,
+     "inW": 0.028,
+     "near": 237.5,
+     "worldY": [
+      1987.4,
+      2022.7
+     ],
+     "pts": 65
+    },
+    {
+     "p": "booster/(anon)",
+     "hFrac": 0.0672,
+     "wFrac": 0.0282,
+     "aFrac": 0.0019,
+     "inH": 0.067,
+     "inW": 0.028,
+     "near": 238.2,
+     "worldY": [
+      1987.4,
+      2026.4
+     ],
+     "pts": 64
+    },
+    {
+     "p": "booster/aft_skirt",
+     "hFrac": 0.0213,
+     "wFrac": 0.0232,
+     "aFrac": 0.0005,
+     "inH": 0.021,
+     "inW": 0.023,
+     "near": 262.4,
+     "worldY": [
+      2020.1,
+      2026.4
+     ],
+     "pts": 64
+    },
+    {
+     "p": "booster/(anon)",
+     "hFrac": 0.0175,
+     "wFrac": 0.0267,
+     "aFrac": 0.00047,
+     "inH": 0.018,
+     "inW": 0.027,
+     "near": 236.8,
+     "worldY": [
+      1987.2,
+      1989.9
+     ],
+     "pts": 67
+    },
+    {
+     "p": "booster/(anon)",
+     "hFrac": 0.0145,
+     "wFrac": 0.0212,
+     "aFrac": 0.00031,
+     "inH": 0.014,
+     "inW": 0.021,
+     "near": 265.4,
+     "worldY": [
+      2023.6,
+      2026.1
+     ],
+     "pts": 64
+    },
+    {
+     "p": "booster/(anon)",
+     "hFrac": 0.0146,
+     "wFrac": 0.0186,
+     "aFrac": 0.00027,
+     "inH": 0.015,
+     "inW": 0.019,
+     "near": 266,
+     "worldY": [
+      2024.3,
+      2027
+     ],
+     "pts": 64
+    }
+   ],
+   "polarity": true,
+   "reset": true,
+   "hMax": 0.0783,
+   "held": "booster",
+   "hHeld": 0.0783
+  }
+ ]
+}

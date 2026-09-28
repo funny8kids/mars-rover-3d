@@ -68,14 +68,24 @@ const SECO_AT = 46;               // mission second the ship's engines shut down
 // reason the vehicle goes on accelerating on a field the sequence has just shut down. After separation
 // the return coasts engines-cold while the vehicle turns itself over, and only then relights: that is
 // the booster's own gap, and the one the sequence announces. Walked frame by frame the two throttles
-// are never both cold between the hold-down ramp and the booster's touchdown — the longest cold
-// streak in the flight is 2.47 s, and it begins 0.06 s after the landing has already happened.
+// are never both cold between the hold-down ramp and the booster's touchdown — the longest cold streak
+// in the flight is 3.97 s, and it begins on the frame the landing happens and runs to the gate that
+// closes the flight four seconds after it (`L.done` below), so the only engines-cold stretch left in the
+// log is the four seconds of watching a vehicle stand on the deck.
 // The relit booster is the full field rather than a triplet because the clamp the guidance flies
 // against, `RETURN_MAX_ACCEL`, is a full-field number; three bells would make that a false claim.
 const MECO_AT = 20;
 const SHIP_IGNITION_AT = MECO_AT - 0.4;   // s, the overlap that makes the staging hot
 const STAGE_AT = 22;              // the hot-staging beat, 1.6 s after the ship lights
-const RELIGHT_AT = STAGE_AT + 3;  // s, boostback burn start, once the flip is done
+// s, boostback burn start, once the flip is done. The coast is nine seconds rather than three because
+// the coast is what pays for the turn: at three the vehicle's one engine-less interval and its half
+// flip are the same short window, and the camera nearest the split photographed a disc seen edge-on.
+// Measured on the 3 s schedule (`tools/cdp-flip-schedule-probe.mjs`, red): peak 60.0 deg/s of lean and
+// 2.58 s spent between 12° and 168°, which is the side-on span. Nine seconds makes the same turn a
+// 20 deg/s one and leaves the landing where the guidance puts it — the descent has 22.5 s of margin to
+// the hard end at the old schedule, so spending six of them here buys the shot without stranding the
+// first stage in the sky.
+const RELIGHT_AT = STAGE_AT + 9;
 // How far the vehicle leans over, and how fast it starts to. Tied to altitude rather than time
 // because a gravity turn *is* the vehicle leaning into thinning air, and an altitude law gives the
 // same arc at 30 fps and at 144.
@@ -469,7 +479,13 @@ export function createLaunch(rig, launch) {
     launch.boosterLanded = L.landed;
 
     // The ship is out of range and the booster is home: that is the end of what can be watched.
-    if (t >= SECO_AT + 4 && (L.landed || t >= SECO_AT + 24)) L.done = true;
+    // The hold after the arrival used to come free. On the 3 s coast the first stage touched down at
+    // MET 47.5, inside the `SECO_AT + 4` window, so the closing beat got two and a half seconds of
+    // watching a vehicle stand on the deck. Lengthening the coast makes the landing the *last* event of
+    // the flight — measured at MET 55.55 — and a gate keyed only to the clock then fires on the same
+    // frame the legs arrive, cutting off the shot the re-timing exists to make. So the hold is written
+    // as what it always was: four seconds after the arrival, whichever second that turns out to be.
+    if (t >= SECO_AT + 4 && (L.landed ? t >= L.touch.t + 4 : t >= SECO_AT + 24)) L.done = true;
     return true;
   };
 

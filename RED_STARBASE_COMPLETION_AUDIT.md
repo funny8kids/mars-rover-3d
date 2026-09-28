@@ -209,3 +209,38 @@ node tools/primitive_census.mjs --check
 # Check git sync
 git ls-remote origin main && git rev-parse HEAD
 ```
+
+---
+
+## 追加（2026-09-28，session #62 H1b ③）：级间分离翻转的排期重做 — 实测记录
+
+改动只有一件事：`RELIGHT_AT = STAGE_AT + 3` → `+ 9`，以及被它带动的两处（收尾闸门改按触地秒、`SHOTS` 机位表按新秒数重排）。
+
+**RED（3 s 滑行，改前）**：`tools/logs/flip-schedule-red.txt` 记录的峰值角速度 60.0 deg/s、侧视（lean 12–168 deg）时长 2.58 s —— 摄像机最近的机位拍到一枚侧立的盘，即验收句里的"带 20 个孔的黑硬币"。
+
+**GREEN（9 s 滑行，改后，label `final3`，rc 0）**，逐字取自 `tools/logs/flip-schedule-final3.txt`：
+
+| 读数 | 值 |
+| --- | --- |
+| coast | 9.02 s（= 声明的 `STAGE_AT + 9`，anchor 判"sim ran these bytes"）|
+| RATE peak | 24.0 deg/s（bar ≤36）|
+| turning window | MET 22.017 → 55.45 = 33.43 s |
+| relight | MET 31.017，lean 184.2 deg，h 2116.3 m，vs 90 m/s |
+| apex | 2252 m |
+| landing | MET 55.55，距 70 s 硬终点 14.5 s |
+| touch | offPad 3.1 m，sink −2.8 m/s，tGo 1.2 s |
+| cold | 双油门最冷段 3.97 s @ MET 59.517（落在触地之后，见 `launch.js` 注释）|
+| bytes | `src/fx/launch.js` local=served=`52b080235a4f4edc`；`src/main.js` local=served=`791406be2186c1f2` |
+| clip | 4 张目标帧全 0（F1 bar：0）|
+| lens | 4 张帧 `phase=flight`、camY 1154–1784 m、roverDist 1154–1788 m、`near` 含 aft_skirt/wordmark/tps_blanket/tps_shield |
+
+跑法：`node tools/shot-server.mjs`（:8123 收图器，缺它 `__RSB.shot()` 直接 Failed to fetch）+ `node tools/cdp-flip-schedule-probe.mjs 'http://127.0.0.1:8080/qa_boot.html?auto=std' final3 9333 <head+后缀>`。帧与逐行数据在本机 `tools/logs/flip-final3-*.png`、`tools/logs/flip-schedule-final3-rows.json`（按仓库惯例 logs 面不入库，读数抄进本文）。
+
+**未清的一格（不是这次改动带来的，3 s 那跑同样存在）**：F1「无纯色系偏色」在起飞机位上仍是红的。同一跑的 `cast` 读数：
+
+- `a: mid 1.300@98.8% w1/c0`
+- `b: shadow 1.142@7.7% w0.498/c0.502  mid 1.257@92.2% w0.953/c0.047`
+- `c: mid 1.330@99.6% w1/c0`
+- `d: shadow 1.133@11.0% w0.35/c0.65  mid 1.185@88.9% w0.734/c0.266`
+
+即中亮度带占画面 89–99 %，主导通道 1.185–1.330（项目里既有的判据是 >1.15 记为偏色），暖色占比≈1.0、冷色占比≈0 —— 高空这一路的画面是**单一色相的一整块**，不是"上有冷下有暖"的两色分离（对照：`main.js` 里记录的沙丘机位 sky [1.006,0.901,1.093] / regolith 暖、plaza 0.53/0.47）。探针只把这条打印出来、没有并入 PASS：高空气球的带从来没被校过阈，把未量过的判据写进闸门就是 `bins[8]/bins[9]` 那类恒绿尺子。归口 #57（起飞全流程视效）。

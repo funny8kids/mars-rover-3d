@@ -1502,15 +1502,24 @@ const SHOTS = [
   { t: 15, r: 205, drop: 68, ref: 0, aim: 38, pad: 0 },   // 穿云：满屏收成三分之一，高度终于看得见
   { t: 20, r: 120, drop: 22, ref: 0, aim: 38, pad: 0 },   // MECO：压回级间段，等分离那一下
   { t: 24, r: 152, drop: 36, ref: 20, aim: 54, pad: 0 },  // 分离：两级同框，中间那段空的就是事件本身
-  { t: 30, r: 115, drop: 32, ref: 0, aim: 19, pad: 0 },   // 归航：跟住助推器的翻转和反推点火
-  { t: 41, r: 92, drop: 7, ref: 0, aim: 15, pad: 1 },     // 落台：回到坪面高度，看它自己站住
+  // 归航 opens at 28 because the flip it is meant to follow now runs MET 22→31 and the relight is at 31
+  // (`tools/cdp-flip-schedule-probe.mjs`, green). With the old 3 s coast these beats were 24/30/41/46 and
+  // the lens arrived after the turn was already over; the schedule moved, so the stand-offs move with it.
+  { t: 28, r: 115, drop: 32, ref: 0, aim: 19, pad: 0 },   // 归航：跟住助推器的翻转和反推点火
   // 入轨。The lens stays on the booster and lifts off it, rather than tilting up to chase the ship.
   // Measured: at SECO the ship is 8.1 km out and the dust column between it and the deck erases it
   // completely (`erase` = 1.000 at ground density), so the first version of this beat — `aim: 66`,
   // the ship's own nose — photographed five flat seconds of empty haze with the landed booster 81°
-  // out of frame. What the deck can actually show at that second is the half that came back, sitting
-  // under the whole sky the other half left.
-  { t: 46, r: 108, drop: 3, ref: 0, aim: 27, pad: 1 },    // 入轨：助推器压在画面下方，上面整片是它空出来的天
+  // out of frame. What the deck can actually show at that second is the half that came back.
+  // Re-timed with the coast: the flip now runs MET 22→31 and the arrival is at 55.55, so at the 46th
+  // second that returning half is still aloft somewhere between its 2 252 m apex and the deck, which is
+  // a different picture from the one this row used to hold — the vehicle hanging over a spectator on the
+  // pad, not standing on it.
+  { t: 46, r: 108, drop: 3, ref: 0, aim: 27, pad: 1 },    // 入轨：坪面上的人仰头看还在往下掉的那半枚
+  // 落台：回到坪面高度，看它自己站住. Opens at 52 so the cross-fade is finished eleven seconds of
+  // frame before the measured touchdown at 55.55, and the hold `src/fx/launch.js` now keys to the
+  // arrival itself keeps the beat running four seconds past it.
+  { t: 52, r: 92, drop: 7, ref: 0, aim: 15, pad: 1 },
 ];
 const SHOT_FADE = 2.6;       // s of cross-fade between beats — shorter and the camera snaps between
                              // stations faster than the smoothing in `chase` can follow it

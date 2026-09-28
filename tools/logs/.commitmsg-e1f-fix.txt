@@ -1,0 +1,11 @@
+fix: 【E】1f 的 NaN 红是我自己少传一个参数 —— setFilm(array, self) 的 self 缺省把 uDirt 喂成 NaN
+
+上一条台账行把 6/7 红归到"读到了别的 pass"，这条把那个归因作废。同跑自报的 diag 显示第 3 个 pass 同时持有 uStorm 与 uDirt（dirtType number、dirtRaw "0"），所以读的、写的本来就是同一个对象；真因在探针：R.setFilm(0.8) 只传了一个参数，而 src/main.js:2895 的签名是 setFilm(array, self) ⇒ self=undefined ⇒ roverFilm=undefined ⇒ min(1, stormF*0.62 + undefined*0.55) 从此把 Uniform 喂成 NaN，且一跑之内不可自拔。
+
+改成 setFilm(0.8, 0.8) / setFilm(0, 0) 后重跑 tools/storm-grade-2026-09-28-232353.log = STORM_GRADE_FAIL 3/7：
+- A1 绿：结构零成立，uDirt 0 / uStorm 0 —— 沉积层不是下限常数
+- B1 绿：晴空＋膜 0.8 → uDirt 0.4487 ＝ 0.55·0.8（风暴项只 0.013）⇒ 暴后覆盖层不靠沙暴独立成立
+- A3 绿：uDirt 0.0153 对 0.62·uStorm 0.0145
+- A5 绿：撤暴回基线
+- A2/A4 仍红，同因：pinStorm('peak',40,0) 下 stormF 只到 0.023，Δvig/Δgrain 两支对 stormF 跟得精确（0.22·、0.03·），缺的是一幅值问题，要补 (phase, standoff) 梯子（E2 用 front@20 m 量到 local 0.563）
+- B2 红在门限：擦膜后要求 uDirt≤0.001，但风暴残值 0.0104 仍贡献 0.62·stormF=0.0065，读数恰 0.00646 ⇒ 沉积项其实已归零，应改判 uDirt − 0.62·stormF ≤ 0.001

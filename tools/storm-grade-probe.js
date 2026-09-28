@@ -36,18 +36,36 @@
   if (!R.state || !R.state.started) return 'NOT_STARTED';
   if (!u) return 'NO_GRADE_UNIFORMS';
 
+  // 上一跑 5 条红全在 uDirt=NaN，而同页逐 pass 倾倒显示第 3 个 pass 同时持有 uStorm 与 uDirt（值 number:0）。
+  // 两边不可能都对，所以把"我这跑到底选中了哪个对象"随读数一起交回来，而不是再去另一页猜一次。
+  const diag = (() => {
+    const ps = R.post().composer.passes;
+    const i = ps.findIndex((p) => p.material && p.material.uniforms && p.material.uniforms.uStorm);
+    const p = ps[i]; const uu = p && p.material.uniforms;
+    return {
+      picked: i,
+      ctor: p && p.constructor && p.constructor.name,
+      hasDirt: !!(uu && uu.uDirt),
+      dirtType: uu && uu.uDirt ? typeof uu.uDirt.value : 'absent',
+      dirtRaw: uu && uu.uDirt ? String(uu.uDirt.value).slice(0, 20) : '-',
+      passUniformsSameObj: !!(p && p.uniforms === uu),
+      keys: uu ? Object.keys(uu) : [],
+      postKeys: Object.keys(R.post()),
+    };
+  })();
+
   const skip = [];
   const rows = [];
   const add = (id, ok, note) => { rows.push({ id, ok: !!ok, note }); return ok; };
 
   // ---- 归零：晴空 + 无残膜 ----
-  R.clearSky(); R.setFilm(0);
+  R.clearSky(); R.setFilm(0, 0);
   await sleep(600); await frames(6);
   const calm = { storm: g('uStorm'), dirt: g('uDirt'), vig: g('uVignette'), grain: g('uGrain'), ca: g('uCA') };
 
   // ---- ① 结构零：晴空无膜时镜头必须是干净的 ----
   add('A1 晴空无膜 ⇒ uDirt=0（否则“沉积层”是下限常数）', calm.dirt <= 0.001 && calm.storm <= 0.02,
-    `uDirt ${rd(calm.dirt, 5)} uStorm ${rd(calm.storm, 3)}`);
+    `uDirt ${rd(calm.dirt, 5)} uStorm ${rd(calm.storm, 3)} diag ${JSON.stringify(diag)}`);
 
   // ---- 钉一场峰值沙暴 ----
   const pinPeak = async () => { R.pinStorm('peak', 40, 0); await sleep(700); await frames(8); };
@@ -68,9 +86,9 @@
     `uStorm ${rd(back.storm, 3)} vig ${rd(back.vig)}`);
 
   // ---- ③ 暴后沉积：晴空下残膜单独撑住 uDirt ----
-  R.setFilm(0.8); await sleep(600); await frames(6);
+  R.setFilm(0.8, 0.8); await sleep(600); await frames(6);
   const filmOnly = { storm: g('uStorm'), dirt: g('uDirt') };
-  R.setFilm(0); await sleep(600); await frames(6);
+  R.setFilm(0, 0); await sleep(600); await frames(6);
   const cleared = { storm: g('uStorm'), dirt: g('uDirt') };
   add('B1 晴空＋残膜 0.8 仍有覆盖层：uDirt ≥ 0.4 且 stormF≈0',
     filmOnly.storm <= 0.05 && filmOnly.dirt >= 0.4, `uDirt ${rd(filmOnly.dirt)} uStorm ${rd(filmOnly.storm, 3)}`);
@@ -109,7 +127,7 @@
     skip.push(`D 音效-风压联动：AudioContext ${ctxState}，setTargetAtTime 的 .value 不推进 ⇒ 不判（headless 无手势）`);
   } else {
     const hear = () => ({ gain: A.windG.gain.value, freq: A.windF.frequency.value, q: A.windF.Q.value });
-    R.clearSky(); R.setFilm(0); await sleep(900); await frames(8);
+    R.clearSky(); R.setFilm(0, 0); await sleep(900); await frames(8);
     const q0 = hear();
     R.pinStorm('peak', 40, 0); await sleep(1200); await frames(10);
     const q1 = hear();
@@ -123,7 +141,7 @@
 
   const passed = rows.filter((r) => r.ok).length, total = rows.length;
   const failed = rows.filter((r) => !r.ok);
-  R.setFilm(0); R.clearSky();
+  R.setFilm(0, 0); R.clearSky();
   return JSON.stringify({
     verdict: (failed.length === 0 && total >= 7) ? `STORM_GRADE_PASS ${passed}/${total}` : `STORM_GRADE_FAIL ${failed.length}/${total}`,
     failed: failed.map((f) => f.id + ' :: ' + f.note),

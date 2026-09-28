@@ -1,0 +1,7 @@
+feat: 【E】1f 沙暴分级耦合收到 7/7 —— 三处红全在尺子上，其中一处是我只站在墙外量振幅
+
+- A3/B1 原本拿只含 stormF 的单项公式去判 min(1, 0.62·stormF + 0.55·film) 这个两项之和；改成同页读 __RSB.film().rover 一起算。
+- A2/A4 原本用定长 sleep 取快照，而 stormF/film 都是 follower；改成按条件等平台（连续三次 Δ<0.004，封顶 15 s）。
+- 最关键的一条：(phase, standoff) 梯子只扫了正的 standoff。storm.js:71-73 写明正的把墙钉在上风远处、负的把视点埋进 slab，所以那一版量到的 0.33 "上限"是衰减曲线，不是振幅上限。补负格后 peak/-120 → uStorm 0.952、peak/-40 → 0.866、front/-40 → 0.875。
+- 埋进 slab 之后各条按公式对到第四位：uDirt 0.8495 对 0.8493；vig 0.26→0.4599 ＝ 0.26+0.22·stormF；grain 0.028→0.0553 ＝ 0.028+0.03·stormF；撤暴 6.0 s 回 0.044/0.2696；晴空＋膜 0.802 → 0.4603 对 0.4604；擦膜残差 0.0008 ≤ 0.001。
+- C（体积光）与 D（音效-风压）仍是 SKIP 而非通过：headless 下 12 个晴空 dayT 采样的 uGodRay 全为 0（太阳从未进框），AudioContext 是 suspended，setTargetAtTime 的 .value 不推进。

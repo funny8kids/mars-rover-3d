@@ -2964,6 +2964,47 @@ window.__RSB = {
   // the field itself, not its readout: a 300 s drive needs the slab widened past the island,
   // which no phase-pinning standoff can do from outside the object
   stormRef: () => stormField,
+  // The visible half of the leading edge. `stormRef` gives the schedule (where the edge is); this
+  // gives the sheet that stands on it, so a ruler can tell "the field says a front is 150 m out"
+  // apart from "something is actually drawn there" — uniforms, the mesh's own transform, and the
+  // geometry's deck fraction. Without it the ground-hugging/rolling half of the front was only ever
+  // checkable by eye.
+  stormWallRef: () => stormWall,
+  // The front's rolling half, in pixels, with the clock handed in from outside. Renders the frame once
+  // under the given `uTime` (and optionally with the sheet hidden) and returns the per-row mean
+  // luminance of that render. Everything happens in this one synchronous call on purpose: `uTime` is
+  // advanced by the game loop (`placeStormWall` does `uTime += dt`), so if the probe had to await a
+  // frame between two captures it would be comparing two different times by an unknown amount, and
+  // the row difference would mix "the cells rolled" with "the world moved". Writing the uniform and
+  // rendering in the same JS task is the only way to make the pair a controlled A/B of one frame.
+  // Returning 100 row means rather than three fixed bands is also deliberate — whether the movement
+  // lives where the wall stands is the question, and the answer's row is not known in advance.
+  wallFrame: ({ uTime = null, hide = false } = {}) => {
+    if (!stormWall || !post) return null;
+    const u = stormWall.material.uniforms, prev = u.uTime.value, wasVisible = stormWall.visible;
+    if (uTime !== null) u.uTime.value = uTime;
+    if (hide) stormWall.visible = false;
+    post.composer.render();
+    stormWall.visible = wasVisible;
+    u.uTime.value = prev;
+    const cv = renderer.domElement, c2 = document.createElement('canvas');
+    c2.width = 160; c2.height = 100;
+    const g2 = c2.getContext('2d');
+    g2.drawImage(cv, 0, 0, 160, 100);
+    const q = g2.getImageData(0, 0, 160, 100).data;
+    const rows = [];
+    for (let y = 0; y < 100; y++) {
+      let s = 0;
+      for (let x = 0; x < 160; x++) {
+        const i = (y * 160 + x) * 4;
+        s += 0.2126 * q[i] + 0.7152 * q[i + 1] + 0.0722 * q[i + 2];
+      }
+      rows.push(+(s / 160).toFixed(3));
+    }
+    return { rows, amt: +u.uAmt.value.toFixed(3), deck: u.uDeck.value,
+      tall: stormWall.geometry.parameters?.height ?? null,
+      posY: +stormWall.position.y.toFixed(3), time: +prev.toFixed(3) };
+  },
   phys: () => phys, env: () => env, launchRef: launch,
   // The chase rig's per-frame keep-out correction. §6's composition reading needs it: a distance that
   // grew can mean "the camera design pulls back" or "the rig just dodged a lamp post", and only the

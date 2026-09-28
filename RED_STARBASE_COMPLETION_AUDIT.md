@@ -90,7 +90,7 @@ OWNERSHIP_SINGLE  ✅ PASS
 | **E1** | Positional storm with timeToClear() formula | ✅ Analytic storm phase system | `src/fx/storm.js::StormField.timeToClear()` |
 | **E1a** | Layered density + parallax | ✅ Three depth layers (near/mid/far) | Particle z-offset configuration |
 | **E1b** | Wind-direction visibility anisotropy | ✅ Directional attenuation terms | `stormField.outlook(phys)` directional readout |
-| **E2** | Two gameplay loops | ✅ Solar decay + navigation beacon unreliability | Mission chain integration visible in task logs |
+| **E2** | Two gameplay loops | ✅ 两条闭环已由浏览器内实测走通：① 沙尘沉积 → 阵列出力账单 → 吹扫花电池；② 前沿局部尘 → 光学失锁 → 清洁光台才换回地标与重获速度 | `tools/storm-loop-probe.js` 实测 `STORM_LOOPS_PASS 13/13`（tools/logs/storm-loop-2026-09-28-215121.log，-214819.log 复现同读数）。关键格：front@20 m 把阵列积尘 0.281→0.503 而晴同长 Δ 0.0000；lost output 1.7%→76.5%；6 m 处吹扫把目标柱 0.8→0 并付 Δbattery −0.1502；同一站位 local 0.563 vs 0.000 使 lock 0 vs 1；清柱 95%→0% 使 landmarks 1→2、重获 2.32 s→0.73 s。此前该条只有代码检视（本件之前从未跑完）；探针自己的 RED 序列在 -213321 / -213814 / -214316 三份日志里（5/11、4/13、1/13 失败），全部归因到探针量法而非机制 |
 | **E3** | Storm-beat integration with mission chain | ✅ Scheduled fronts per beat | `stormBeat.fired[]` array tracks sequence |
 
 **Gameplay Loop Evidence**:

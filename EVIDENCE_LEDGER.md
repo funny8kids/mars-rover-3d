@@ -49,7 +49,7 @@
 | E1 | Positional storm with timeToClear() formula (analytic phase system avoiding frame-counter drift) | `StormField.timeToClear()` method in `src/fx/storm.js` | Code inspection | ✅ Implemented |
 | E1a | Layered density + parallax (near/mid/far depth layers) | Particle z-offset configuration | Rendering pipeline | ✅ Implemented |
 | E1b | Wind-direction visibility anisotropy | Directional attenuation terms | `stormField.outlook(phys)` returns directional readout | ✅ Implemented |
-| E2 | Two gameplay loops (solar decay + navigation beacon unreliability) | Grid power distribution affects sample site visibility | `base.gridRigs` integration visible in code | ✅ Implemented |
+| E2 | Two gameplay loops (dust-deposit → yield bill, and front → optical-nav loss → landmark/lock recovery) | `FILM`/`NAV` in `src/main.js`, `stormField.local()` per rig and per rover | `tools/storm-loop-probe.js` walked end to end in the browser: `STORM_LOOPS_PASS 13/13` (tools/logs/storm-loop-2026-09-28-215121.log, reproduced by -214819.log) — front@20 m raises array film 0.281→0.503 while calm sky Δ 0.0000; lost output 1.7%→76.5%; lance at 6 m clears the aimed column 0.8→0 and pays Δbattery −0.1502; local dust 0.563 vs 0.000 at one stance moves lock 0 vs 1; cleaning columns 95%→0% moves landmarks 1→2 and re-acquire 2.32 s→0.73 s | ✅ Measured (was code-inspection only until 2026-09-28) |
 | E3 | Storm-beat integration with mission chain | `stormBeat.fired[]` tracks scheduled fronts per beat | Task chain dependency | ✅ Implemented |
 
 ### F · 验收纪律

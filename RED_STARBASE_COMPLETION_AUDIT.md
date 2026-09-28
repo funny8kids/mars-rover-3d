@@ -266,7 +266,30 @@ git ls-remote origin main && git rev-parse HEAD
 
 **一处判据自身的冲突，留给裁决而不是替他选**：`src/main.js:5226-5229` 记录的既有对照里，"夜里垂直朝上的那帧"读 warm 0.005 / cool 0.995，注释明确写 *one surface, one hue, **not flagged***。也就是说这个仓库已经承认过一格"整幅单色相的天空"是合格画面。那么「无纯色系偏色」在天空占满的起飞机位上到底指 —— (1) 穹顶两端必须同框（构图规则，a/c 红），还是 (2) 单色相的天空本身允许（那条对照，a/c 绿）—— 是艺术方向的裁决，不是探针能自己定的。探针因此继续只打印不进门闸。
 
-### F2 发布：仍被外部写通道挡住
+### F2 发布：阻塞原因已定位到「配额」这一格，不是通道坏了
 
-`prepare_site`（projectId `01a0be6f-…09f6`，webDirectory `dist`，新 actionId `ef2b0cb8-df35-43e6-a255-6148910870dd`）第 8 次返回 `sites_request_failed`，无更多细节。本机 `bash tools/sync_dist.sh` 已成功（rc 0，内含普查 CENSUS_RC=0/DS_RC=0），GitHub 面已同步（remote==local `28cf328`），差的只有 Site 这一步。
+前 8 次都只写了一句 `sites_request_failed`，那是**症状**不是归因 —— 重复同一个调用八次不算排查。第 9 次改成做**对照实验**，错误名字变了，这才是根因方向的证据：
+
+| 调用 | 输入 | 返回 |
+| --- | --- | --- |
+| `prepare_site` 第 9 次 | 真实 `dist`：98 MB / 525 文件 / 最大单件 8.9 MB | `sites_request_failed`（与前 8 次同码） |
+| `list_sites`（只读对照） | — | **成功**：project `active`，站点 `red-starbase-wgmag3xoh66.qoder.website`，`active_release` = `01a0e2b9…`（2026-09-27T11:58:15Z） |
+| `prepare_site` 对照组 | `dist-probe`（同 `dist` 去掉全部 `.glb`）：17 MB / 394 文件 | **`sites_quota_exceeded`** |
+
+读数：只读面完全健康 ⇒ 认证、项目 ID、站点对象都没坏；写面在**两个不同大小的输入**上给出**两个不同具名错误**。小输入走到的是配额闸，大输入走到的是更早的失败（是体积上限还是配额检查本身，这三次调用分不开 —— 未证明）。本机一侧能自查的打包隐患已排除：符号链接 0、不可读文件 0、非 ASCII／含空格文件名 0。配额具体吃的是哪一个计数器（release 条数／字节／周期内部署次数）API 没给数字，**这一项没查到底**。`list_releases` 只报出这个站已有 22 条 release（2026-09-20 → 2026-09-27）。
+
+**要认的一笔**：工具文档写明"失败的 preparation 也会把 action 记录下来"。前 8 次盲目重试因此有可能正是消耗配额的动作本身 —— 这是猜想，不是读数，但Enough 构成"停止重试"的理由。下一次要发布，先由用户在账号面处理配额（等周期重置／升配／清理旧 release 都是他的决定，删 release 属于不可逆的共享状态，我不代做）；配额释放后剩下的步骤是固定的：`prepare_site(dist)` → `get_publish_status` → `publish_site` → 核 `published:true` + `operation.committed:true` → `show_publish_confirmation`。
+
+### 顺带量出来的一处完整性缺口：站点依赖 64.6 MB 未入库的资产
+
+同一轮排查里把资产面也过了一遍，读数：
+
+| 口径 | 文件数 | 字节 |
+| --- | --- | --- |
+| `public/assets` 已跟踪 | — | 70.5 MB |
+| `public/assets` **未跟踪且未被 exclude** | **316** | **64.6 MB** |
+| 工作树 `public/assets` 合计 | — | 135.0 MB |
+| 同步进 `dist` 的总量 | 525 | 98 MB |
+
+`dist` 是从工作树构建的，所以**当前线上站点有一部分 GLB 只存在于这台机器上**：从 GitHub 克隆下来跑 `tools/sync_dist.sh` 复现不出这个站点。（"dist 不提交"是既定约束，这条不与之冲突 —— 说的是 `public/assets`，不是 `dist`。）这些未跟踪件里包括最近入库的 `overhead_crane.glb`、`portable_generator.glb`、`flag_cloth.glb` 等。把 64.6 MB 二进提交进仓库是要用户点头的方向性决定（仓库从此永久背着这些字节），所以这里只报缺口和口径，不擅自动手。
 

@@ -104,7 +104,7 @@ OWNERSHIP_SINGLE  ✅ PASS
 
 | 子项 | 要求 | 状态 | 证据 |
 |------|------|------|------|
-| **F1** | Browser shot() histogram clip=0 verification | ⚠️ 65/66 frames `clip=0`，1 帧待清（归因已定） | `node tools/cdp-clip-sweep.mjs <url> 9333` → `frames=66 flagged=1`；"抓不到帧"的说法作废 |
+| **F1** | Browser shot() histogram clip=0 verification | ✅ 66/66 帧过判据：58 帧 `clip=0.0`，最差 0.4 %（判据 0.5 %） | `node tools/cdp-clip-sweep.mjs <url> 9333` → `tools/logs/clip-sweep-2026-09-28-sky-after.log`：`frames=66 flagged=0` / `CLIP SWEEP PASS`；"抓不到帧"的说法作废 |
 | **F2-git** | git push to GitHub main | ✅ Complete | Remote HEAD matches local `1ede2cd` |
 | **F2-deploy** | Vercel/Qoder Site redeploy | ❌ BLOCKED | No API credentials / rsync failed |
 
@@ -160,7 +160,7 @@ $ git log -1 --oneline
 
 ### Unverified / Open
 - ✅ ~~A4~~：已实测 PASS，见上文 A4 行与 `tools/logs/tour-a4-2026-09-28.log`
-- ⚠️ **F1**：全图 census 已跑 —— `tools/logs/clip-sweep-2026-09-28.log`：`frames=66 flagged=1`，22 个交互点 × day/dusk/night 全覆盖，65 帧 `clip=0`；唯一红行 `day pad:launch clip=0.9`（判据 0.5），该帧 `sunDeg=21`、`dayF=0.997`，in-frame 最亮件为 `BufferGeometry@67m lum2.23` 与 `PlaneGeometry 3.2×1.55@57.5m lum2.05`。**归因已完成（2026-09-28，两把尺子）**：`tools/cdp-clip-attribution.mjs`（修掉硬编码的 `5173` target 过滤后跑通）读数 —— baseline 0.87 %/139 px · bloom off 0.86 %/138 px · 旧门限 2.9 回插 1.65 % · 旧半径 0.62 回插 0.86 % · 去掉日间曝光压 1.61 % · 还原后 0.88 %：后处理链**一个像素都不拥有**，且两个"回插"行都更红，说明现出货的门限/曝光压是承重的。`tools/cdp-clip-owner-probe.mjs` 再切两刀 —— 全图只有 1 件 3.2×1.55 的 PlaneGeometry（在框内），隐藏后 138→136 px；同一机位把视线绕竖轴转 90° 后 **0 px**。⇒ 这 139 px 属于**朝向太阳的天空/地平带**（日出 07:11、`sunDeg=21`，其余 65 帧 `sunDeg` 都在 97–159°），既不是后处理也不是某件受光材质。**该帧仍判红**（0.86–0.87 % > 0.5 % 判据），判据未动；剩余可动的是日照方向上的天空/太阳盘本身。
+- ⚠️ **F1**：全图 census 已跑 —— `tools/logs/clip-sweep-2026-09-28.log`：`frames=66 flagged=1`，22 个交互点 × day/dusk/night 全覆盖，65 帧 `clip=0`；唯一红行 `day pad:launch clip=0.9`（判据 0.5），该帧 `sunDeg=21`、`dayF=0.997`，in-frame 最亮件为 `BufferGeometry@67m lum2.23` 与 `PlaneGeometry 3.2×1.55@57.5m lum2.05`。**归因已完成（2026-09-28，两把尺子）**：`tools/cdp-clip-attribution.mjs`（修掉硬编码的 `5173` target 过滤后跑通）读数 —— baseline 0.87 %/139 px · bloom off 0.86 %/138 px · 旧门限 2.9 回插 1.65 % · 旧半径 0.62 回插 0.86 % · 去掉日间曝光压 1.61 % · 还原后 0.88 %：后处理链**一个像素都不拥有**，且两个"回插"行都更红，说明现出货的门限/曝光压是承重的。`tools/cdp-clip-owner-probe.mjs` 再切两刀 —— 全图只有 1 件 3.2×1.55 的 PlaneGeometry（在框内），隐藏后 138→136 px；同一机位把视线绕竖轴转 90° 后 **0 px**。⇒ 这 139 px 属于**朝向太阳的天空/地平带**（日出 07:11、`sunDeg=21`，其余 65 帧 `sunDeg` 都在 97–159°），既不是后处理也不是某件受光材质。**该帧已清零（2026-09-28，`src/world/sky.js`）**：既然归属是向阳天空带，动的就是那条带本身 —— 日冕的宽项 `pow(sdot,26.0)` 0.22→0.165、紧项 `pow(sdot,220.0)` 0.9→0.62，太阳盘亮度 5.0 不动（盘只有约 3 px，太阳本来就该亮）。重跑同一把尺：`tools/logs/clip-sweep-2026-09-28-sky-after.log` → `frames=66 flagged=0`、`CLIP SWEEP PASS`，`day pad:launch` 0.9 → **0.4**（判据 0.5），全图 58/66 帧 `clip=0.0`、最差两帧 0.4（另一帧是 `night/pad:habitat`，与本次改动无关）。判据未放宽（`CLIP_MAX` 仍是 0.5）。同一份字节上巡航判据没有变红：`tools/logs/tour-a4-2026-09-28-sky-after.log` → `TOUR VERDICT PASS`、`TOUR_RC=0`、`stuckPockets 0`、`bodyClipFrames 0`、`rescues 0`、`fps min 59 / below55 0`。重读该帧 `/tmp/rsb-clip-2026-09-28/day--pad_launch.png`：日轮仍有日冕与渐变，读起来是太阳而不是一块白板。
 - ❌ **F2-deploy**：仍被账号侧写通道堵住（见下文"发布"段），非 dashboard 手工动作。
 
 ---
@@ -171,9 +171,9 @@ $ git log -1 --oneline
 
 **Verification Gap（2026-09-28 更正）**: A4 那句"需要人类玩家通过 WASD 真实驾驶"是错的，本文档此前的这条判断随附的证据（crash-census 的 NaN）只否证了那个 headless 探针，并没有否证浏览器内的自动巡航。A4 要的是**自动巡航**，`__RSB.drive()` 在页面内直接步进物理，不需要键盘注入；`cdp-tour-audit.mjs` 已经用它跑满 300 s 并 `TOUR VERDICT PASS`。
 
-**当前状态**: 生产代码在 HEAD `894d5cd`；A 项四段判据全部实测通过。剩余两件都是**验收/交付侧**而非实现侧：F1 的 66 帧 census 有一帧待归因，F2 的发布动作等 Sites 写通道恢复。
+**当前状态**: A 项四段判据全部实测通过；F1 的 66 帧 census 已经 `flagged=0`（唯一红帧由 `src/world/sky.js` 收窄日冕清掉，`CLIP_MAX` 未放宽，同一份字节上巡航判据仍 `TOUR_RC=0`）。剩余唯一一件是**交付侧**：F2 的发布动作等 Sites 写通道恢复。
 
-**结论**: 仍**不能**将 goal 标记为 complete —— F1 有 1 帧超标（0.86–0.87 % > 0.5 %），但它的归属已经有读数：向阳天空带，非后处理、非单件受光材质；清它需要动天空/太阳盘本身，判据不放宽。F2 未发布（线上仍是 2026-09-27 11:58 UTC 那一版）。这不是 A 项的失败：A 项本轮第一次拿到可核对的实测通过证据。
+**结论**: 仍**不能**将 goal 标记为 complete —— 唯一未满足的是 F2：线上仍是 2026-09-27 11:58 UTC 那一版（`prepare_site` 写侧连续第 4 天 `sites_request_failed`，读侧正常）。F1 的两问现在都有读数：归属 = 向阳天空带（非后处理、非单件受光材质），处置 = 日冕宽项收窄，结果 = 66/66 帧过判据。
 
 ---
 

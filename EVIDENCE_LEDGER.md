@@ -56,7 +56,7 @@
 
 | # | Requirement | Status | Blocker Reason |
 |---|-------------|--------|----------------|
-| F1 | Browser shot() histogram + brightness histogram verifying clip=0 | ⚠️ 65/66 帧 `clip=0` | `node tools/cdp-clip-sweep.mjs "http://127.0.0.1:8080/qa_boot.html?auto=std" 9333` → `frames=66 flagged=1`；归因：`cdp-clip-attribution.mjs` 后处理 0 px、`cdp-clip-owner-probe.mjs` 受光牌 2 px / 视线转 90° → 0 px ⇒ 唯一红帧属向阳天空带，**判据未放宽，仍待清** |
+| F1 | Browser shot() histogram + brightness histogram verifying clip=0 | ✅ 66/66 帧过判据（58 帧 `clip=0.0`，最差 0.4 %，判据 0.5 %） | `node tools/cdp-clip-sweep.mjs "http://127.0.0.1:8080/qa_boot.html?auto=std" 9333` → `tools/logs/clip-sweep-2026-09-28-sky-after.log`：`frames=66 flagged=0` / `CLIP SWEEP PASS`；归因链：`cdp-clip-attribution.mjs` 后处理 0 px、`cdp-clip-owner-probe.mjs` 受光牌 2 px / 视线转 90° → 0 px ⇒ 唯一红帧属向阳天空带；处置：`src/world/sky.js` 日冕宽项 0.22→0.165、紧项 0.9→0.62（`CLIP_MAX` 未放宽）；同字节巡航 `TOUR_RC=0` |
 | F2-git | git push to GitHub main with explicit URL | ✅ Complete | Remote HEAD @ `894d5cd` confirmed via `git ls-remote` |
 | F2-deploy | Redeploy Qoder Site/Vercel project `01a0be6f-ebf7-7af5-bcef-3cce5b5d09f6` | ❌ Unreachable | No Vercel API credentials; SSH qodersite.com hostname resolution fails |
 

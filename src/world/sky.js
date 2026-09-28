@@ -77,7 +77,14 @@ void main(){
   float disc = smoothstep(0.99985, 0.99993, sdot);
   // The old corona spread 0.30 out to a 20-degree radius on top of a 0.10 hemisphere-wide wash,
   // so the sun read as a white hole rather than a disc with a rim.
-  float glow = pow(sdot, 220.0) * 0.9 + pow(sdot, 26.0) * 0.22 + pow(sdot, 3.0) * 0.055;
+  // 0.9/0.22 → 0.62/0.165. The 66-frame census (clip-sweep-2026-09-28.log) has exactly one red frame,
+  // day/pad:launch at clip 0.9 % against the 0.5 % bar, and cdp-clip-owner-probe.mjs says those 138 px
+  // are this term, not a mesh: hiding the only 3.2x1.55 panel in frame moves 138 -> 136, and rotating
+  // the same pose 90 deg away from the sun moves it to 0. The disc itself stays at 5.0 (it is ~3 px wide
+  // and a sun is allowed to be bright) — what was too wide is the halo that reads as a white plate
+  // around it. The tail keeps its shape, only the radius where it clears the tone-mapped white point
+  // shrinks.
+  float glow = pow(sdot, 220.0) * 0.62 + pow(sdot, 26.0) * 0.165 + pow(sdot, 3.0) * 0.055;
   vec3 sunCol = mix(vec3(1.0, 0.55, 0.28), vec3(1.0, 0.87, 0.72), dayF);
   // 5.0, not 22.0. The disc only has to clear the tone-mapped white point (ACES is at 0.99 by 4.0), and
   // UnrealBloomPass puts the *excess* over its threshold into the mip chain — so at 22 the sun painted a

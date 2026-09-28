@@ -1,0 +1,10 @@
+feat: 【E】1 补上从未被枚举的四条子判据 —— 尺子落地、首跑 6/7 红，红归到仪表而不是产品
+
+【E】1 的七件事此前只有三件进过台账（计时/分层/各向异性），色偏随高度、体积光耦合、音效-风压、暴后沉积覆盖层四条根本没有行。补成 E1c–E1f，并给 tools/storm-grade-probe.js：判据读 __RSB.post() 的分级 pass Uniform（写侧 src/main.js:2624-2642 每帧就是普通 JS，读 Uniform 比读截图少一层猜测），带结构零对照、极性对照与 SKIP 通道（SKIP 不进分子）。
+
+首跑 tools/logs/storm-grade-2026-09-28-231655.log = STORM_GRADE_FAIL 6/7：
+- 5 条红在 uDirt 全程 NaN；同页逐 pass 倾倒显示第 3 个 pass 同时持有 uStorm 与 uDirt（启动 number:0）⇒ 读到的对象不是写的那个，仪表未修，不算产品缺陷
+- 能读到的两支算术精确：stormF 0→0.023 使 uVignette 0.26→0.2652（0.22·stormF）、uGrain 0.028→0.0287（0.03·stormF）
+- A5 绿：撤暴回到基线 uStorm 0.018 / vig 0.2639
+- C SKIP：dayT 0.06→0.94 共 12 格晴空 uGodRay 恒 0，太阳从未进框，闸门未满足
+- D SKIP：headless AudioContext suspended，setTargetAtTime 不推进

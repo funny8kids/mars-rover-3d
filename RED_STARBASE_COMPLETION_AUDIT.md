@@ -350,7 +350,13 @@ git ls-remote origin main && git rev-parse HEAD
 
 **一笔写下的怀疑，被同一轮读数撤掉**：工具文档说"失败的 preparation 也会记录 action"，据此我写过"前 8 次盲目重试可能在消耗配额"。这次对照直接否证 —— 连返回了具名 `quota_exceeded` 的那次都没留下动作（`sites_action_unavailable`）。没有动作就没有 release，重试既不烧配额也不排队：它只是无效，不是有害。**停手**的理由因此是"同码重复不构成排查"，不是"再试下去会更糟"。下一次发布要等账号侧把这条写通道放开（删旧 release、升配、等周期都是用户的决定；删除属不可逆的共享状态，我不代做）；放开后步骤固定：`prepare_site(dist)` → `get_publish_status` → `publish_site` → 核 `published:true` + `operation.committed:true` → `show_publish_confirmation`。
 
+### 线上那一版缺了什么：按 commit 数出来的差额（2026-09-28 夜）
+
+停手不等于不量。今天再用只读面确认一次并量出差额：`list_sites` 仍成功（2026-09-28T13:10Z，project `active`、`active_release_id = 01a0e2b9-e5f0-786e-82f5-dc6a6bf39f45`，cover `updated_at = 2026-09-27T11:58:19Z`）。以那个时刻为界，`git log --since=2026-09-27T11:58:00Z -- src` 数出 **8 条 src 提交没上线**（`946e618` `4f70072` `eeee6bc` `68c80e3` `503fde8` `f74eee9` `22b6924` `28cf328`），其中包含 **#62 H1b 的分离排期重做（滑行 3 s→9 s，`28cf328`）**、**F1 最后一帧过曝清零（`22b6924`，66 帧 census 首次 `flagged=0`）** 与 **构建脚本一致性修复（`f74eee9`）**。也就是说公开站点现在展示的仍是那份**有一条红帧、且分离动画按旧秒数排**的构建。这条差额是 F2 的代价，不是完成度 —— 本地 `dist` 已经同步到 `2cdb2b6` 之后的字节（`SYNC_RC=0`，`CENSUS_RC=0`/`DS_RC=0`），只差写通道放开后 `prepare_site(dist)` 那一步。
+
 ### 顺带量出来的一处完整性缺口：站点依赖 64.6 MB 未入库的资产
+
+
 
 同一轮排查里把资产面也过了一遍，读数：
 

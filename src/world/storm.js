@@ -465,7 +465,16 @@ void main(){
   float prof = 1.0 - smoothstep(edge - 0.34, edge, hy);
   // A denser shoulder low on the wall: the roll where the front curls over is optically thicker than
   // the haze flung above it, and that band of extra value is what makes the mass read as tumbling.
-  prof *= 1.0 + 0.30 * exp(-pow((hy - 0.14) * 2.2, 2.0));
+  // Re-centred on the deck and tripled, 2026-09-29. The previous +0.30 around hy 0.14 could not reach
+  // pixels at all: the body term below already put the foot near α 0.85, so multiplying by 1.30 and
+  // passing through clamp(…, 0, 1) left the deck band inside the clamp's dead zone, and the only
+  // height-varying term the eye could see was the silhouette cutoff aloft. That is why the framing at
+  // 150 m read top-heavy — the foot looked like haze while the crests looked like mass — and
+  // tools/storm-front-probe.js F5 had measured it before anyone named it: the wall's own row
+  // contribution averaged 19.85 near the deck against 20.98 near the crest, ratio 0.946. A shoulder
+  // that only ever reduces toward the ground is not a shoulder, so it now peaks exactly at hy 0
+  // (the deck line, F3: deck world-y 0.31 m) and gets its headroom from the body term below.
+  prof *= 1.0 + 0.90 * exp(-pow(hy * 2.6, 2.0));
   // Cat's paws: fingers of dust peeled off the deck and running ahead of the wall, thin enough to see
   // the dunes through. They used to sit at hy < 0.1, which is entirely below the horizon line from a
   // 150 m standoff, so the one element that sells "the front is moving" never appeared on screen.
@@ -473,7 +482,13 @@ void main(){
   float side = smoothstep(0.0, 0.14, vUv.x) * smoothstep(1.0, 0.86, vUv.x);
   // Light does not pass through a wall of dust — it is absorbed in the first few metres of it, so
   // the body of the front is opaque and only its lobes let the sky through.
-  float a = clamp(prof * (0.30 + body * 0.70) + paw * 0.42, 0.0, 1.0) * side * uAmt;
+  // The base is lowered from 0.30 + body*0.70 to 0.26 + body*0.60 so the deck shoulder above has
+  // somewhere to go: at the old value the foot reached this clamp already saturated, and the extra
+  // density the clause asks for ("贴地") could not be expressed no matter how strong the shoulder was.
+  // Mid-wall opacity drops ~0.88 → 0.75, which is the price of a real vertical gradient; the mass is
+  // still opaque where it meets the ground, which is where a haboob reads as a thing rather than a
+  // weather switch.
+  float a = clamp(prof * (0.26 + body * 0.60) + paw * 0.42, 0.0, 1.0) * side * uAmt;
   // This material is a raw ShaderMaterial, so it is the only thing in the scene that fog cannot reach.
   // Left that way it kept full contrast at 150 m while the dunes in front of it were already 70 %
   // gone, and that mismatch — not the texture — is what made the front look pasted on. Same

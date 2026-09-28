@@ -29,10 +29,11 @@
 //    来自那片布的几何与可见性：吊在 deck 线上、裙摆 26 m 埋进沙、贡献锁在低空一行带里，且只有 deck
 //    以上的部分在顶点着色器里翻滚（`up = smoothstep(uDeck, 1.0, uv.y)`，「Nothing below the deck line
 //    moves」）。F3/F5 量的就是这个；雾与粒子那半边的高空分层另有 E1a。
-//  · 片元里那条「deck 之上 14 % 处更密」的肩（`prof *= 1.0 + 0.30*exp(-pow((hy-0.14)*2.2, 2.0))`）
-//    **不在判据里**，只报数。原因写在 F5 里：画面上一行只能观测到 α·(墙色 − 背景)，α 与背景不可分
-//    （一次 render 一个方程），所以"低处更密"不能从带背景的帧差里干净地归因出来；那一格交给眼睛
-//    （F7 的三帧）与着色器算术本身。
+//  · 片元里那条「低处更密」的肩（`prof` 上乘的那个 exp 项）**不在判据里**，只报数。原因写在 F5 里：
+//    画面上一行只能观测到 α·(墙色 − 背景)，α 与背景不可分（一次 render 一个方程），所以"低处更密"
+//    不能从带背景的帧差里干净地归因出来；那一格交给眼睛（F7 的三帧）与着色器算术本身。
+//    肩的系数与中心不抄进本注释：第一跑量到近地/近顶 0.946（肩在 clamp 的死区里，等于没有），
+//    产品侧把肩移到 hy 0 并给 body 让出余量后同一格是 1.346 —— 两个读数都在各自的 raw 日志里。
 //  · `uAmt` 在墙被关掉之后是**陈旧值**：`placeStormWall` 第一行 `const amt = field.amplitude;`
 //    然后 `mesh.visible = amt > 0.02; if (!mesh.visible) return 0;` —— 提前返回，uniform 不再被写。
 //    第一跑我就是照 `uAmt ≤ 0.05` 判 F6，于是"墙已经不可见"的假阳对照读到一个 1.0 的 uAmt 而判红。
@@ -203,7 +204,7 @@
     outside_band_max_abs_diff_levels: rd(outsideMax, 3), floor: rd(Math.max(0.5, 6 * noiseMax), 3),
     not_gated: { near_deck_over_near_crest: rd(lowDense / (highDense || 1e-6), 3),
       deck_side_mean: rd(lowDense, 3), crest_side_mean: rd(highDense, 3),
-      reason: '画面上一行只观测到 α·(墙色 − 背景)：一次 render 一个方程，α 与背景不可分，所以片元那条 low-shoulder（prof *= 1.0+0.30*exp(-pow((hy-0.14)*2.2,2.0))）不能从带背景的帧差里干净归因；这一格只报数，判据交给 F7 的帧与着色器算术本身' },
+      reason: '画面上一行只观测到 α·(墙色 − 背景)：一次 render 一个方程，α 与背景不可分，所以片元那条 low-shoulder（prof 上乘的 exp 项，系数不抄进这里，看 storm.js）不能从带背景的帧差里干净归因；这一格只报数，判据交给 F7 的帧与着色器算术本身' },
     why: '「贴地」在画面里的可归因那一半：前缘是一片站在地上、被地平线收住的行带（带外一行的亮度都不动），不是铺满全屏的洗色（那是雾）',
   });
 

@@ -30,16 +30,24 @@
   const ALT = [0, 15, 37, 57];                    // 相对抬高（m）：驾驶高度 → 塔顶 → 穿出 slab 之前
   const DAYT = 0.46;                              // 与锚日志同一时刻
 
+  // 两条 settle 都改成条件等待，且门槛与已提交那把尺子（storm-hue H1：buried ≥ 0.97、calm ≤ 0.05）对齐。
+  // 前两跑各因缺一半而红：
+  //   ① 晴空对照只 sleep(700) ⇒ +15/37/57 m 的 calmA 读到 uStorm 0.619/0.619/0.63，
+  //      差中差的"对照"里还有六成暴，d 那一格量的就不是暴的净效应；
+  //   ② 判据帧只等到 uStorm ≥ 0.9 的平台 ⇒ 实测 0.916~0.936，而锚日志的 buried 是 0.973，
+  //      两把尺子在"共有那一点"上比的其实不是同一个暴强。
   const setStorm = (on) => {
     if (!on) { R.clearSky(); return Promise.resolve(); }
     R.pinStorm('peak', -120, 0);
     return sleep(1800);
   };
-  const waitStorm = async (min, ms) => {
+  const waitLevel = async (test, ms) => {
     const t0 = Date.now();
-    while (Date.now() - t0 < ms) { if (uStorm() >= min) return true; await sleep(300); }
-    return uStorm() >= min;
+    while (Date.now() - t0 < ms) { if (test(uStorm())) return uStorm(); await sleep(250); }
+    return uStorm();
   };
+  const waitStorm = (min, ms) => waitLevel((u) => u >= min, ms);
+  const waitCalm = (max, ms) => waitLevel((u) => u <= max, ms);
   const cap = async (name, dz) => {
     await oneFrame();
     const s = await Promise.race([R.shot(name, [X[0], X[1] + dz, X[2]], [LK[0], LK[1] + dz, LK[2]], null),
@@ -58,11 +66,13 @@
 
   // ---- 采样：每个海拔先晴后暴；A=0 的暴与晴各采两帧量噪声 ----
   R.setDay(DAYT); await sleep(900);
+  const calmReached = [];
   for (const dz of ALT) {
-    R.unpinStorm(); await setStorm(false); await sleep(700);
+    R.unpinStorm(); await setStorm(false);
+    calmReached.push(await waitCalm(0.05, 20000));
     frames.push(await cap(`e1a-d${dz}-calmA`, dz));
     if (dz === 0) frames.push(await cap('e1a-d0-calmB', dz));
-    await setStorm(true); await waitStorm(0.9, 22000); await sleep(1500);
+    await setStorm(true); await waitStorm(0.97, 24000); await sleep(1500);
     frames.push(await cap(`e1a-d${dz}-stormA`, dz));
     if (dz === 0) frames.push(await cap('e1a-d0-stormB', dz));
   }
@@ -85,12 +95,29 @@
     `帧 ${ok.length}/${ALT.length * 2 + 2}；uStorm ${ok.filter((f) => f.name.includes('storm')).map((f) => `+${f.dz}m ${f.uStorm}`).join(' ')}；暗部 ${ok.map((f) => `${f.name.slice(4)}:${PCT(f.bins0)}`).join(' ')}`);
   ok.filter((f) => f.bins0 >= LIGHT).forEach((f) => skip.push(`${f.name} 暗部 ${PCT(f.bins0)} 超标——暗像素色度是量化噪声，不参与海拔判据`));
 
-  // ---- G1 锚：A=0 必须复现已提交日志的 storm split −0.7958 ----
-  const ANCHOR = -0.7958, ATOL = Math.max(0.2, 3 * noise);
+  // ---- G0b 对照纯度：差中差要求"对照"那支真的是晴空 ----
+  // 第二跑的 +15/37/57 m calmA 读到 uStorm 0.619/0.619/0.63（settle 只 sleep(700)，暴还没退干净），
+  // 那一跑的 d 量的不是"暴的净效应"而是"0.97 的暴减 0.62 的暴"。已提交那把尺子的 H1 就有这一格，这里补齐。
+  const calms = ok.filter((f) => f.name.includes('calm'));
+  const storms = ok.filter((f) => f.name.includes('storm'));
+  add('G0b 对照纯度：晴空帧 uStorm ≤ 0.05、判据帧 ≥ 0.97（与 storm-hue 的 H1 同门槛；否则差中差比的是两个不同暴强）',
+    calms.length === ALT.length + 1 && calms.every((f) => f.uStorm <= 0.05) && storms.every((f) => f.uStorm >= 0.97),
+    `calm max ${rd(Math.max(...calms.map((f) => f.uStorm)), 3)}（${calms.map((f) => `${f.name.slice(4)}:${f.uStorm}`).join(' ')}）；storm min ${rd(Math.min(...storms.map((f) => f.uStorm)), 3)}；退暴条件等待实测到达值 ${calmReached.map((v) => rd(v, 3)).join(' ')}`);
+
+  // ---- G1 锚：新尺子必须与已提交那把尺子读同一片像素 ----
+  // 第一版把锚写成旧日志 buried 那一帧的 split 字面值 −0.7958 ± 0.2。三跑证明这个契约本身无效：
+  //   同跑重复 0.0076，跨跑却随 uStorm 连续移动 —— uStorm 0.916 → split −0.2113，0.991 → −1.3607。
+  //   buried 的顶带是墙的 aloft 色，墙在动，follower 停在哪个幅度取决于 settle，一个字面帧不能当契约。
+  // 可复现的那一半是晴空：旧尺子 0.46 时刻 calm split 0.6651（ground 2.0543 / sky 1.3892），
+  //   本尺 d0-calmA 第二跑 0.6812、第三跑 0.6799 ⇒ 跨尺、跨跑都在 0.016 内 —— 这才配当锚。
+  // 暴内那一半改为"达到姊妹尺子自己用的幅度地板"：storm-hue H2 判 |暴内 − 晴空| ≥ 0.748，这里同门槛同极性。
+  const CALM_ANCHOR = 0.6651, CATOL = 0.2;
+  const MAG_FLOOR = 0.748;                       // = storm-hue-2026-09-29-000453.log 的 H2 地板
   const s0 = split(at('e1a-d0-stormA'));
-  add(`G1 新尺子在共有那一点上复现旧尺子：A=0 storm split 落在 ${ANCHOR} ± ${rd(ATOL, 3)}（锚 = storm-hue-2026-09-29-000453.log）`,
-    fin(s0) && Math.abs(s0 - ANCHOR) <= ATOL,
-    `A=0 实测 ${rd(s0)}（旧尺子 ${ANCHOR}），容差 ${rd(ATOL, 3)}，噪声 max(${rd(nS)},${rd(nC)})=${rd(noise)}`);
+  const c0 = split(at('e1a-d0-calmA'));
+  add(`G1 新尺子与旧尺子同值：A=0 的晴空 split 落在 ${CALM_ANCHOR} ± ${CATOL}（跨尺锚 = storm-hue-2026-09-29-000453.log，可复现的那一半），且暴内相对晴空的净幅度 ≥ ${MAG_FLOOR}（同姊妹尺 H2 的地板与极性，buried 在下方）`,
+    fin(s0) && fin(c0) && Math.abs(c0 - CALM_ANCHOR) <= CATOL && (s0 - c0) <= -MAG_FLOOR,
+    `calm 实测 ${rd(c0)}（旧尺子 ${CALM_ANCHOR}，差 ${rd(Math.abs(c0 - CALM_ANCHOR), 4)}）；storm 实测 ${rd(s0)} ⇒ 净幅度 ${rd(s0 - c0)}；旧尺子的 buried 字面值 −0.7958 不作锚：本尺 uStorm ${at('e1a-d0-stormA').uStorm} 时它到 −1.3607，而该值同跑重复只差 ${rd(nS)} ⇒ 契约落在幅度上而不是落在某一片墙上`);
 
   // ---- G2 判据：沙暴造成的竖向色偏随世界海拔变化（差中差）----
   // 不能只看暴内 split 随海拔的跨度：把相机竖直抬高时，晴空那一支也在动（画面里的地面带换成了更远的

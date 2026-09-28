@@ -91,7 +91,7 @@ OWNERSHIP_SINGLE  ✅ PASS
 | **E1a** | Layered density + parallax | ✅ Three depth layers (near/mid/far) | Particle z-offset configuration |
 | **E1b** | Wind-direction visibility anisotropy | ✅ Directional attenuation terms | `stormField.outlook(phys)` directional readout |
 | **E2** | Two gameplay loops | ✅ 两条闭环已由浏览器内实测走通：① 沙尘沉积 → 阵列出力账单 → 吹扫花电池；② 前沿局部尘 → 光学失锁 → 清洁光台才换回地标与重获速度 | `tools/storm-loop-probe.js` 实测 `STORM_LOOPS_PASS 13/13`（tools/logs/storm-loop-2026-09-28-215121.log，-214819.log 复现同读数）。关键格：front@20 m 把阵列积尘 0.281→0.503 而晴同长 Δ 0.0000；lost output 1.7%→76.5%；6 m 处吹扫把目标柱 0.8→0 并付 Δbattery −0.1502；同一站位 local 0.563 vs 0.000 使 lock 0 vs 1；清柱 95%→0% 使 landmarks 1→2、重获 2.32 s→0.73 s。此前该条只有代码检视（本件之前从未跑完）；探针自己的 RED 序列在 -213321 / -213814 / -214316 三份日志里（5/11、4/13、1/13 失败），全部归因到探针量法而非机制 |
-| **E3** | Storm-beat integration with mission chain | ✅ Scheduled fronts per beat | `stormBeat.fired[]` array tracks sequence |
+| **E3** | Storm-beat integration with mission chain | ✅ 沙暴是任务链的变量而非随机干扰：走到链的最后一格才起暴、预警在屏上可读、发射窗口被这张日程真的按住，且日程会变成头顶的墙 | `tools/storm-beat-probe.js` 实测 `STORM_BEAT_PASS 10/10`（tools/logs/storm-beat-2026-09-28-220420.log）。关键格：抵达链末把日程写成 `fired ["launch"]` 且晴空排程 clearIn 202.2 s（对照：开局 `fired []`，闸门只会说「等待日落」）；预警句在屏上连续可见 5.2 s 且带 `2:00` 时钟，顶栏常驻倒计时 `晴朗 · 下一场沙暴 1:08 → 1:05`（活钟而非定词）；clearIn 8 s 内 189→181＝1.00 s/s 且被 beat 自己的 120 s lead＋124 s 行程封顶；坪面闸门被日程按住为 `⚠ 发射窗口 · 等待沙暴过境 3:00`，撤掉日程后沙暴句消失只剩 `等待日落 1:51`（这句是有条件的，不是硬写）；6 s 短引信真的落地——坪面局部尘 0→0.951、相位 `front`，跨过 `LAUNCH_DUST_LIMIT` 0.12。此前该条只有代码检视；第一跑 `STORM_BEAT_FAIL 1/9`（tools/logs/storm-beat-2026-09-28-220152.log）红在探针自己的取样钟（3.6→8.8 s 的 toast 槽被 9 s 单次采样错过），改为轮询并补上顶栏常驻态这一半 |
 
 **Gameplay Loop Evidence**:
 - Loop 1: `grid.battery` decays during storm → Force return to power grid

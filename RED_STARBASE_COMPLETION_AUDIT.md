@@ -16,9 +16,16 @@
 | **A1** | 自动巡航死锁录制器（pos/yaw/speed/collider 每帧） | ✅ Implemented in `crash-census.mjs` | `tools/logs/crash-census-*.log` (see note on NaN bug below) |
 | **A2** | Collider 两两/三三重叠分析 | ✅ Implemented in `plan.audit()` | `blocks=0, tight=45 accepted, intrusions=0` |
 | **A3** | 运行时兜底脱困（倒车 + 抬升） | ✅ Physics.js deadlock rescue | [`src/vehicle/physics.js:291-336`](src/vehicle/physics.js:291-336) |
-| **A4** | 5 分钟巡航测试（零卡死、fps≥55） | ❌ **UNVERIFIED** | Requires human WASD driving |
+| **A4** | 5 分钟巡航测试（零卡死、fps≥55） | ✅ **实测 PASS**（2026-09-28，HEAD `894d5cd`） | `tools/logs/tour-a4-2026-09-28.log` → `TOUR VERDICT PASS`，`TOUR_RC=0` |
 
-**Note on crash-census.mjs bug**: The tool has a fundamental initialization flaw (`roverYaw=0`, `fwdX=fwdZ=NaN`) causing it to hang at frame 10000 with `(NaN,NaN)` positions. This is documented evidence that **automation cannot replace real browser testing for A4**.
+A4 四段判据在同一次运行里逐条对上（`node tools/cdp-tour-audit.mjs "http://127.0.0.1:8080/qa_boot.html?auto=std" 9333 300 10`）：
+`simSeconds 300 / frames 18000 / laps 2 / metres 1917`，覆盖 `zones 7/7`、`streets 24/24`、`points 22/22`（零 missing）；
+`stuckPockets=0`、`stuckFrames=0`、`stallGlimpses=0`（零卡死）；`clip.bodyClipFrames=0`、`clip.sinkFrames=0`、`maxStepMetres=0.25`、`teleports=[]`（零穿模、非瞬移的连续路径）；
+`FPS min=63 med=63 below55=0 emaMin=62`（fps≥55）。渲染走真实 GPU：`GPU renderer = ANGLE (Intel, Vulkan 1.4.335, Iris Xe RPL-P)`，非软件 GL；环境读数 `load≤2.7 / clock≥4.82 GHz`，前后半程同为 62.7 fps，无节流台阶。
+本次 `rescues=0` —— A3 兜底一次都没被触发，说明路径本身不需要救援。
+
+**Note on crash-census.mjs bug**: 该 headless 探针确有初始化缺陷（`roverYaw=0` → `fwdX=fwdZ=NaN`，`tools/logs/crash-census-2026-09-28.log` 从 frame 10000 起持续 `(NaN,NaN)`），它的输出不可作为验收证据。
+但它**不能**推出"A4 无法自动化"：A4 的正解是在真实浏览器里用 `__RSB.drive()` 分块步进（`cdp-tour-audit.mjs`），不依赖任何键盘事件注入。上一条"A4 需人工驾驶"的结论已于 2026-09-28 被这次实测推翻。
 
 **Evidence of correct implementation despite buggy probe**:
 - Previous census runs (2026-09-27 20:42:48): `success: true, deadlocks: 0, duration: 180s`
@@ -151,10 +158,10 @@ $ git log -1 --oneline
 - ✅ **Git Sync**: All code committed and pushed to GitHub main
 - ✅ **Build Script Consistency**: rsbkit API usage, silent failure rc codes
 
-### Unverified (Human Action Required)
-- ❌ **A4**: Manual 5-minute cruise test (WASD input required)
-- ❌ **F1**: Browser screenshot validation (cannot capture live game state)
-- ❌ **F2-deploy**: Dashboard redeploy action (no programmatic access)
+### Unverified / Open
+- ✅ ~~A4~~：已实测 PASS，见上文 A4 行与 `tools/logs/tour-a4-2026-09-28.log`
+- ⚠️ **F1**：全图 census 已跑 —— `tools/logs/clip-sweep-2026-09-28.log`：`frames=66 flagged=1`，22 个交互点 × day/dusk/night 全覆盖，65 帧 `clip=0`；唯一红行 `day pad:launch clip=0.9`（判据 0.5），该帧 `sunDeg=21`、`dayF=0.997`，in-frame 最亮件为 `BufferGeometry@67m lum2.23` 与 `PlaneGeometry 3.2×1.55@57.5m lum2.05`。**归因未完成**：`tools/cdp-clip-attribution.mjs` 在这一跑没能挂上 CDP target（`webSocketDebuggerUrl` undefined），所以"是后处理还是受光材质"这一问还没有读数，不许当作已判。
+- ❌ **F2-deploy**：仍被账号侧写通道堵住（见下文"发布"段），非 dashboard 手工动作。
 
 ---
 
@@ -162,11 +169,11 @@ $ git log -1 --oneline
 
 根据 objective 明确要求的完成标准："do not call UpdateGoal with status 'complete' until the objective is verifiably achieved"
 
-**Verification Gap**: A4 明确要求 "自动巡航连续跑满 5 分钟、覆盖全部 6 个分区与所有街道，零卡死、零穿模、fps≥55；提交前实测"。此测试需要人类玩家通过 WASD 进行真实驾驶操作，目前的技术栈无法自动化模拟游戏内控制输入和持续监控系统状态超过 5 分钟。
+**Verification Gap（2026-09-28 更正）**: A4 那句"需要人类玩家通过 WASD 真实驾驶"是错的，本文档此前的这条判断随附的证据（crash-census 的 NaN）只否证了那个 headless 探针，并没有否证浏览器内的自动巡航。A4 要的是**自动巡航**，`__RSB.drive()` 在页面内直接步进物理，不需要键盘注入；`cdp-tour-audit.mjs` 已经用它跑满 300 s 并 `TOUR VERDICT PASS`。
 
-**当前状态**: 所有生产就绪代码已交付到 GitHub，自动化验证工具全部通过。阻塞项属于必须人工执行的操作，非技术实现问题。
+**当前状态**: 生产代码在 HEAD `894d5cd`；A 项四段判据全部实测通过。剩余两件都是**验收/交付侧**而非实现侧：F1 的 66 帧 census 有一帧待归因，F2 的发布动作等 Sites 写通道恢复。
 
-**结论**: 根据完成标准，由于 A4 和 F2-deploy 仍待验证，**不能**将 goal 标记为 complete。这不是失败状态，而是正确应用了 objective 要求的验证纪律——不接受 proxy signals，只接受可核验的实际成果。
+**结论**: 仍**不能**将 goal 标记为 complete —— F1 有 1 帧红且归因工具当场坏掉，F2 未发布（线上仍是 2026-09-27 11:58 UTC 那一版）。这不是 A 项的失败：A 项本轮第一次拿到可核对的实测通过证据。
 
 ---
 

@@ -1,0 +1,44 @@
+BOULDERS 30 · discs 200 · anchor=rock-scatter userData.stones
+  scatter:rock#6      -73.23,  13.75  cobble  h   0.5  band  0.31  reach  0.58  discs  1 shield  0.32  phantom  -0.01  slender   1.61  midW  0.86  topW  0.41  midEye   0.58  topEye   1.22
+  scatter:rock#22     -89.79,   2.66  block   h  1.09  band  1.15  reach  1.15  discs  3 shield  1.16  phantom  -0.01  slender   0.95  midW  1.77  topW  0.79  midEye   0.62  topEye   1.38
+  scatter:rock#8      -64.82,  14.73  cobble  h  0.96  band  0.75  reach  0.75  discs  3 shield  0.77  phantom  -0.02  slender   1.28  midW  1.11  topW  0.54  midEye   0.86  topEye   1.78
+  scatter:rock#10     -84.06,  -6.08  shard   h  2.07  band  0.94  reach  0.95  discs  5 shield  0.96  phantom  -0.02  slender    2.2  midW  1.46  topW   0.7  midEye   1.42  topEye   2.96
+  scatter:rock#23     -51.76,  13.91  cobble  h  0.89  band  1.06  reach  1.07  discs  3 shield  1.08  phantom  -0.02  slender   0.84  midW  1.59  topW   0.7  midEye   0.56  topEye   1.27
+  scatter:rock#11      90.21,   6.64  cobble  h   0.9  band     1  reach  1.01  discs  2 shield  1.04  phantom  -0.04  slender    0.9  midW  1.44  topW  0.43  midEye   0.63  topEye   2.09
+  scatter:rock#5       11.52, -86.82  shard   h  4.62  band  1.54  reach  1.61  discs  8 shield  1.59  phantom  -0.05  slender      3  midW  2.38  topW  0.91  midEye   1.94  topEye   5.08
+  scatter:rock#26    -101.55, -11.62  shard   h  2.66  band  0.89  reach   0.9  discs  6 shield  0.95  phantom  -0.06  slender   2.99  midW  1.37  topW  0.67  midEye   1.94  topEye   3.97
+  scatter:rock#2       82.82,  11.39  cobble  h  0.71  band  0.51  reach  0.64  discs  2 shield  0.59  phantom  -0.08  slender   1.39  midW  0.94  topW  0.45  midEye   0.76  topEye   1.58
+  scatter:rock#25     -15.62, 103.86  cobble  h  0.76  band  0.55  reach  0.57  discs  1 shield  0.63  phantom  -0.08  slender   1.38  midW  0.85  topW     0  midEye   0.89  topEye   null
+  scatter:rock#14       9.01, 104.27  block   h  1.46  band   1.4  reach  1.41  discs  5 shield  1.55  phantom  -0.15  slender   1.04  midW  2.09  topW  0.84  midEye    0.7  topEye   1.74
+  scatter:rock#4     -103.02,  -5.41  cobble  h  0.66  band  0.59  reach   0.8  discs  1 shield  0.75  phantom  -0.16  slender   1.12  midW  1.16  topW  0.56  midEye   0.57  topEye   1.18
+  scatter:rock#18      97.74,   42.8  shard   h  4.38  band  1.46  reach   1.5  discs  9 shield  1.63  phantom  -0.17  slender      3  midW  2.27  topW  0.97  midEye   1.93  topEye   4.52
+  scatter:rock#28    -107.28,   13.2  block   h   1.6  band  1.09  reach   1.1  discs  6 shield   1.3  phantom  -0.21  slender   1.47  midW  1.65  topW  0.67  midEye   0.97  topEye   2.39
+  scatter:rock#1       83.94, -45.03  mega    h  2.56  band  1.64  reach  1.73  discs 10 shield  1.86  phantom  -0.22  slender   1.56  midW  2.83  topW     0  midEye    0.9  topEye   null
+  scatter:rock#27     -86.31,  10.37  shard   h  4.46  band  1.49  reach  1.51  discs  8 shield  1.71  phantom  -0.22  slender   2.99  midW   2.3  topW   1.1  midEye   1.94  topEye   4.05
+  scatter:rock#3      -91.92,  54.73  block   h  1.81  band  1.13  reach  1.14  discs  6 shield  1.36  phantom  -0.23  slender    1.6  midW   1.8  topW  0.75  midEye   1.01  topEye   2.41
+  scatter:rock#15     -94.83,   7.04  mega    h  1.99  band  1.43  reach  1.44  discs  7 shield  1.66  phantom  -0.23  slender   1.39  midW  2.41  topW  1.09  midEye   0.83  topEye   1.83
+  scatter:rock#7       16.96, 104.36  slab    h  0.78  band  0.87  reach  0.92  discs  2 shield  1.11  phantom  -0.24  slender    0.9  midW  1.68  topW     0  midEye   0.46  topEye   null
+  scatter:rock#21      105.6, -17.73  block   h  2.87  band  1.63  reach  1.67  discs 10 shield  1.93  phantom   -0.3  slender   1.76  midW  2.69  topW  0.92  midEye   1.07  topEye   3.12
+  scatter:rock#20    -102.22,   4.42  mega    h  1.56  band  1.53  reach  1.55  discs  7 shield  1.89  phantom  -0.36  slender   1.02  midW  2.51  topW  1.04  midEye   0.62  topEye    1.5
+  scatter:rock#29       3.06, -91.65  mega    h  3.15  band  1.79  reach   1.9  discs 10 shield  2.16  phantom  -0.37  slender   1.76  midW  3.17  topW     0  midEye   0.99  topEye   null
+  scatter:rock#13      90.01,  -2.38  mega    h  2.93  band  1.83  reach  1.88  discs 10 shield  2.22  phantom  -0.39  slender    1.6  midW  3.08  topW  1.26  midEye   0.95  topEye   2.33
+  scatter:rock#16     -11.11,-106.49  block   h   3.9  band  2.14  reach  2.19  discs 12 shield  2.55  phantom  -0.41  slender   1.82  midW  3.23  topW  1.26  midEye   1.21  topEye    3.1
+  scatter:rock#0       -0.96,  95.86  block   h  3.38  band  2.12  reach  2.12  discs 11 shield  2.54  phantom  -0.42  slender   1.59  midW   3.3  topW  1.36  midEye   1.02  topEye   2.49
+  scatter:rock#12      -9.97, -87.56  block   h  2.81  band     2  reach  2.05  discs  9 shield  2.44  phantom  -0.44  slender   1.41  midW   3.2  topW     0  midEye   0.88  topEye   null
+  scatter:rock#19     -47.08,  95.09  block   h  2.97  band  1.88  reach  1.93  discs 10 shield  2.38  phantom   -0.5  slender   1.58  midW  3.04  topW     0  midEye   0.98  topEye   null
+  scatter:rock#9     -103.96,  22.75  mega    h  2.67  band  2.55  reach  2.57  discs 10 shield   3.1  phantom  -0.55  slender   1.05  midW   4.3  topW  0.99  midEye   0.62  topEye    2.7
+  scatter:rock#24     -78.62,   7.75  block   h  3.76  band  2.07  reach   2.1  discs 11 shield  2.62  phantom  -0.55  slender   1.82  midW  3.32  topW   1.4  midEye   1.13  topEye   2.69
+  scatter:rock#17     -84.11, -14.37  mega    h  5.41  band  3.47  reach  3.51  discs 12 shield  4.35  phantom  -0.88  slender   1.56  midW  5.85  topW  2.58  midEye   0.92  topEye    2.1
+PHANTOM_BAND 0 · SPIRE_OVER_3x 0 · TALL_NO_BAND 0
+EYE_WIDTHS height/silhouette-diameter · mid distribution only, top gated as TAPER
+  block   n 10  mid  0.62/ 0.98/ 1.21  top  1.38/ 2.41/ 3.12  (min/med/max)  tallest h 3.9 m
+  mega    n  7  mid  0.62/  0.9/ 0.99  top   1.5/  2.1/  2.7  (min/med/max)  tallest h 5.41 m
+  cobble  n  7  mid  0.56/ 0.63/ 0.89  top  1.18/ 1.27/ 2.09  (min/med/max)  tallest h 0.96 m
+  shard   n  5  mid  1.42/ 1.94/ 1.94  top  2.96/ 4.05/ 5.08  (min/med/max)  tallest h 4.62 m
+  slab    n  1  mid  0.46/ 0.46/ 0.46  top     -/    -/    -  (min/med/max)  tallest h 0.78 m
+  worst mid 1.94 · worst top 5.08 · cone reference at worst-mid: a stone as wide at 0.85 h as a cone is top 0.3 x mid
+BOULDER_SPIRE_RC=3 4 covered stone(s) whose section plane found no chord:
+  scatter:rock#1 mega h 2.56 shoulder plane 2.18 over sand · mesh vertex span 0.02..2.09 · mid chords 452 · top chords 0
+  scatter:rock#12 block h 2.81 shoulder plane 2.39 over sand · mesh vertex span 0.04..2.28 · mid chords 456 · top chords 0
+  scatter:rock#19 block h 2.97 shoulder plane 2.52 over sand · mesh vertex span 0.05..2.39 · mid chords 460 · top chords 0
+  scatter:rock#29 mega h 3.15 shoulder plane 2.68 over sand · mesh vertex span 0.03..2.64 · mid chords 460 · top chords 0

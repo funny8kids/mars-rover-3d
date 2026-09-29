@@ -1063,6 +1063,87 @@ export async function createRocks(scene, avoid = []) {
     for (let k = 0; k + 1 < m.pts.length; k += 2) b = Math.max(b, Math.hypot(m.pts[k] - cx, m.pts[k + 1] - cz));
     return b;
   };
+  // The same stone measured by the eye instead of the hull: how wide its silhouette is *across* it at two
+  // heights — half the exposed one and 85 % of it. Unlike `bandReachOf` this is a diameter rather than a
+  // distance from the stone's own axis, and unlike the band it can be sampled near the top, which is
+  // where a reader who says "尖" is actually looking.
+  //
+  // The sample is the solid cut by a horizontal plane, not the vertices above one. The first version of
+  // this helper collected vertices at or above 0.85 h and published `topWidthM` 0.00 for stones 2.56 m
+  // and taller: a rock kit carries only a handful of vertices near its apex, so that reading was about
+  // tessellation, not shape. Each triangle straddling the plane contributes the exact chord the solid
+  // occupies at that height, so the number does not care where the vertices happen to sit.
+  //
+  // The width is the projection range maximised over eight axes. The true diameter maximises over all
+  // directions, so this reads at most 1 − cos(π/16) ≈ 2 % low, and that error goes the only safe way —
+  // it can reject a stone that is fine, never license a needle.
+  const sectionWidths = (o, gy) => {
+    const chords = [[], []];
+    let ylo = Infinity, yhi = -Infinity;
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), p = new THREE.Vector3();
+    const watch = v => { if (v.y < ylo) ylo = v.y; if (v.y > yhi) yhi = v.y; };
+    // The heights are aimed from the mesh's own vertices, not from the caller's box. `heightM` is a
+    // Box3 measurement, and on a tilted stone the corner box stands proud of every vertex it encloses:
+    // four of this scatter's stones came back with the box 0.47-0.58 m taller than their drawn tops
+    // (worst: box 2.97 m over the sand, vertex span 2.39 m), so a plane aimed at 0.85 of the box landed
+    // in empty air and reported a 0 m shoulder. The eye measures the picture; the picture's height is
+    // whatever the vertices reach.
+    // Pre-pass: the span, then the planes. A plane fixed while the walk is still running would depend on
+    // which vertices the walk has met so far.
+    o.traverse(m => {
+      if (!m.isMesh || !m.geometry) return;
+      const pos = m.geometry.attributes?.position;
+      if (!pos) return;
+      for (let i = 0; i < pos.count; i++) { a.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld); watch(a); }
+    });
+    const hEye = yhi - gy;
+    const planes = [gy + 0.5 * hEye, gy + 0.85 * hEye];
+    const cut = (k, y, u, v) => {
+      if (v.y === u.y) return;
+      const t = (y - u.y) / (v.y - u.y);
+      if (!(t >= 0 && t <= 1)) return;
+      p.copy(u).lerp(v, t);
+      chords[k].push(p.x, p.z);
+    };
+    o.traverse(m => {
+      if (!m.isMesh || !m.geometry) return;
+      const pos = m.geometry.attributes?.position;
+      if (!pos) return;
+      const idx = m.geometry.index;
+      const count = idx ? idx.count : pos.count;
+      for (let t = 0; t + 2 < count; t += 3) {
+        const i0 = idx ? idx.getX(t) : t;
+        const i1 = idx ? idx.getX(t + 1) : t + 1;
+        const i2 = idx ? idx.getX(t + 2) : t + 2;
+        a.fromBufferAttribute(pos, i0).applyMatrix4(m.matrixWorld);
+        b.fromBufferAttribute(pos, i1).applyMatrix4(m.matrixWorld);
+        c.fromBufferAttribute(pos, i2).applyMatrix4(m.matrixWorld);
+        for (let k = 0; k < 2; k++) { cut(k, planes[k], a, b); cut(k, planes[k], b, c); cut(k, planes[k], c, a); }
+      }
+    });
+    const AX = [];
+    for (let k = 0; k < 8; k++) { const t = k * Math.PI / 8; AX.push(Math.cos(t), Math.sin(t)); }
+    const width = xs => {
+      let w = 0;
+      for (let k = 0; k < AX.length; k += 2) {
+        let lo = Infinity, hi = -Infinity;
+        for (let i = 0; i + 1 < xs.length; i += 2) {
+          const q = xs[i] * AX[k] + xs[i + 1] * AX[k + 1];
+          if (q < lo) lo = q; if (q > hi) hi = q;
+        }
+        if (hi - lo > w) w = hi - lo;
+      }
+      return w;
+    };
+    // Chord counts travel with the widths: a plane that missed the solid entirely also measures 0.00 m
+    // wide, and a ruler cannot tell "this stone has no shoulder at that height" apart from "this stone is
+    // a needle" unless the difference between them is published.
+    // The vertex span travels with the widths for the same reason: if `heightM` says the stone is 2.56 m
+    // over the sand but no triangle of it stands above 1.9 m, then the shoulder plane was aimed at empty
+    // air, and the ruler has to be able to say that out loud instead of reporting a 0 m shoulder.
+    return { mid: width(chords[0]), top: width(chords[1]), midChords: chords[0].length / 2, topChords: chords[1].length / 2,
+      hiM: hEye, loM: ylo - gy };
+  };
   const n = new THREE.Vector3();
   const UP = new THREE.Vector3(0, 1, 0);
   const qTilt = new THREE.Quaternion(), qYaw = new THREE.Quaternion();
@@ -1223,8 +1304,12 @@ export async function createRocks(scene, avoid = []) {
     // here, off the transform that drew this stone, so they are published rather than left to be
     // re-derived: the discs are what the solver reads, and height ÷ band reach is what a player judges
     // a boulder by. If those two disagree the collider is right and the picture is lying.
+    const sil = sectionWidths(o, surfaceAt(x, z));
     records.push({ prop: `scatter:rock#${placed.length - 1}`, name, x: +x.toFixed(2), z: +z.toFixed(2),
       heightM: +heightM.toFixed(2), reachM: +meas.reach.toFixed(2), bandReachM: +bandReach.toFixed(2),
+      midWidthM: +sil.mid.toFixed(2), topWidthM: +sil.top.toFixed(2),
+      midChords: sil.midChords, topChords: sil.topChords,
+      eyeHiM: +sil.hiM.toFixed(2), eyeLoM: +sil.loM.toFixed(2),
       discRs: discs.map(d => +d.r.toFixed(2)) });
   }
   scene.add(group);

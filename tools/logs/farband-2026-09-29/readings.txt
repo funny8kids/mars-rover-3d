@@ -1,0 +1,16 @@
+机位 CAM=[-26,3,34] LOOK=[0,1.6,-46] dayT 0.46（与 tools/logs/e1c-d46-*.png 同取景）；fog 密度：晴空 0.00140 / 埋身暴 0.00703（5.0×）
+stormF 每条：calm 0.000 · storm 0.951 · nofog 0.952 · nodust 0.952；clip 全 0、bin0 0/27/30/27
+消融自证：scene.fog 摘除前后已打印（nofog 条 fog:null）；隐藏物件 18 件，其中含 5 个 Points 与 7 个 modular_industrial_pipes_01_pipe02 —— 名单里没有 slab/wall/dust 名，⇒ 这条消融没打到尘墙本体（诚实边界）
+
+### 原样埋身暴（vs fb1-calm）
+  分带比值 暴/晴：地面(近+中) 1.139 · 仅近景 1.511 · 远景(地平线一带) 0.505
+GROUND_VERDICT SURVIVES 暴内地面**砂纹带**能量 1.139×晴空（对照：染色除得掉、白噪声进不了这一带、σ=6 抹平会掉、σ=2 只掉细带）
+GROUND_DETAIL_RC=0
+### 摘掉 scene.fog（vs fb1-calm）
+  分带比值 暴/晴：地面(近+中) 1.534 · 仅近景 1.536 · 远景(地平线一带) 0.673
+GROUND_VERDICT SURVIVES 暴内地面**砂纹带**能量 1.534×晴空（对照：染色除得掉、白噪声进不了这一带、σ=6 抹平会掉、σ=2 只掉细带）
+GROUND_DETAIL_RC=0
+### 藏掉 18 件粒子/管线（vs fb1-calm）
+  分带比值 暴/晴：地面(近+中) 1.139 · 仅近景 1.446 · 远景(地平线一带) 0.524
+GROUND_VERDICT SURVIVES 暴内地面**砂纹带**能量 1.139×晴空（对照：染色除得掉、白噪声进不了这一带、σ=6 抹平会掉、σ=2 只掉细带）
+GROUND_DETAIL_RC=0

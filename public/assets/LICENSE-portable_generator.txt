@@ -1,0 +1,34 @@
+portable_generator — CC0 intake record (shipped form of this file: ../portable_generator.glb)
+
+Source     : https://polyhaven.com/a/portable_generator
+Author     : James Ray Cock (Poly Haven)
+Staged     : 2026-09-26 via https://api.polyhaven.com/files/portable_generator (gltf/1k)
+             staging/cc0/portable_generator/ (portable_generator_1k.gltf + .bin + 5 jpg + LICENSE-source.txt)
+Shipped    : 2026-09-27, merged single-file GLB by:
+             node tools/gltf_to_glb.mjs staging/cc0/portable_generator/portable_generator_1k.gltf public/assets/portable_generator.glb
+Files      : portable_generator.glb 4 185 568 B — 26 419 triangles, 24 408 unique vertices,
+             bbox 0.82 x 0.58 x 0.56 m (authored in real metres, already footed at y = 0)
+
+License as stated on the author's page (fetched 2026-09-26):
+  "CC0 1.0 Universal - public domain dedication, no attribution required"
+Original CC0 deed: https://creativecommons.org/publicdomain/zero/1.0/
+Attribution not required, but crediting Poly Haven is good practice.
+Credit string: portable_generator by James Ray Cock / Poly Haven (https://polyhaven.com), CC0 1.0
+
+Conformity gates (node tools/cc0-conform.mjs public/assets/portable_generator.glb):
+  R1_SCALE=PASS max_extent 0.82 m <= 72.88 m (starship_stack)
+  R2_BUDGET=PASS 26 419 tris <= 91 636 (launch_tower), 24 408 verts <= 129 456 (29 % of the cap)
+  R3_EMISSIVE=PASS (no emissive materials)
+  R4_COLLISION=PASS foot below 0.25 m = 0.81 x 0.56 m against a 0.82 x 0.56 m footprint — no
+    lamp-case wall
+  Full readout: tools/logs/cc0-conform-2026-09-27.txt
+
+Palette check (props.js:113-115 "every entry has to be checked against the base palette before it
+ships"): baseColor mean hue 34.8 deg, 72.2 % of pixels inside the 20-45 deg band the retinted
+`pipe_kit` sits in, 18.0 % neutral, only 4.2 % cool-side outliers (the un-retinted pipes measured
+56.8 %). No retint pass required.
+
+Open geometry: `node tools/audit_double_sided.mjs` measures portable_generator 26 365/26 365 and
+portable_generator_glass 54/54 triangles on a boundary, so both names must be in assets.js
+SHEET_MATERIALS (src/world/assets.js:131) before the asset ships — otherwise
+`node tools/audit_double_sided.mjs --check` exits 1.

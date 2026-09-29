@@ -1,0 +1,37 @@
+overhead_crane — CC0 intake record (shipped form of this file: ../overhead_crane.glb)
+
+Source     : https://polyhaven.com/a/overhead_crane
+Author     : Timothy3D (Poly Haven)
+Staged     : 2026-09-26 via https://api.polyhaven.com/files/overhead_crane (gltf/1k)
+             staging/cc0/overhead_crane/ (overhead_crane_1k.gltf + .bin + 6 jpg + LICENSE-source.txt)
+Shipped    : 2026-09-27, merged single-file GLB by:
+             node tools/gltf_to_glb.mjs staging/cc0/overhead_crane/overhead_crane_1k.gltf public/assets/overhead_crane.glb
+Files      : overhead_crane.glb 7 328 244 B — 89 964 triangles, 77 576 unique vertices,
+             bbox 12.49 x 5.13 x 4.00 m (authored in real metres, repo convention 1 unit = 1 m)
+
+License as stated on the author's page (fetched 2026-09-26):
+  "CC0 1.0 Universal - public domain dedication, no attribution required"
+Original CC0 deed: https://creativecommons.org/publicdomain/zero/1.0/
+Attribution not required, but crediting Poly Haven is good practice.
+Credit string: overhead_crane by Timothy3D / Poly Haven (https://polyhaven.com), CC0 1.0
+
+Conformity gates (node tools/cc0-conform.mjs public/assets/overhead_crane.glb):
+  R1_SCALE=PASS max_extent 12.49 m <= 72.88 m (starship_stack)
+  R2_BUDGET=PASS 89 964 tris <= 91 636 (launch_tower), 77 576 verts <= 129 456 — 98 % of the
+    measured triangle envelope: this is the second-heaviest asset in the library and the cap is
+    re-measured from the shipped library, so shipping it does NOT raise the cap (launch_tower stays
+    the limit) but it leaves 1 672 triangles of headroom against it.
+  R3_EMISSIVE=PASS (no emissive materials)
+  R4_COLLISION=PASS foot below 0.25 m spans the full 12.49 x 4.00 m footprint — no lamp-case wall
+  Full readout: tools/logs/cc0-conform-2026-09-27.txt
+
+Palette check (props.js:113-115 "every entry has to be checked against the base palette before it
+ships"): baseColor maps mean hue 29.9 deg (body) / 29.6 deg (trim); 76.2 % / 23.6 % of pixels inside
+the 20-45 deg band the retinted `pipe_kit` sits in, remaining pixels neutral grey (75.7 % of the trim
+atlas s < 0.06). Only 4.0 % / 0.5 % of pixels fall on the cool side of the band, against 56.8 % for
+the UN-retinted pipes — so no retint pass is required for this asset.
+
+Open geometry: `node tools/audit_double_sided.mjs` measures overhead_crane 58 067/58 067 and
+overhead_crane_trim 31 897/31 897 triangles on a boundary, so both names must be in assets.js
+SHEET_MATERIALS (src/world/assets.js:131) before the asset ships — otherwise
+`node tools/audit_double_sided.mjs --check` exits 1.

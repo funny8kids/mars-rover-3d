@@ -462,8 +462,17 @@ const padState = `(() => {
 })()`;
 await step('hud:pad-leave', {
   before: async () => {
-    // 上一格把车放在盘边 4.5 m 外（那是"到不到台"的构图，不是本格的构图），这里用产品自己的
-    // warp 把它钉到盘心：离台这一步要测的是离开，落点前提必须自己造，且造在读数上看得见。
+    // 上一格把车放在盘边 4.5 m 外（那是"到不到台"的构图，不是本格的构图），这里把车钉到盘心：
+    // 光台在产品 UI 里就是"停在这儿"的邀请，而 #93 已把盘面判成可驾驶 datum，所以"从台面上开得走"
+    // 是产品的承诺，本格就测这一句 —— 前提自己造，且造在读数上看得见。
+    //
+    // 试过把落位交给产品自己的裁决（`R.warp(p.x, p.z)`＝走 warpTo 的 search=8）：那一跑读数是
+    // `nearest pad:hub d=11.31/r=3.9`（tools/logs/click-walk-2026-09-29f.log 第 22 行）—— ±8 m 的
+    // 搜索格把车一路滑到了台面外 11.3 m，"车在台面上"这个前提当场不成立，尺子按设计拒判。所以
+    // 这里保留 search=0：**判据不放宽**，改成加一条更硬的读数（见 check 里的 moved ≥ 3 m）。
+    // 归因见 tools/logs/pad-exit-2026-09-29.log：从盘心出发 16 个航向里 13 个在 9 m 内撞实体，9 条
+    // 在 1.5–2 m，挡住的是这台盘自己的三枚发射柱 `hub:pad0#0/#1/#2`（props.js:1548 量过：
+    // 3.00/3.03/3.15 m）。那是产品侧的台缘净空问题（#116），不归本尺掩盖。
     await evaluate(`(() => { const R = window.__RSB, p = R.pois().filter(x => x.kind === 'pad')[0];
       R.warp(p.x, p.z, undefined, 0); return p.name; })()`);
     await frames(120);
@@ -475,8 +484,12 @@ await step('hud:pad-leave', {
     const s = JSON.parse(a), p0 = JSON.parse(b);
     if (p0.hidden) return `precondition: parked on the pad but the pad hint never came up — ` +
       `nearest ${p0.pad.at} d=${p0.pad.d}/r=${p0.pad.r}, speed=${p0.speed}, txt="${p0.txt}"`;
+    // 真正的判据是"按着 W 车能开走"，不是"跨过某个半径"：跨过半径在产品自己的落位下先天成立。
+    const moved = Math.hypot(s.pos[0] - p0.pos[0], s.pos[2] - p0.pos[2]);
+    if (!(moved >= 3)) return `held W for 45 frames and travelled only ${moved.toFixed(2)} m ` +
+      `(${p0.pos} → ${s.pos}) — the arrival pose is not drivable away, speed at read ${s.speed}`;
     if (!s.pad || !(s.pad.d > s.pad.r)) return `not off the pad at read time: d=${s.pad && s.pad.d} of ` +
-      `r=${s.pad && s.pad.r} at ${s.pos} — the hold never crossed the keep-out, so nothing was proven`;
+      `r=${s.pad && s.pad.r} at ${s.pos} — crossed ${moved.toFixed(2)} m but stayed inside the keep-out`;
     if (!(s.speed >= 2.5)) return `speed ${s.speed} m/s at read time is under the 2.5 "parked" bar, ` +
       `so a lit hint here would not distinguish the two owners of #tele-hint`;
     if (!s.hidden) return `pad hint stayed up after leaving the pad: txt="${s.txt}" (off ${s.pad.at} at d=${s.pad.d})`;

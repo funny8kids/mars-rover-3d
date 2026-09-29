@@ -533,4 +533,14 @@ console.log('SUMMARY ' + JSON.stringify(results.map(r => ({ n: r.name, fail: r.f
   read: r.reading && { min: r.reading.min, col: r.reading.collisions, h: r.reading.h, v: r.reading.v,
     wide: r.reading.wide?.length ? r.reading.wide : undefined },
   png: r.png })), null, 1));
-console.log('STEPS ' + results.length + ' FAILED ' + results.filter(r => r.fail).length);
+const failedSteps = results.filter(r => r.fail).length;
+console.log('STEPS ' + results.length + ' FAILED ' + failedSteps);
+
+// 判决行之后必须由尺子自己交出退出码，并且交出码就离场。
+// `click-walk-2026-09-29h.log` 里那句"全绿"此前只能靠尾行读，因为这条 WebSocket 不关 ⇒ 进程挂着，
+// 外层 shell 被我按 PID 收掉时把 `CLICK_WALK_RC=143` 追加进了归档日志 —— 那是 SIGTERM，不是判决。
+// 落盘用 fs.writeSync：stdout 是管道时 console.log 之后立刻 process.exit 会把尾巴截掉。
+const walkRc = failedSteps === 0 ? 0 : 1;
+fs.writeSync(1, 'CLICK_WALK_RC=' + walkRc + '\n');
+try { ws.close(); } catch { /* 已经断了就没必要再喊 */ }
+process.exit(walkRc);

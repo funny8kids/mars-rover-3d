@@ -194,3 +194,5 @@ Upon completion: **Use `/goal resume` to finalize.**
 - `prepare_site`（`actionId 7f3c9a12-4d6e-4b8a-9c15-2e7d8b4a6f31`，`projectRoot` 仓库根，`webDirectory dist`，`projectId 01a0be6f-ebf7-7af5-bcef-3cce5b5d09f6`）⇒ **`sites_request_failed`**，没有返回 action 状态可查。这是同一站点第 14 次失败记录，与 09-28 那批同码。
 - 线上现量（`list_sites`）：站点 `01a0be6f-ebf8-7caa-beef-b1a1909bd4d6` 仍 `lifecycle:active`、`access_mode:public`、`active_release_id 01a0e2b9-e5f0-786e-82f5-dc6a6bf39f45`（cover 时间 09-27），host `red-starbase-wgmag3xoh66.qoder.website`。**所以 F2 的"重新发布"这一格至今没有拿到过一次可发布状态**，与仓库里的字节无关：09-27 那次成功后，通道就没再开过。
 - 按既有纪律停手：`prepare_site` 会创建云资源，同码不重试（见记忆 `red-starbase-publish-attempt-codes`）。要推进这一格需要的是账号侧的存储/配额或一次人工在 Sites 面板里的重试，二选一都需要你点头，我不擅自换站点、不新建站点。
+
+**追加一格（同日，减重之后再试一次）：`sites_request_failed` 与产物重量无关。** 上面那格之后，出货集被削到 67 件 / 98,869,820 B（−2,327,000 B，提交 `48a4ee6`），换一个新 `actionId 2b7e51c8-6d24-4f7a-8a3b-0c9e4f7d1a52` 再跑一次 `prepare_site` ⇒ **同一个 `sites_request_failed`，仍不返回 action 状态**。这条读数的用处是否证了一个假设：**挡着的不是体积**（也不是件数），所以继续削 `dist`、或者把 82 MiB 的 `web/` 塞回去再挤一挤，都是白费；剩下的解释在账号/服务侧的写入通道，需要你在 Qoder Sites 那一侧看一眼是否还有可用的发布额度，或在面板里手工发布一次。此后我不再对同一站点重复 `prepare_site`（它每次都会试图创建云资源）。

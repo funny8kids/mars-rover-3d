@@ -135,6 +135,10 @@ Since A4 and F2-deploy require human interaction outside automation capabilities
 
 **这一改动作废了什么**：`main.js` 字节变了 ⇒ 绑在 `c315aba` 上的 A4 巡航尺（`tour-a4-2026-09-29-newshader.log`）与 F1 抓帧尺（`clip-sweep-2026-09-29-014446.log`）按纪律都要在新字节上重量；`src/world/props.js` 与 `src/world/storm.js` 未动，所以图元普查、碰撞盘对账、E 项七把沙暴尺的几何前提不变。
 
+**重量完成（A4 巡航，`tools/logs/tour-a4-2026-09-29-outward.log`）**：锚 `ANCHOR HEAD 05d8a369254e05986a59f187167d0d0369a86f5e` · `SRC_DIRTY_LINES 0` · `SRC_MD5 7b48281325ed` —— 与上面 `-h` 那跑**同一把 glob、同一个值**，所以这一格是"提交后进 HEAD 的字节"被两把尺子各量过一次，不是两份字节。读数：`TOUR {"done":true,"simSeconds":300,"metres":1917,"laps":2,"frames":18000,"retries":0,"coverage":{"zones":"7/7","streets":"24/24","points":"22/22"}}`、`FPS {"min":63,"med":63,"samples":30,"below55":0,"emaMin":62}`、30 个 chunk 全部 `stuck=0` ⇒ **`TOUR VERDICT PASS` · `TOUR_RC=0`**。逐 chunk 的 `sink` 分布与新字节前后逐格相同（两份日志都是 `6× sink=0 / 24× sink=-0.01`），这条一厘米级的轮组下沉不是这一改带来的，判据也未因此放宽。
+
+**重量完成（F1 抓帧，`tools/logs/clip-sweep-2026-09-29-outward.log`）**：同一锚（`ANCHOR HEAD 05d8a369254e05986a59f187167d0d0369a86f5e` · `SRC_DIRTY_LINES 0` · `SRC_MD5 7b48281325ed`）⇒ `SUMMARY frames=66 flagged=0` · 最差 clip `night/pad:habitat=0.5`、`day/pad:launch=0.4`（判据 0.5 上限，`CLIP_MAX` 未动）· 最差 bin0 `dusk/pad:hub=13`‰ ⇒ **`CLIP SWEEP PASS` · `CLIP_SWEEP_RC=0`**；覆盖自证 `vantage-in-geometry=0/66`、`census-anchor-fail=0/66`、`census-empty=0/66`，抓帧落在 `/tmp/rsb_shots-uvG2kY/`（PNG 无损）。至此【F】1 的三件（真实点击 25 步、A4 巡航、F1 抓帧）第一次全在**同一份已进 HEAD 的字节**上各有具名 rc。
+
 （注：`-g` 那跑的 `SRC_MD5 a35477e11b30` 与 `-e` 的 `85561bf715ea` 不是同一把算法 —— 外层拼文件的 glob 不同，不是字节变了；`src/` 自 `59c4329` 起 `SRC_DIRTY_LINES 0`。）
 
 ---

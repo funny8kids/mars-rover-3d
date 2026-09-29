@@ -1,0 +1,13 @@
+TARGET http://127.0.0.1:8080/qa_boot.html?auto=std
+TOTAL_DISCS 694
+FIELDS x,z,r,prop,zone
+PAD4_DISCS 3 IN_FLOOR_UNDEFINED_LIST true
+DISC comms:pad4#0 x=53.1 z=-69.23 r=0.1 floor=undefined top=null
+DISC comms:pad4#1 x=51 z=-65.6 r=0.1 floor=undefined top=null
+DISC comms:pad4#2 x=48.9 z=-69.23 r=0.1 floor=undefined top=null
+LANE_ALL -1.02 by=comms:pad4#2
+LANE_FLOOR_UNDEFINED -1.02 by=comms:pad4#2
+LANE_PARKSPOT_FILTER_20M -1.02 by=comms:pad4#2
+LANE_STANCE_TO_CENTRE -1.17 by=comms:pad4#2
+PEN_AT_PARK p=0 who=null
+PEN_AT_WEDGE p=0.03 who=comms:pad4#2

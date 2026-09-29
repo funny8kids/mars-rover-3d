@@ -13,6 +13,14 @@ import fs from 'fs';
 const [,, url, portStr, onlyRe] = process.argv;
 const port = Number(portStr || 9333);
 const stepRe = onlyRe ? new RegExp(onlyRe) : null;
+// 开机判据要的是「菜单还开着」：loader 已 hidden 且 #menu **没有** hidden。带 `?auto=std` 的 qa_boot 走的是
+// demo 开机支路，菜单由 demo 自己收——2026-09-29 同一 URL 两趟历史跑给出两个结果（一趟 25 步绿、一趟 240 s
+// 后 BOOT_TIMEOUT），所以这条判据在带查询串时是与竞态对赌。2026-09-29 的重量真撞上了红的那一半，4 分钟后
+// 只剩一句 BOOT_TIMEOUT，把「喂错了 URL」伪装成「产品起不来」。入库的那把尺是不带查询串的。
+if (url.includes('?')) {
+  console.log(`WRONG_BOOT_URL "${url}" —— 走查要不带查询串的 qa_boot.html（?auto=std 走 demo 开机支路，菜单收起与开机门赛跑）`);
+  process.exit(1);
+}
 const probe = fs.readFileSync(new URL('./hud-audit-probe.js', import.meta.url), 'utf8');
 const shotDir = '/tmp/rsb-j2-click';
 fs.mkdirSync(shotDir, { recursive: true });

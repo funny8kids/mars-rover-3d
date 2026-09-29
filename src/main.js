@@ -3927,6 +3927,19 @@ window.__RSB = {
       }
       return { m, by };
     };
+    // Every disc the solver can stop the hull on, taken fresh at the moment a line is measured. The
+    // parking controller's three lane tests must use this rather than `laneDiscs`: that list is a
+    // snapshot of the discs within 20 m of *the origin of the last `parkSpot` call*, and `parkSpot` is
+    // not called again once a waypoint holds a park point — the re-pick below cannot fire either,
+    // because its bar is measured with the same blind list. Measured 2026-09-29 at the stance the A4 lap filed
+    // (`tools/cdp-pad-post-lane-probe.mjs`, readings archived in
+    // `tools/logs/pad-post-lane-2026-09-29.log`): the hull margin on the committed line
+    // (48.1,-70.7) → park (53.6,-66.5) is -1.02 m against the pad's own post `comms:pad4#2` under every
+    // list derived from `base.colliders` (all discs, the `floor === undefined` solids, and the 20 m
+    // filter from that stance), while the decision trace printed the clamped sentinel (`lane 9`) for
+    // every frame of the 4 s grind, the hull resting on the pin at +0.03 m penetration with gas held at
+    // 0.41. A 0.11 m post is exactly what a stale snapshot loses and exactly what wedges a hull.
+    const lineSolids = () => base.colliders.filter(c => c.floor === undefined);
     // Point at the waypoint; only go hunting for another bearing once the carriageway ahead is
     // actually closing. The first version scored every whisker against a self-referential heading
     // that it then overwrote, so "straight on" earned a permanent bonus and the audit drove itself
@@ -4242,7 +4255,7 @@ window.__RSB = {
         // re-pick test and the aim gate below use, so the three can never disagree.
         let lane = 99;
         if (near && tgt.park) {
-          lane = laneMargin(phys.x, phys.z, tgt.park.x, tgt.park.z).m;
+          lane = laneMargin(phys.x, phys.z, tgt.park.x, tgt.park.z, lineSolids()).m;
           // The parking spot is picked from where the rover stood when it entered the circle. An
           // unstick puts the rover somewhere else entirely, and then it grinds toward a spot it can no
           // longer see: the losing run of pad:industry ended 6.1 m out on the far side of its own ring
@@ -4251,7 +4264,7 @@ window.__RSB = {
           // since driven round.
           if (lane < 0.4 && s.runFrames % 20 === 0) {
             findWayIn(tgt);
-            lane = tgt.park ? laneMargin(phys.x, phys.z, tgt.park.x, tgt.park.z).m : 99;
+            lane = tgt.park ? laneMargin(phys.x, phys.z, tgt.park.x, tgt.park.z, lineSolids()).m : 99;
           }
         }
         // Parking is a commitment to a straight line, so it may only be made while that line is open.
@@ -4300,7 +4313,7 @@ window.__RSB = {
         let b;
         if (parking && !blind) {
           const dPark = Math.hypot(park.x - phys.x, park.z - phys.z);
-          if (laneMargin(phys.x, phys.z, park.x, park.z).m >= 0.4) {
+          if (laneMargin(phys.x, phys.z, park.x, park.z, lineSolids()).m >= 0.4) {
             tgt.spotFor = null;
             b = { a: Math.atan2(park.x - phys.x, park.z - phys.z), r: dPark };
           } else {

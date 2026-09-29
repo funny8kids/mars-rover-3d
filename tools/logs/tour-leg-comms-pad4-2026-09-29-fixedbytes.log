@@ -1,0 +1,17 @@
+PIN 1213x1319 = 1.60 Mpx by std maxPixels 1.60 Mpx at window aspect 0.919 — {"canvas":[1213,1319],"rt":[1213,1319],"pr":1,"inner":[889,967],"dpr":0.72}
+GPU {"renderer":"ANGLE (Intel, Vulkan 1.4.335 (Intel(R) Iris(R) Xe Graphics (RPL-P) (0x0000A7A0)), Intel open-source Mesa driver)","w":889,"h":967,"q":"std"}
+chunk 1 sim=10s m=51 wp=0/1 live=- ema=60 buf=1213x1319 draws=127 tris=266580 meshes=1733 parts=7930(11) cast=310 prog=65 tex=155 gaps null/null/nullms >25:0/0 wall=0.0s day=0.333 storm=calm:0% pkg97C load2.6 GHz? pos=49,-76 stuck=0 pen=0 sink=0 rescues=0
+chunk 2 sim=20s m=60 wp=0/1 live=8 ema=59 buf=1213x1319 draws=560 tris=692056 meshes=1733 parts=7930(11) cast=352 prog=65 tex=176 gaps 132/132/132ms >25:1/2 wall=0.1s day=0.367 storm=calm:0% pkg91C load2.6 GHz? pos=52,-67 stuck=0 pen=0 sink=0 rescues=0
+chunk 3 sim=30s m=66 wp=0/1 live=8 ema=61 buf=1213x1319 draws=166 tris=324694 meshes=1733 parts=7930(11) cast=363 prog=65 tex=176 gaps 132/132/132ms >25:1/2 wall=0.1s day=0.4 storm=calm:0% pkg91C load2.6 GHz? pos=55,-62 stuck=0 pen=0 sink=0 rescues=0
+chunk 4 sim=40s m=94 wp=0/1 live=6 ema=60 buf=1213x1319 draws=129 tris=265102 meshes=1733 parts=7930(11) cast=363 prog=65 tex=176 gaps 166/166/166ms >25:1/1 wall=0.2s day=0.433 storm=calm:0% pkg92C load2.6 GHz? pos=48,-67 stuck=0 pen=0 sink=0 rescues=0
+chunk 5 sim=50s m=99 wp=0/1 live=13 ema=61 buf=1213x1319 draws=123 tris=260080 meshes=1733 parts=7930(11) cast=363 prog=65 tex=176 gaps 80/80/80ms >25:1/2 wall=0.1s day=0.467 storm=calm:0% pkg91C load2.6 GHz? pos=53,-67 stuck=0 pen=0 sink=0 rescues=0
+chunk 6 sim=60s m=135 wp=0/1 live=8 ema=61 buf=1213x1319 draws=341 tris=532730 meshes=1733 parts=7930(11) cast=349 prog=65 tex=176 gaps 123/123/123ms >25:1/1 wall=0.1s day=0.5 storm=calm:0% pkg93C load2.6 GHz? pos=48,-68 stuck=0 pen=0 sink=0 rescues=0
+chunk 7 sim=70s m=140 wp=0/1 live=167 ema=63 buf=1213x1319 draws=360 tris=536464 meshes=1733 parts=7930(11) cast=350 prog=65 tex=176 gaps 6/109/109ms >25:1/3 wall=0.1s day=0.533 storm=calm:0% pkg91C load2.6 GHz? pos=50,-64 stuck=0 pen=0 sink=0 rescues=0
+chunk 8 sim=80s m=156 wp=0/1 live=7 ema=66 buf=1213x1319 draws=103 tris=222610 meshes=1733 parts=7930(11) cast=374 prog=65 tex=176 gaps 134/134/134ms >25:1/1 wall=0.1s day=0.567 storm=calm:0% pkg91C load2.6 GHz? pos=53,-68 stuck=0 pen=0 sink=0 rescues=0
+chunk 9 sim=90s m=158 wp=0/1 live=7 ema=66 buf=1213x1319 draws=94 tris=223064 meshes=1733 parts=7930(11) cast=374 prog=65 tex=176 gaps 143/143/143ms >25:1/1 wall=0.1s day=0.6 storm=calm:0% pkg93C load2.6 GHz? pos=52,-68 stuck=0 pen=0 sink=0 rescues=0
+chunk 10 sim=90s m=158 wp=0/1 live=111 ema=68 buf=1213x1319 draws=94 tris=223064 meshes=1733 parts=7930(11) cast=374 prog=65 tex=176 gaps 9/9/9ms >25:0/1 wall=0.0s day=0.6 storm=calm:0% pkg83C load2.6 GHz? pos=52,-68 stuck=0 pen=0 sink=0 rescues=0
+! chunk 10 advanced 0 s of sim at 90s — stopping the loop
+LEG only=pad:comms at=48.3,-70.8,47 grace=default
+LEGS pad:comms 11.9s22.4h361 st41/4a488g2.3s5.9
+DETAIL pad:comms 0.5/3.9m dwell54.9s parkΔnone BLIND[cand97 tight76 nolos21 mMax1.05@r3.0 laneMax-0.00 by:comms:pad4#1 laneBy:comms:pad4#0]
+LEGRESULT zones=0/1 streets=0/0 points=1/1 driven=0/1 retries=0 laps=37 rescues=0 stuck=0 pen=0 sim=90s

@@ -147,6 +147,7 @@ Since A4 and F2-deploy require human interaction outside automation capabilities
   - 出货跑（W 按住）`tools/logs/pad-leave-census-2026-09-29e.log`：锚 `ANCHOR_HEAD 60844a4` · `SRC_DIRTY_LINES 0` · `SRC_MD5 7b48281325ed` · `CENSUS_MD5 c274e430e4a1` ⇒ **`PADS 7 FAILED 0` · `VERDICT ALL_PADS_DRIVABLE` · `PAD_CENSUS_RC=0`**，逐台 moved `hub 13.03 / launch 19.12 / habitat 19.04 / industry 19.16 / comms 15.83 / science 17.85 / motor 19.13` m，全部越过自身 3.9 m 半径。comms 那条"开不出去"的静态恐惧被实测证伪。
   - 极性对照（`PAD_CENSUS_NOKEY=1`，同一份 census 字节，只让车坐到帧预算用尽不按任何键）：`POLARITY_B_RC=1` · 七台 `moved 0.00 m` 全红 —— 这把尺会因"没开车"报红，所以绿跑不是装饰。两趟都在最终字节上（改过 `DRIVE_FRAMES` 常量后重量的一次）。
 - 结论：#116 的两格里，第二格（逐台可开走性）用实测关掉；第一格（合法落位搜索 `search=8` 在光台附近滑到 11.3 m 外，产品侧落位基准）仍是产品侧未读数的一格，不许用尺子关掉。
+- #116 第一格的归因（读代码，2026-09-29）：那句「11.31 m 滑出台面」挂在 `warpTo(...,search=8)` 上，而这一支只有 demo 机位（`main.js:5521-5527`）与 `__RSB.warp`（3607）走 —— **不是玩家传送按钮的路径**。玩家的传送（`teleportTo(tp)` 无 opt：按钮 `main.js:167`、数字键 2800、自动回位 150）落在圆心外 `4.6,4.6` 对角 ≈ 6.5 m 再经 `freeLanding(...,6)`（注释 561 明说这是"停在台旁而不是压住充电器"的设计），只有电池拖回 `teleportTo(hub,{atPad:true})`（565）才站上盘心。⇒ 三个落位服务三个用途，不是"一个坏掉的到达"。剩下的是**用户偏好裁决**（传送该落在盘上还是盘旁），不是缺读数也不是缺陷；走查 `hud:pad-leave` 点的就是真传送 UI，测的即是玩家这支。
 
 （注：`-g` 那跑的 `SRC_MD5 a35477e11b30` 与 `-e` 的 `85561bf715ea` 不是同一把算法 —— 外层拼文件的 glob 不同，不是字节变了；`src/` 自 `59c4329` 起 `SRC_DIRTY_LINES 0`。）
 

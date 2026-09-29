@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { heightAt, installSurfaceGrid, surfaceAt, surfaceSlope, pavedAt, roadAt, gradedAt, paveGeometry, deckAt, lotAt } from './height.js';
+import { heightAt, installSurfaceGrid, surfaceAt, surfaceSlope, pavedAt, roadAt, gradedAt, paveGeometry, deckAt } from './height.js';
 import { TERRAIN, ISLAND } from '../config.js';
 import { fbm, vnoise, mulberry32, smoothstep } from '../utils/noise.js';
 import { loadModel, cloneModel } from './assets.js';
@@ -1231,22 +1231,58 @@ export function createStones(scene, count = 3600) {
   const e = new THREE.Euler(), col = new THREE.Color();
   // The draw order and the rejection test are unchanged, so the field is the same stones in the same
   // places as the pre-tiling build and a frame diff across this commit isolates the detail swap.
+  //
+  // Seating is computed from the chip's own box, not from a multiple of the scale. The old line was
+  // `heightAt(x, z) - sc * 0.28`, and because the chip's local vertical extent is ~±0.8 (the jitter
+  // squashes Y by 0.55), that put the *bottom* of an untilted stone 1.08·sc under the sand while the
+  // whole stone is only 1.6·sc tall: the measured median burial was 0.67 of the stone, its median
+  // height above ground 0.086 m, and its median screen height 4.5 px at the driving camera
+  // (`tools/gravel-legibility-probe.js`, `tools/logs/gravel-legibility-baseline2-2026-09-29.log`).
+  // That is why near-field gravel read as painted sand rather than as rocks — the arithmetic here and
+  // that reading agree, which is the cross-check on both. A chip resting in loose regolith should sit
+  // with a fraction of itself buried, so the fraction is the stated art parameter and the offsets
+  // come from geometry.
+  geoHi.computeBoundingBox();
+  const bb = geoHi.boundingBox, cornersY = [];
+  for (const yy of [bb.min.y, bb.max.y]) for (const xx of [bb.min.x, bb.max.x]) for (const zz of [bb.min.z, bb.max.z])
+    cornersY.push([xx, yy, zz]);
+  const STONE_SINK = 0.34; // 1/3 of the stone under the sand: enough to seat it, not enough to hide it
+  const seat = new THREE.Vector3();
   const placed = [];
+  // `count * 4` was enough while the only rejection was the building rectangles. `gradedAt` also turns
+  // down every pad apron and road batter, so the budget has to be sized to the new domain or the loop
+  // ends early and the field is silently thinner than the accepted one. The number that actually got
+  // placed now rides on the group, and `tools/gravel-legibility-probe.js` reads it back.
   let guard = 0;
-  while (placed.length < count && guard++ < count * 4) {
+  while (placed.length < count && guard++ < count * 24) {
     const a = rand() * Math.PI * 2;
     const r = 5 + Math.pow(rand(), 0.6) * (SCATTER_R - 5);
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     // Gravel belongs on the dune, not on engineered ground: a chip sitting on a sawn level reads as
     // litter, and every footing the site plan cuts changes the height under a previously placed one.
     // The analytic field is used rather than the mesh because the plan is not complete when this runs.
-    const lot = lotAt(x, z);
-    if (lot && lot.sd < 0) continue;
+    //
+    // This used to answer `lotAt(x, z).sd < 0`, which is only the building rectangles. The predicate
+    // height.js documents for scattering is `gradedAt` — "a loose boulder is fine on open sand and
+    // absurd halfway down a compacted shoulder, and the two extents are different" — and the boulder
+    // scatter 900 lines above already answers it with the same 0.02 bar. Measured consequence: after
+    // the re-seating below made near gravel visible, a chip read as standing on sintered plate next to
+    // the rover, and 2 of the 188 stones inside 25 m of the driving camera were inside a graded
+    // rectangle at deck height (`tools/gravel-on-paving-probe.js`). The narrow test let through every
+    // pad apron and road batter; this one does not.
+    if (gradedAt(x, z) > 0.02) continue;
     const sc = 0.07 + Math.pow(rand(), 2.3) * 0.5;
     e.set(rand() * 6.283, rand() * 6.283, rand() * 6.283);
     q.setFromEuler(e);
-    v.set(x, heightAt(x, z) - sc * 0.28, z);
     s.set(sc * (0.75 + rand() * 0.7), sc * (0.7 + rand() * 0.6), sc * (0.75 + rand() * 0.7));
+    // The tilt is applied after the squash, so the vertical extent is per-stone, not per-species:
+    // a chip lying on its side is wider than it is tall and would float if seated by the untilted box.
+    let yMin = 1e9, yMax = -1e9;
+    for (const c of cornersY) {
+      const y = seat.set(c[0] * s.x, c[1] * s.y, c[2] * s.z).applyQuaternion(q).y;
+      yMin = Math.min(yMin, y); yMax = Math.max(yMax, y);
+    }
+    v.set(x, heightAt(x, z) - STONE_SINK * (yMax - yMin) - yMin, z);
     col.copy(SPECK).lerp(GRAVEL, rand()).lerp(SAND_C, rand() * 0.5);
     placed.push({ p: v.clone(), q: q.clone(), s: s.clone(), c: col.clone() });
   }
@@ -1261,6 +1297,8 @@ export function createStones(scene, count = 3600) {
 
   const field = new THREE.Group();
   field.name = 'stone-field';
+  field.userData.placed = placed.length;
+  field.userData.tried = guard;
   const tmp = new THREE.Vector3();
   for (const list of cells.values()) {
     // The LOD sits at the tile's centre of mass so its distance is the distance to the stones, not to

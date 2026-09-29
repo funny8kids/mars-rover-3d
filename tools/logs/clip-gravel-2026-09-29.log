@@ -1,0 +1,76 @@
+TARGET http://127.0.0.1:8080/qa_boot.html?auto=std · buffer 640x696 · 22/22 interactive points × 3 skies = 66 frames
+UNITS clip,burn = % of the 16 000-px histogram sample · bins = ‰ each · shadow= chroma:warm/cool shares
+WALLS 693 collider discs used for vantage clearance
+SKY day dayT=0.3 settled in 2 frames · nightF=0 dayF=0.9969369718177339 duskF=0.03402291870487639 sun=3.39 clock=07:11
+· day   pad:hub                at=[-13.5,2.22,19.9] clip=   0 burn=   0(null%) bins=0/464/204/59/213/59/1/0 lamp=1.114@0.01 sun=3.39 sunDeg=97 off=12m camCheck=null shadow=1.376*:0.995/0.005
+· day   pad:launch             at=[-63.1,2.22,-48.5] clip= 0.4 burn= 0.1(null%) bins=0/64/305/159/187/226/56/4 lamp=1.164@0.128 sun=3.39 sunDeg=21 off=9m camCheck=0 shadow=1.344*:0.998/0.002
+· day   pad:habitat            at=[-51.1,2.12,73.9] clip=   0 burn=   0(null%) bins=0/278/203/228/236/54/0/0 lamp=1.124@0.01 sun=3.39 sunDeg=97 off=15m camCheck=0.6 shadow=1.405*:1/0
+· day   pad:industry           at=[59.2,2.15,86.6] clip=   0 burn=   0(null%) bins=0/415/67/79/377/55/7/0 lamp=null@null sun=3.39 sunDeg=159 off=9m camCheck=0.2 shadow=1.375*:0.999/0
+· day   pad:comms              at=[56.4,2.12,-75.2] clip=   0 burn=   0(null%) bins=0/441/92/39/409/19/0/0 lamp=null@null sun=3.39 sunDeg=87 off=9m camCheck=0 shadow=1.38*:0.999/0
+· day   pad:science            at=[5.2,2.02,81.4] clip=   0 burn=   0(null%) bins=0/455/59/55/332/85/13/0 lamp=1.116@0.031 sun=3.39 sunDeg=133 off=9m camCheck=0.5 shadow=1.36*:0.979/0.009
+· day   pad:motor              at=[1.8,2.12,-63.5] clip=   0 burn=   0(null%) bins=0/212/399/94/262/31/2/0 lamp=null@null sun=3.39 sunDeg=53 off=12m camCheck=0 shadow=1.411*:0.998/0.002
+· day   tap:hub                at=[-18.4,2.22,27.2] clip= 0.2 burn= 0.1(null%) bins=0/453/130/54/261/91/10/2 lamp=1.118@0.027 sun=3.39 sunDeg=97 off=13m camCheck=0 shadow=1.488*:0.996/0.004
+· day   tap:launch             at=[-79.6,2.22,-52.5] clip=   0 burn=   0(null%) bins=0/205/713/12/68/2/1/0 lamp=null@null sun=3.39 sunDeg=21 off=19m camCheck=0 shadow=1.407*:1/0
+· day   tap:habitat            at=[-68.1,2.12,80.5] clip=   0 burn=   0(null%) bins=0/41/28/380/545/5/0/0 lamp=null@null sun=3.39 sunDeg=91 off=22m camCheck=0.6 shadow=1.393*:0.99/0.01
+· day   tap:industry           at=[56.3,2.17,97] clip=   0 burn=   0(null%) bins=0/425/125/35/341/68/6/0 lamp=null@null sun=3.39 sunDeg=156 off=13m camCheck=0.2 shadow=1.478*:0.999/0
+· day   tap:comms              at=[60.4,2.12,-86.3] clip=   0 burn=   0(null%) bins=0/494/76/29/384/16/0/0 lamp=null@null sun=3.39 sunDeg=85 off=13m camCheck=0 shadow=1.529*:0.999/0.001
+· day   tap:science            at=[9.4,2.02,92.3] clip=   0 burn=   0(null%) bins=0/470/81/36/325/77/11/0 lamp=1.127@0.028 sun=3.39 sunDeg=135 off=13m camCheck=0.4 shadow=1.546*:0.995/0.003
+· day   tap:motor              at=[-2.2,2.12,-57.4] clip=   0 burn=   0(null%) bins=0/416/180/53/314/37/0/0 lamp=null@null sun=3.39 sunDeg=50 off=13m camCheck=0 shadow=1.37*:0.997/0.003
+· day   sample:0               at=[93.4,2.19,75.9] clip= 0.1 burn= 0.1(null%) bins=0/88/413/30/357/102/10/1 lamp=1.175@0.046 sun=3.39 sunDeg=164 off=15m camCheck=null shadow=1.556*:0.991/0.002
+· day   sample:1               at=[-97.6,1.82,70] clip=   0 burn=   0(null%) bins=0/310/228/25/323/114/0/0 lamp=1.144@0.013 sun=3.39 sunDeg=78 off=15m camCheck=0.5 shadow=1.551*:1/0
+· day   sample:2               at=[115.3,1.47,-39.8] clip=   0 burn=   0(null%) bins=0/15/205/201/540/30/9/0 lamp=1.131@0.013 sun=3.39 sunDeg=118 off=18m camCheck=null shadow=1.535*:0.992/0.001
+· day   sample:3               at=[-35,1.92,106.9] clip=   0 burn=   0(null%) bins=0/506/59/25/288/114/9/0 lamp=1.118@0.026 sun=3.39 sunDeg=113 off=9m camCheck=0.3 shadow=1.624*:0.986/0.01
+· day   sample:4               at=[43.3,2.36,-93.4] clip=   0 burn=   0(null%) bins=0/487/80/23/387/22/0/0 lamp=null@null sun=3.39 sunDeg=75 off=9m camCheck=0 shadow=1.581*:0.973/0.024
+· day   sample:5               at=[-104.9,1.6,-39.4] clip= 0.1 burn= 0.1(null%) bins=0/233/312/32/174/205/43/1 lamp=1.183@0.113 sun=3.39 sunDeg=29 off=9m camCheck=0 shadow=1.537*:0.989/0.011
+· day   leak:tanks             at=[108.3,2.32,55.4] clip=   0 burn=   0(null%) bins=0/175/347/41/379/53/5/0 lamp=1.171@0.022 sun=3.39 sunDeg=158 off=25m camCheck=0.6 shadow=1.538*:1/0
+· day   watch:deck             at=[-36.6,3.3,-38.8] clip= 0.1 burn= 0.1(null%) bins=0/417/157/44/178/174/29/1 lamp=1.183@0.077 sun=3.39 sunDeg=19 off=30m camCheck=0.1 shadow=1.415*:0.99/0.01
+SKY dusk dayT=0.76 settled in 2 frames · nightF=0.7364732472882882 dayF=0 duskF=0.4738494896536365 sun=1.28 clock=18:14
+· dusk  pad:hub                at=[-13.5,2.22,19.9] clip=   0 burn=   0(null%) bins=13/701/236/46/2/1/1/0 lamp=null@null sun=1.28 sunDeg=97 off=12m camCheck=0 shadow=1.16*:0.746/0.254
+· dusk  pad:launch             at=[-63.1,2.22,-48.5] clip=   0 burn=   0(null%) bins=0/469/453/60/17/1/1/0 lamp=null@null sun=1.28 sunDeg=36 off=9m camCheck=0 shadow=1.138:0.63/0.369
+· dusk  pad:habitat            at=[-51.1,2.12,73.9] clip=   0 burn=   0(null%) bins=0/504/417/69/5/1/5/0 lamp=null@null sun=1.28 sunDeg=97 off=15m camCheck=0.6 shadow=1.2*:0.864/0.136
+· dusk  pad:industry           at=[59.2,2.15,86.6] clip=   0 burn=   0(null%) bins=0/538/364/74/20/4/1/0 lamp=null@null sun=1.28 sunDeg=147 off=9m camCheck=0.2 shadow=1.184*:0.756/0.244
+· dusk  pad:comms              at=[56.4,2.12,-75.2] clip=   0 burn=   0(null%) bins=0/812/157/24/6/1/1/0 lamp=null@null sun=1.28 sunDeg=88 off=9m camCheck=0 shadow=1.181*:0.608/0.392
+· dusk  pad:science            at=[5.2,2.02,81.4] clip=   0 burn=   0(null%) bins=0/642/247/83/20/8/0/0 lamp=null@null sun=1.28 sunDeg=128 off=9m camCheck=0.5 shadow=1.198*:0.83/0.162
+· dusk  pad:motor              at=[1.8,2.12,-63.5] clip=   0 burn=   0(null%) bins=0/524/431/42/2/0/0/0 lamp=null@null sun=1.28 sunDeg=59 off=12m camCheck=0 shadow=1.181*:0.724/0.275
+· dusk  tap:hub                at=[-18.4,2.22,27.2] clip= 0.1 burn=   0(null%) bins=0/759/191/45/1/1/2/1 lamp=null@null sun=1.28 sunDeg=97 off=13m camCheck=0 shadow=1.277*:0.81/0.19
+· dusk  tap:launch             at=[-79.6,2.22,-52.5] clip=   0 burn=   0(null%) bins=0/791/208/1/0/0/0/0 lamp=null@null sun=1.28 sunDeg=35 off=19m camCheck=0 shadow=1.24*:0.936/0.064
+· dusk  tap:habitat            at=[-68.1,2.12,80.5] clip=   0 burn=   0(null%) bins=0/59/565/376/0/0/0/0 lamp=null@null sun=1.28 sunDeg=92 off=22m camCheck=0.6 shadow=1.214*:0.985/0.015
+· dusk  tap:industry           at=[56.3,2.17,97] clip=   0 burn=   0(null%) bins=1/653/288/48/7/3/0/0 lamp=null@null sun=1.28 sunDeg=144 off=13m camCheck=0.2 shadow=1.246*:0.798/0.201
+· dusk  tap:comms              at=[60.4,2.12,-86.3] clip=   0 burn=   0(null%) bins=1/838/156/4/0/0/0/0 lamp=null@null sun=1.28 sunDeg=86 off=13m camCheck=0 shadow=1.257*:0.617/0.382
+· dusk  tap:science            at=[9.4,2.02,92.3] clip=   0 burn=   0(null%) bins=1/697/231/50/16/6/0/0 lamp=null@null sun=1.28 sunDeg=129 off=13m camCheck=0.4 shadow=1.283*:0.853/0.143
+· dusk  tap:motor              at=[-2.2,2.12,-57.4] clip=   0 burn=   0(null%) bins=2/602/364/19/11/1/1/0 lamp=null@null sun=1.28 sunDeg=56 off=13m camCheck=0 shadow=1.17*:0.658/0.342
+· dusk  sample:0               at=[93.4,2.19,75.9] clip=   0 burn=   0(null%) bins=0/460/408/92/38/2/0/0 lamp=null@null sun=1.28 sunDeg=148 off=15m camCheck=null shadow=1.243*:0.728/0.267
+· dusk  sample:1               at=[-97.6,1.82,70] clip=   0 burn=   0(null%) bins=0/758/199/39/4/0/0/0 lamp=null@null sun=1.28 sunDeg=80 off=15m camCheck=0.5 shadow=1.28*:0.686/0.307
+· dusk  sample:2               at=[115.3,1.47,-39.8] clip=   0 burn=   0(null%) bins=0/824/136/25/11/3/0/0 lamp=null@null sun=1.28 sunDeg=115 off=18m camCheck=null shadow=1.197*:0.592/0.403
+· dusk  sample:3               at=[-35,1.92,106.9] clip=   0 burn=   0(null%) bins=0/720/211/52/12/4/0/0 lamp=null@null sun=1.28 sunDeg=111 off=9m camCheck=0.3 shadow=1.314*:0.81/0.178
+· dusk  sample:4               at=[43.3,2.36,-93.4] clip=   0 burn=   0(null%) bins=0/739/249/11/1/0/0/0 lamp=null@null sun=1.28 sunDeg=78 off=9m camCheck=0 shadow=1.269*:0.602/0.379
+· dusk  sample:5               at=[-104.9,1.6,-39.4] clip=   0 burn=   0(null%) bins=1/691/291/18/1/0/0/0 lamp=null@null sun=1.28 sunDeg=41 off=9m camCheck=0 shadow=1.255*:0.609/0.379
+· dusk  leak:tanks             at=[108.3,2.32,55.4] clip=   0 burn=   0(null%) bins=0/531/389/53/22/4/1/0 lamp=null@null sun=1.28 sunDeg=145 off=25m camCheck=0.6 shadow=1.236*:0.686/0.314
+· dusk  watch:deck             at=[-36.6,3.3,-38.8] clip=   0 burn=   0(null%) bins=0/562/429/8/0/0/1/0 lamp=null@null sun=1.28 sunDeg=34 off=30m camCheck=0.1 shadow=1.171*:0.627/0.373
+SKY night dayT=0.9 settled in 2 frames · nightF=1 dayF=0 duskF=0 sun=1.7 clock=21:36
+· night pad:hub                at=[-13.5,2.22,19.9] clip=   0 burn=   0(null%) bins=7/596/285/88/20/1/1/0 lamp=null@null sun=1.7 sunDeg=97 off=12m camCheck=0 shadow=1.099:0.662/0.335
+· night pad:launch             at=[-63.1,2.22,-48.5] clip= 0.1 burn=   0(null%) bins=0/340/540/90/20/9/1/1 lamp=null@null sun=1.7 sunDeg=40 off=9m camCheck=0 shadow=1.058:0.576/0.424
+· night pad:habitat            at=[-51.1,2.12,73.9] clip= 0.5 burn=   0(null%) bins=0/338/431/187/30/7/1/5 lamp=null@null sun=1.7 sunDeg=96 off=15m camCheck=0.6 shadow=1.207*:0.989/0.011
+· night pad:industry           at=[59.2,2.15,86.6] clip= 0.1 burn=   0(null%) bins=0/527/345/84/39/6/0/1 lamp=null@null sun=1.7 sunDeg=142 off=9m camCheck=0.2 shadow=1.109:0.639/0.361
+· night pad:comms              at=[56.4,2.12,-75.2] clip=   0 burn=   0(null%) bins=0/765/193/24/16/1/1/0 lamp=null@null sun=1.7 sunDeg=88 off=9m camCheck=0 shadow=1.114:0.596/0.404
+· night pad:science            at=[5.2,2.02,81.4] clip=   0 burn=   0(null%) bins=0/633/231/81/44/11/0/0 lamp=null@null sun=1.7 sunDeg=126 off=9m camCheck=0.5 shadow=1.133:0.651/0.347
+· night pad:motor              at=[1.8,2.12,-63.5] clip=   0 burn=   0(null%) bins=0/469/474/36/20/1/0/0 lamp=null@null sun=1.7 sunDeg=61 off=12m camCheck=0 shadow=1.105:0.708/0.291
+· night tap:hub                at=[-18.4,2.22,27.2] clip= 0.1 burn=   0(null%) bins=0/683/231/75/6/1/2/1 lamp=null@null sun=1.7 sunDeg=97 off=13m camCheck=0 shadow=1.19*:0.695/0.304
+· night tap:launch             at=[-79.6,2.22,-52.5] clip=   0 burn=   0(null%) bins=0/759/239/2/0/0/0/0 lamp=null@null sun=1.7 sunDeg=40 off=19m camCheck=0 shadow=1.166*:0.934/0.066
+· night tap:habitat            at=[-68.1,2.12,80.5] clip=   0 burn=   0(null%) bins=0/55/332/611/2/0/0/0 lamp=null@null sun=1.7 sunDeg=92 off=22m camCheck=0.6 shadow=1.15:0.971/0.028
+· night tap:industry           at=[56.3,2.17,97] clip=   0 burn=   0(null%) bins=1/612/324/50/10/3/0/0 lamp=null@null sun=1.7 sunDeg=140 off=13m camCheck=0.2 shadow=1.17*:0.674/0.326
+· night tap:comms              at=[60.4,2.12,-86.3] clip=   0 burn=   0(null%) bins=1/788/202/7/1/0/0/0 lamp=null@null sun=1.7 sunDeg=86 off=13m camCheck=0 shadow=1.184*:0.607/0.393
+· night tap:science            at=[9.4,2.02,92.3] clip=   0 burn=   0(null%) bins=1/682/234/53/20/9/0/0 lamp=null@null sun=1.7 sunDeg=127 off=13m camCheck=0.4 shadow=1.217*:0.688/0.311
+· night tap:motor              at=[-2.2,2.12,-57.4] clip= 0.1 burn=   0(null%) bins=1/540/410/29/17/2/1/1 lamp=null@null sun=1.7 sunDeg=58 off=13m camCheck=0 shadow=1.103:0.648/0.351
+· night sample:0               at=[93.4,2.19,75.9] clip=   0 burn=   0(null%) bins=0/346/510/71/70/3/0/0 lamp=null@null sun=1.7 sunDeg=144 off=15m camCheck=null shadow=1.177*:0.632/0.365
+· night sample:1               at=[-97.6,1.82,70] clip=   0 burn=   0(null%) bins=0/711/235/41/12/1/0/0 lamp=null@null sun=1.7 sunDeg=81 off=15m camCheck=0.5 shadow=1.219*:0.616/0.382
+· night sample:2               at=[115.3,1.47,-39.8] clip=   0 burn=   0(null%) bins=0/813/145/25/11/5/0/0 lamp=null@null sun=1.7 sunDeg=114 off=18m camCheck=null shadow=1.14:0.541/0.457
+· night sample:3               at=[-35,1.92,106.9] clip=   0 burn=   0(null%) bins=0/723/194/63/15/6/0/0 lamp=null@null sun=1.7 sunDeg=110 off=9m camCheck=0.3 shadow=1.252*:0.663/0.329
+· night sample:4               at=[43.3,2.36,-93.4] clip=   0 burn=   0(null%) bins=0/708/267/20/3/1/0/0 lamp=null@null sun=1.7 sunDeg=79 off=9m camCheck=0 shadow=1.208*:0.595/0.394
+· night sample:5               at=[-104.9,1.6,-39.4] clip=   0 burn=   0(null%) bins=2/635/331/30/2/0/0/0 lamp=null@null sun=1.7 sunDeg=45 off=9m camCheck=0 shadow=1.192*:0.602/0.389
+· night leak:tanks             at=[108.3,2.32,55.4] clip=   0 burn=   0(null%) bins=0/464/447/49/36/3/1/0 lamp=null@null sun=1.7 sunDeg=141 off=25m camCheck=0.6 shadow=1.165*:0.612/0.387
+· night watch:deck             at=[-36.6,3.3,-38.8] clip=   0 burn=   0(null%) bins=0/406/581/11/1/0/1/0 lamp=null@null sun=1.7 sunDeg=39 off=30m camCheck=0.1 shadow=1.092:0.62/0.379
+SUMMARY frames=66 flagged=0 · worst clip: night/pad:habitat=0.5 day/pad:launch=0.4 day/tap:hub=0.2 day/sample:0=0.1 day/sample:5=0.1 · worst bin0: dusk/pad:hub=13 night/pad:hub=7 dusk/tap:motor=2 night/sample:5=2 dusk/tap:industry=1 · worst burn share: day/pad:hub=null day/pad:launch=null day/pad:habitat=null day/pad:industry=null day/pad:comms=null
+COVERAGE vantage-in-geometry=0/66 · sun-in-frame(<20 deg)=1/66 · census-anchor-fail=0/66 (nearby() disagrees with the shot pose by > 2 m) · census-empty=7/66 (no emitter within 70 m of the pose, so nothing to cross-check) · burn-share-measured=0/66 (>= 160 blown px)
+FRAMES /tmp/rsb_shots-uvG2kY/ (PNG, lossless — shot() stopped encoding JPEG, main.js:5141)
+CLIP SWEEP PASS

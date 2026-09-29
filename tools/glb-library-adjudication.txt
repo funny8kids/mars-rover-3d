@@ -1,0 +1,6 @@
+# 未引用 GLB 的逐条归属：每个未引用文件必须落进某一行，落不进去的就是 UNADJUDICATED，那把尺只为它变红。
+# 类别写在每条自己身上（前缀 + 件数上限 + 为什么留 + 什么条件下要重看）；上限是有意的：库里再长出一件
+# 未引用的东西会撞红，因为"多留一件死件"应当是一次决定，而不是一次事故。
+# prefix 与文件的相对路径按整段前缀相等匹配（(root) 表示 public/assets 顶层）。
+kenney/	60	外部 CC0 供应商整包（Kenney Space / Nature Kit），整包留在源库；页面只请求 props.js 注册表点名的件	新点名一件之前必须先过 tools/cc0-conform.mjs 的网格与色域格
+(root)	4	旧 tools/blender/build_assets.py 的产出（arch / comm_dish / rock_cluster / solar_array），其消费者已被逐件 Blender hero 取代（#107 把这条重跑路径收编）	若哪个又要被装回画面，先按 rsbkit 米制 UV 重锻，再直接进注册表

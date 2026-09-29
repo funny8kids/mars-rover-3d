@@ -22,7 +22,8 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS = os.path.join(ROOT, 'public', 'assets')
-SKIP_DIRS = {'web'}                      # excluded from the published site by design
+SKIP_DIRS = {'web'}                      # keep the line below's neighbour readable
+LEDGER = os.path.join(ROOT, 'tools', 'glb-library-adjudication.txt')                      # excluded from the published site by design
 APP_GLOBS = [('src', '.js')]
 APP_FILES = [f for f in ('index.html', 'qa_boot.html') if os.path.isfile(os.path.join(ROOT, f))]
 
@@ -102,6 +103,38 @@ def main(argv):
     print('ENUMERATED %d · REFERENCED %d · UNREFERENCED %d · dead bytes %.1f MiB · skipped web/ %d'
           % (len(rows), len(rows) - len(dead), len(dead),
              sum(s for _, s in dead) / 1048576.0, skipped))
+    # Adjudication: an unreferenced file is only tolerated while some line of the ledger claims it.
+    # The gate is deliberately on the *unclaimed* count rather than on the orphan count — a permanently
+    # red ruler gets skimmed, and this census has been red since the Kenney era. The bound per category
+    # is what keeps "we keep vendor packs" from quietly absorbing the next thing someone drops in.
+    claimed = 0
+    cats = []
+    ledger = LEDGER
+    if '--ledger' in argv:                      # the controls point the same rule at a shrunk bound
+        ledger = argv[argv.index('--ledger') + 1]
+    if os.path.isfile(ledger):
+        for ln in open(LEDGER, encoding='utf8'):
+            ln = ln.rstrip('\n')
+            if not ln or ln.startswith('#'):
+                continue
+            f = [x.strip() for x in (ln.split('\t') if '\t' in ln else ln.split())]
+            if len(f) >= 2:
+                cats.append((f[0].rstrip('/'), int(f[1])))
+    unadjudicated = []
+    for rel, size in dead:
+        hit = next(((pre, cap) for pre, cap in cats
+                    if (rel.startswith(pre + '/') if pre != '(root)' else '/' not in rel)), None)
+        # (prefix stored without its trailing slash, so the join below is the only spelling)
+        if hit is None:
+            unadjudicated.append(rel)
+    for pre, cap in cats:
+        n = len([r for r, _ in dead
+                 if (r.startswith(pre + '/') if pre != '(root)' else '/' not in r)])
+        print('CATEGORY %-10s claimed %d of bound %d' % (pre, n, cap))
+        if n > cap:
+            unadjudicated.append('<over-bound %s %d>%s?%d>' % (pre, n, pre, cap))
+    print('UNADJUDICATED %d%s' % (len(unadjudicated),
+          '' if not unadjudicated else ' -> ' + ', '.join(unadjudicated[:8])))
     if '--emit-exclude' in argv:
         # The exclude file is the reading itself handed to the writer: a hand-copied list of dead
         # assets would go stale the day one is wired up or a new one lands, and stale means either a
@@ -111,9 +144,12 @@ def main(argv):
             for rel, _ in dead:
                 fh.write(rel + '\n')
         print('EXCLUDE_EMITTED %d -> %s' % (len(dead), out))
-    if dead:
-        print('GLB_ORPHANS')
+    if unadjudicated:
+        print('GLB_UNADJUDICATED')
         return 4
+    if dead:
+        print('GLB_ORPHANS_ALL_CLAIMED')
+        return 0
     print('GLB_ALL_REFERENCED')
     return 0
 

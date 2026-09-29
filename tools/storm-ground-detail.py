@@ -1,124 +1,113 @@
 #!/usr/bin/env python3
-"""【E】1 — 沙暴里近景砂的纹理还在不在？（对 PNG 局部对比度量，不看像素之外的承诺）
+"""【E】1 — 沙暴里近景砂的纹理还在不在？（第二版：先躲开两个混淆，再谈结论）
 
-台账 E1c 行末留了一句只在图上看得见的弱点："埋身暴把近景砂的纹理压成一张平色……地面细节没了"。
-那句话是目视的，没有尺子。这把尺子要能区分两件很容易混起来的事：
+台账 E1c 行末留了一句只在图上看得见的弱点："埋身暴把近景砂的纹理压成一张平色"。第一版尺子（一阶梯度
+除以电平）差点把这句话判成"已解决"：暴内近景读到晴空的 4.5× —— 那是在量**飞到地面之前的尘丝**。第二版
+把两个混淆各自钉成一个可判的读数：
 
-  * 画面被**染色 / 压暗**（分级、雾、尘墙挡住光）—— 那不影响"纹理在不在"；
-  * 画面被**抹平**（局部亮度差被吃掉）—— 那才是可读性问题。
+  ① **染色不是抹平**：每帧先按通道除掉自己的均值（`c / mean(c)`），于是任何乘性的分级（R/G/B 增益不同
+     也算）在度量里被除掉；`tint` 对照因此必须 ≈1.000（第一版做不到，读数是 1.32）。
+  ② **粒子不是地面**：同一帧量两个带。`fine`（σ=1 减 σ=3）留得住 1~3 px 的尘丝，`ripple`（σ=3 减 σ=10）
+     是砂纹自己的波长尺度。`noise` 对照（给晴空叠 1 px 高斯）必须在 ripple 上基本不动（白噪声进不了砂纹带）
+     而"抹平"的对照必须打得中这一带：σ=6 模糊要让 ripple 掉，σ=2 模糊只许掉 fine、不许动 ripple
+     （这两条一起成立，才允许拿 ripple 的比值去说"地面细节"）。
+  ③ `flat`（均匀色）两带必须为 0；`smear`（σ=2，真的吃掉细节）ripple 必须显著掉。
 
-所以两个指标都相对**电平**归一：`grad_rel = mean|∇L| / mean L`、`hp_rel = std(L - blur(L)) / mean L`。
-一个整幅同色的乘性分级会把分子分母同时缩放，比值不动；只有细节被吃掉才会让它掉。
+取景带按**几何**给：CAM=[-26,3,34] → LOOK=[0,1.6,-46] 的近景那一横条在晴空帧里本来就只有中带 28 % 的
+带通能量（第一版顺手量出来的），所以三带都打印、判据只在 `mid+near` 合并的地面带上下，不靠肉眼看图选带。
 
-三条对照都在同一批图上跑（都不靠人眼）：
-  ① `flat`      纯均匀色 → 两指标必须 ≈0（证明这把尺不是恒正的装饰品）；
-  ② `tint`      把晴空帧按暴的实测通道增益染色（不碰几何/模糊）→ 比值必须基本不动
-                （证明"暴内读数低"不会被归因成一次颜色分级）；
-  ③ `smear`     把晴空帧高斯糊 σ=2（真的吃掉细节）→ 比值必须显著掉
-                （证明这把尺认得被抹平这件事）。
-
-用法：python3 tools/storm-ground-detail.py a.png b.png ...
+用法：python3 tools/storm-ground-detail.py 晴空.png 沙暴.png
 """
 import sys
 import numpy as np
 from PIL import Image, ImageFilter
 
-
-def lum(path):
-    im = Image.open(path).convert('RGB')
-    a = np.asarray(im, dtype=np.float64) / 255.0
-    return a, 0.2126 * a[..., 0] + 0.7152 * a[..., 1] + 0.0722 * a[..., 2]
+SIGMA = {'fine': (1.0, 3.0), 'ripple': (3.0, 10.0)}
 
 
 def blur(L, sig):
-    return np.asarray(Image.fromarray((np.clip(L, 0, 1) * 255).astype(np.uint8)).filter(
-        ImageFilter.GaussianBlur(sig)), dtype=np.float64) / 255.0
+    im = Image.fromarray((np.clip(L, 0, 1) * 255).astype(np.uint8))
+    return np.asarray(im.filter(ImageFilter.GaussianBlur(sig)), dtype=np.float64) / 255.0
 
 
-def metrics(L):
-    gy, gx = np.gradient(L)
-    g = np.sqrt(gx * gx + gy * gy)
-    m = float(L.mean())
-    smoothed = np.asarray(Image.fromarray((L * 255).astype(np.uint8)).filter(
-        ImageFilter.GaussianBlur(4)), dtype=np.float64) / 255.0
-    hp = L - smoothed
-    # `band` is the scale-restricted one: energy between σ=1 and σ=6, i.e. the wavelength of the sand's
-    # own ripples. `grad_rel`/`hp_rel` are dominated by 1-3 px dust streaks flying in front of the
-    # ground, which is why the first version of this ruler "cleared" the storm by reporting 4.5× the
-    # calm gradient — that reading measured the particles, not the surface, and it is kept printed
-    # only so the confound stays visible next to the number that does not have it.
-    band = blur(L, 3.0) - blur(L, 10.0)
-    return {'grad_rel': float(g.mean()) / max(m, 1e-6),
-            'hp_rel': float(hp.std()) / max(m, 1e-6),
-            'band_rel': float(band.std()) / max(m, 1e-6),
-            'mean': m}
+def rgb_of(path):
+    return np.asarray(Image.open(path).convert('RGB'), dtype=np.float64) / 255.0
+
+
+def lum_rel(a):
+    """通道除掉自身均值后的亮度：乘性分级在这里被除掉，剩下的差异才是画面结构。"""
+    n = a / np.maximum(a.mean(axis=(0, 1), keepdims=True), 1e-6)
+    return 0.2126 * n[..., 0] + 0.7152 * n[..., 1] + 0.0722 * n[..., 2]
+
+
+def band_energy(L, key):
+    lo, hi = SIGMA[key]
+    b = blur(L, lo) - blur(L, hi)
+    m = float(np.abs(L).mean())
+    return float(b.std()) / max(m, 1e-6)
 
 
 def bands(L):
     h = L.shape[0]
-    # 画面下 1/3 是脚下的砂：相机 CAM=[-26,3,34] 望 LOOK=[0,1.6,-46]，地平线在中线偏上
     return {'near': L[int(h * 0.67):, :], 'mid': L[int(h * 0.40):int(h * 0.67), :],
             'far': L[:int(h * 0.40), :]}
 
 
-def channel_gain(calm_path, storm_path):
-    c = np.asarray(Image.open(calm_path).convert('RGB'), dtype=np.float64)
-    s = np.asarray(Image.open(storm_path).convert('RGB'), dtype=np.float64)
-    return [float(s[..., k].mean() / max(c[..., k].mean(), 1e-6)) for k in range(3)]
+def report(L, name, out):
+    bs = bands(L)
+    ground = np.vstack([bs['near'], bs['mid']])          # 地面带 = 近景 + 中带，按几何给
+    out[name] = {'fine_ground': band_energy(ground, 'fine'), 'ripple_ground': band_energy(ground, 'ripple'),
+                 'near_ripple': band_energy(bs['near'], 'ripple'), 'far_ripple': band_energy(bs['far'], 'ripple')}
+    print(f"  {name:34} ground fine {out[name]['fine_ground']:.4f} · ripple {out[name]['ripple_ground']:.4f}"
+          f"   |  near {out[name]['near_ripple']:.4f} · far {out[name]['far_ripple']:.4f}")
 
 
 def main(argv):
     if len(argv) < 3:
-        print('REFUSED 至少两帧（一晴一暴）才能出差分')
+        print('REFUSED 至少两帧（一晴一暴）')
         return 2
     calm, storm = argv[1], argv[2]
-    rows = {}
-    for p in [calm, storm]:
-        a, L = lum(p)
-        rows[p.split('/')[-1]] = {b: metrics(v) for b, v in bands(L).items()}
-        rows[p.split('/')[-1]]['size'] = L.shape
-    # ② 染色对照：只乘通道增益，不糊、不改几何
-    a, L = lum(calm)
-    gain = channel_gain(calm, storm)
-    tinted = np.clip(a * np.array(gain), 0, 1)
-    Lt = 0.2126 * tinted[..., 0] + 0.7152 * tinted[..., 1] + 0.0722 * tinted[..., 2]
-    rows['CONTROL tint(calm×storm增益)'] = {b: metrics(v) for b, v in bands(Lt).items()}
-    # ③ 抹平对照：真的吃掉细节
-    smeared = np.asarray(Image.fromarray((L * 255).astype(np.uint8)).filter(
-        ImageFilter.GaussianBlur(2)), dtype=np.float64) / 255.0
-    rows['CONTROL smear(calm σ=2)'] = {b: metrics(v) for b, v in bands(smeared).items()}
-
-    print('GROUND_DETAIL 指标 = 相对电平的局部对比度（grad_rel 一阶 / hp_rel 高通）')
-    for name, r in rows.items():
-        if name == 'size':
-            continue
-        cells = ' '.join(f"{b}:{r[b]['grad_rel']:.4f}/{r[b]['hp_rel']:.4f}" for b in ('near', 'mid', 'far'))
-        cells_b = ' '.join(f"{b}:{rows[name][b]['band_rel']:.4f}" for b in ('near', 'mid', 'far'))
-    print(f"  {name:34} {cells}   band {cells_b}")
-    c = [k for k in rows if k.startswith(calm.split('/')[-1])][0]
-    s = [k for k in rows if k.startswith(storm.split('/')[-1])][0]
-    ctrl_t = 'CONTROL tint(calm×storm增益)'
-    ctrl_s = 'CONTROL smear(calm σ=2)'
-    near = lambda k: rows[k]['near']['band_rel']
-    ratio_storm = near(s) / near(c)
-    ratio_tint = rows[ctrl_t]['near']['grad_rel'] / near(c)
-    ratio_smear = rows[ctrl_s]['near']['grad_rel'] / near(c)
-    print(f"  near-band grad_rel 比值（对晴空）：storm {ratio_storm:.3f} · tint 对照 {ratio_tint:.3f} · smear 对照 {ratio_smear:.3f}")
-    print(f"  CONTROL flat（均匀色） band_rel = {metrics(np.full(L.shape, 0.4))['band_rel']:.6f}（必须为 0）")
-    # 粒子混淆对照：给晴空帧叠一层 1 px 噪声（尘丝的高频），band 不该跟着涨
+    Lc = lum_rel(rgb_of(calm))
+    Ls = lum_rel(rgb_of(storm))
+    out = {}
+    print('GROUND_DETAIL 带通能量（通道归一后；ground=近景+中带；fine=σ1−3 吃尘丝，ripple=σ3−10 是砂纹）')
+    report(Lc, calm.split('/')[-1], out)
+    report(Ls, storm.split('/')[-1], out)
     rng = np.random.default_rng(7)
-    noisy = np.clip(L + rng.normal(0, 0.035, L.shape), 0, 1)
-    rows['CONTROL noise(calm+1px尘丝)'] = {b: metrics(v) for b, v in bands(noisy).items()}
-    nb = rows['CONTROL noise(calm+1px尘丝)']['near']['band_rel'] / rows[c]['near']['band_rel']
-    print(f"  CONTROL noise（粒子混淆对照）near band 比值 {nb:.3f}（必须≈1，否则这把尺还是在量粒子）")
-    ok_tint = ratio_tint > 0.9
-    ok_smear = ratio_smear < 0.8
-    ok_noise = 0.8 < nb < 1.25
-    if not (ok_tint and ok_smear and ok_noise):
-        print(f"GROUND_DETAIL_RC=3 尺子本身不可信（tint {ratio_tint:.3f} 需>0.9 · smear {ratio_smear:.3f} 需<0.8 · noise {nb:.3f} 需≈1）")
+    report(np.clip(Lc + rng.normal(0, 0.035, Lc.shape), 0, 1), 'CONTROL noise(叠1px尘丝)', out)
+    report(blur(Lc, 2.0), 'CONTROL smear2(σ=2 只吃细带)', out)
+    report(blur(Lc, 6.0), 'CONTROL smear6(σ=6 吃砂纹带)', out)
+    report(np.full(Lc.shape, 0.5), 'CONTROL flat(均匀色)', out)
+    a = rgb_of(calm)
+    gain = rgb_of(storm).mean(axis=(0, 1)) / np.maximum(a.mean(axis=(0, 1)), 1e-6)
+    report(lum_rel(np.clip(a * gain, 0, 1)), f'CONTROL tint(×通道增益{np.round(gain,3).tolist()})', out)
+
+    k_c, k_s = calm.split('/')[-1], storm.split('/')[-1]
+    r_f = out['CONTROL noise(叠1px尘丝)']['fine_ground'] / out[k_c]['fine_ground']
+    r_n = out['CONTROL noise(叠1px尘丝)']['ripple_ground'] / out[k_c]['ripple_ground']
+    r_t = out[[k for k in out if k.startswith('CONTROL tint')][0]]['ripple_ground'] / out[k_c]['ripple_ground']
+    r_m = out['CONTROL smear6(σ=6 吃砂纹带)']['ripple_ground'] / out[k_c]['ripple_ground']
+    r_m2f = out['CONTROL smear2(σ=2 只吃细带)']['fine_ground'] / out[k_c]['fine_ground']
+    r_m2r = out['CONTROL smear2(σ=2 只吃细带)']['ripple_ground'] / out[k_c]['ripple_ground']
+    flat = out['CONTROL flat(均匀色)']['ripple_ground']
+    print(f"  对照 ripple：tint {r_t:.3f}（必须≈1）· noise {r_n:.3f}（必须≈1）· smear σ=6 {r_m:.3f}（必须<0.8）· flat {flat:.6f}（必须=0）")
+    print(f"  带选择性 σ=2：fine {r_m2f:.3f}（必须<0.8，细带被吃掉）· ripple {r_m2r:.3f}（必须>0.9，砂纹带不该动）")
+    bad = []
+    if abs(r_t - 1) > 0.05: bad.append(f'tint {r_t:.3f}')
+    if not 0.8 <= r_n <= 1.25: bad.append(f'noise-ripple {r_n:.3f}')
+    if r_m >= 0.8: bad.append(f'smear6 {r_m:.3f}')
+    if flat > 1e-4: bad.append(f'flat {flat:.6f}')
+    if r_m2f >= 0.8: bad.append(f'smear2-fine {r_m2f:.3f}')
+    if r_m2r <= 0.9: bad.append(f'smear2-ripple {r_m2r:.3f}')
+    if bad:
+        print('GROUND_DETAIL_RC=3 尺子不可信：' + ' · '.join(bad))
         return 3
-    verdict = 'FLATTENED' if ratio_storm < 0.8 else 'SURVIVES'
-    print(f"GROUND_VERDICT {verdict} 暴内近景**沙纹尺度**能级只剩 {ratio_storm:.3f}×晴空（对照：染色不掉、抹平会掉、叠粒子不涨）")
+    ratio = out[k_s]['ripple_ground'] / out[k_c]['ripple_ground']
+    near = out[k_s]['near_ripple'] / out[k_c]['near_ripple']
+    far = out[k_s]['far_ripple'] / out[k_c]['far_ripple']
+    print(f"  分带比值 暴/晴：地面(近+中) {ratio:.3f} · 仅近景 {near:.3f} · 远景(地平线一带) {far:.3f}")
+    verdict = 'FLATTENED' if ratio < 0.8 else ('SURVIVES' if ratio > 0.9 else 'EDGE')
+    print(f"GROUND_VERDICT {verdict} 暴内地面**砂纹带**能量 {ratio:.3f}×晴空（对照：染色除得掉、白噪声进不了这一带、σ=6 抹平会掉、σ=2 只掉细带）")
     print('GROUND_DETAIL_RC=0')
     return 0
 

@@ -1,0 +1,13 @@
+GROUND_DETAIL 带通能量（通道归一后；ground=近景+中带；fine=σ1−3 吃尘丝，ripple=σ3−10 是砂纹）
+  e1c-d46-calmA.png                  ground fine 0.0435 · ripple 0.0565   |  near 0.0116 · far 0.0212
+  e1c-d70-buriedA.png                ground fine 0.0510 · ripple 0.0743   |  near 0.0185 · far 0.0097
+  CONTROL noise(叠1px尘丝)              ground fine 0.0466 · ripple 0.0589   |  near 0.0124 · far 0.0306
+  CONTROL smear2(σ=2 只吃细带)           ground fine 0.0261 · ripple 0.0541   |  near 0.0114 · far 0.0273
+  CONTROL smear6(σ=6 吃砂纹带)           ground fine 0.0143 · ripple 0.0390   |  near 0.0077 · far 0.0163
+  CONTROL flat(均匀色)                  ground fine 0.0000 · ripple 0.0000   |  near 0.0000 · far 0.0000
+  CONTROL tint(×通道增益[0.892, 0.712, 0.348]) ground fine 0.0435 · ripple 0.0565   |  near 0.0116 · far 0.0212
+  对照 ripple：tint 1.000（必须≈1）· noise 1.042（必须≈1）· smear σ=6 0.690（必须<0.8）· flat 0.000000（必须=0）
+  带选择性 σ=2：fine 0.601（必须<0.8，细带被吃掉）· ripple 0.957（必须>0.9，砂纹带不该动）
+  分带比值 暴/晴：地面(近+中) 1.314 · 仅近景 1.597 · 远景(地平线一带) 0.458
+GROUND_VERDICT SURVIVES 暴内地面**砂纹带**能量 1.314×晴空（对照：染色除得掉、白噪声进不了这一带、σ=6 抹平会掉、σ=2 只掉细带）
+GROUND_DETAIL_RC=0

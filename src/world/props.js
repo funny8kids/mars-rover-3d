@@ -112,7 +112,7 @@ export async function buildBase(scene, quality) {
   // Authored elsewhere and licensed CC0, so it is listed apart from our own heroes: every entry here
   // has to be checked against the base palette before it ships (tools/retint_modular_industrial_pipes_01.py
   // is that check for `pipe_kit`, and tools/cc0-conform.mjs is the grid that says whether it fits).
-  const CC0 = ['pipe_kit'];
+  const CC0 = ['pipe_kit', 'portable_generator'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA',
     'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
@@ -2178,6 +2178,13 @@ export async function buildBase(scene, quality) {
     // and the obstacle are different places. It is sited by where its discs end up now.
     kSolid('machine_generatorLarge', ix - 4.2, iz - 10.5, 1.0, 1.2, 'genset-a');
     kSolid('machine_generator', ix + 12, iz + 7, 2.6, 1.4, 'genset-b');
+    // The standby set that used to be a box-and-cylinder pile. Its own disc is 0.50 m (measured off
+    // `portable_generator.glb`: 0.818 × 0.564 m footprint, datum honoured), which is thinner than the
+    // hull's 1.6 m ring — the shape that wedges a rover when it stands in a seam. So the site was
+    // searched, not eyeballed: over the paved yard this point is 7.98 m from the nearest edge of any
+    // other solid disc, the widest gap inside r 17 m of the zone centre, so no cradle can form with it.
+    // The yaw puts the dials and the toggle (file-space +Z) facing the avenue the rover arrives on.
+    putSolid('portable_generator', ix - 15, iz - 6, 1.0, -1.57, 'portable-genset');
     kSolid('machine_wireless', ix - 14, iz + 14, 0.9, 1.1, 'yard-mast');
     portal('fab-substation', ix + 2, iz + 16, 0.86, 1.1);   // fab substation gantry, an open portal
     // cryo row: three Blender tanks with hazard stripes, stringed along the yard's north edge on

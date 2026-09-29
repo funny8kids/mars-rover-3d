@@ -157,6 +157,24 @@ Since A4 and F2-deploy require human interaction outside automation capabilities
 
 ---
 
+## 【I】#76 · CC0 落位：`portable_generator` 进工业区场院（2026-09-29）
+
+| 判据 | 读数 | 件 |
+| --- | --- | --- |
+| 字节锚 | `ANCHOR HEAD b82779d · SRC_DIRTY_LINES 1 · SRC_MD5 4c524c17aec5`（三步串行，每步前后各取一次，四次同值） | `tools/logs/recert-76-2026-09-29-master.log` |
+| A4 巡航 300 s | `TOUR VERDICT PASS` · `TOUR_RC=0` · `metres 1888 · laps 2 · frames 18000` · `zones 7/7 streets 24/24 points 22/22` · `stuckPockets 0 · stuckFrames 0 · bodyPenMax 0 · sinkMax 0 · rescues 0` · `FPS {"min":63,"med":63,"below55":0}` | `tools/logs/tour-a4-2026-09-29-genset76.log` |
+| F1 抓帧 66 帧 | `CLIP SWEEP PASS` · `CLIP_RC=0` · `frames=66 flagged=0` · 最差 clip 0.5 % | `tools/logs/clip-sweep-2026-09-29-genset76.log` |
+| 真实点击走查 | `STEPS 25 FAILED 0` · `CLICK_WALK_RC=0`（25 行 `## ` 全部有判决） | `tools/logs/click-walk-2026-09-29-genset76.log` |
+| 选址（离线，不开 Chrome） | 新盘 r=0.50 m；到任一实体盘边缘最小净距 **7.98 m**（上一轮撤掉的落点是 1.57 m，本身就是一条 <2×BODY_R 的接缝）；`SOLID_DISCS_TOTAL 694`（前 693）· `SEAMS_UNDER_3.2m 0` · `MESHES 1777` | `/tmp/76-pick.mjs`、`/tmp/76-verify.mjs` |
+| 落地 | 浏览器内 `__RSB.ground(45,54)` → `{drawn:0.5, surface:0.5, stand:0.5}`（三面同格同高，无悬空无埋入）；机位 (47.0,51.5) 朝它的抓帧里道具坐在铺装面并带接地阴影 | `/tmp/76-genset-close_10s.png` |
+| 死重 | `ENUMERATED 131 · REFERENCED 66 · UNREFERENCED 65 · dead bytes 9.2 MiB` ⇒ `GLB_ORPHANS` / `ORPHAN_RC=4`（上一轮 65/66/13.2 MiB：−1 件 −4.0 MiB；rc 仍 4 是"还有孤儿"，不是回归） | `tools/logs/glb-orphan-scan-2026-09-29-genset76.log` |
+
+**两处不遮**：① 走查第一次红在量具——复认证脚本是从上一轮模板抄的，`$URL` 槽位带着 `?auto=std`，撞上 `WRONG_BOOT_URL`（该尺要不带查询串的 `qa_boot.html`）；单跑第三条后 `CLICK_WALK_RC=0`，其间 `src/**` 未再动过一个字，前两条的绿继续算数。② 全图浮空尺这一趟回 `floatFaces=19382/27947 · trustworthy: true · fails: []`，但它按 root 归因，而这件道具已并进 `Group#2`（18545 面，worst 72.80 m）——**逐件"落没落地"它给不出判决**，上表那一格的依据是 `ground()` 与帧，不是浮空尺。另：上一轮"多一个盘就把 `coverage.driven` 从 9 改到 5"说明 A4 对任何落位都敏感，所以这条绿是一次 300 s 抽样，不是"落位不会再红"的一般性结论。
+
+**剩的半边**：`overhead_crane.glb` 的 7156.5 KiB 仍是 `UNREFERENCED`；它不能照抄这条落位法——文件原点悬在滑橇上方 3.35 m，得先从脚掌推出 datum 再谈选址。
+
+---
+
 ## 📝 Manual Execution Procedures
 
 See **[MANUAL_VERIFICATION_INSTRUCTIONS.md](MANUAL_VERIFICATION_INSTRUCTIONS.md)** for detailed step-by-step guides.

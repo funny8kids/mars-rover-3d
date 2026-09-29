@@ -1,0 +1,204 @@
+2026-09-29T13:56:14+08:00
+ANCHOR HEAD b82779d · SRC_DIRTY_LINES 1 · SRC_MD5 4c524c17aec5
+TARGET http://127.0.0.1:8080/qa_boot.html?auto=std [RED STARBASE · 火星星舰基地 — 漫游车交互艺术体验]
+FRAME_PINNED laid=1920x1080 want=1920x1080
+## menu:quality-hi {"name":"menu:quality-hi","target":".q-card[data-q=\"hi\"]","before":"q-card rec sel","after":"std:false hi:true"}
+## menu:quality-std {"name":"menu:quality-std","target":".q-card[data-q=\"std\"]","after":"std:true hi:false | start disabled=false"}
+## menu:lang-toggle {"name":"menu:lang-toggle","target":"#lang-btn","before":"EN | 选择渲染画质 | 流畅 · 笔记本与移动端 | 39.8438px","after":"中文 | Choose render quality | Smooth · laptops and mobile | 49.4531px","reading":{"h":0,"v":0,"collisions":0,"enCollisions":0,"min":12,"under11":0,"tracked15":12.9,"wide":[".menu-title:Choose render =20px/0.5em","b:Standard=22px/0.2em","b:High quality=22px/0.2em","#start-btn:S T A R T  R O=18px/0.4em"],"below45":0,"contrastMin":4.72,"textPct":5.91,"panelPct":3.4,"panelBox":{"el":"button","own":"#menu","pct":1.22,"bg":true,"border":true,"blur":false,"radius":"10px"},"pinned":[],"density":{"bar":{"textPct":5,"panelPct":5,"cardedBoxPct":3},"judged":false,"textPct":0.08,"panelPct":0,"cardedBox":"none","summonedUp":["#menu"],"control":null,"ownerSplit":[["#lang-btn",0.08,0]],"fail":[]},"frame":{"laid":[1920,1080],"innerWidth":[889,967],"canvas":[300,150],"visualViewport":[1920,1080],"dpr":0.72},"mpOpenAt":[false,false],"mpWaited":0,"mpPops":0,"anchors":["plant did not reach: {\"skipped\":\"anchor not on screen: zero-box\"}"],"controls":{"planted":true,"phantom":{"latin":0,"cjk":0},"discriminates":true,"restored":true}},"worst":{"h":[],"v":[],"col":[]}}
+## menu:lang-back {"name":"menu:lang-back","target":"#lang-btn","after":"EN","reading":{"h":0,"v":0,"collisions":0,"enCollisions":0,"min":12,"under11":0,"tracked15":12.9,"wide":[".menu-title:选择渲染画质=20px/0.5em","b:标准=22px/0.2em","b:高质量=22px/0.2em","#start-btn:启 动 漫 游 车=18px/0.4em"],"below45":0,"contrastMin":4.73,"textPct":5.29,"panelPct":2.97,"panelBox":{"el":"button","own":"#menu","pct":1.13,"bg":true,"border":true,"blur":false,"radius":"10px"},"pinned":[],"density":{"bar":{"textPct":5,"panelPct":5,"cardedBoxPct":3},"judged":false,"textPct":0.06,"panelPct":0,"cardedBox":"none","summonedUp":["#menu"],"control":null,"ownerSplit":[["#lang-btn",0.06,0]],"fail":[]},"frame":{"laid":[1920,1080],"innerWidth":[889,967],"canvas":[300,150],"visualViewport":[1920,1080],"dpr":0.72},"mpOpenAt":[false,false],"mpWaited":0,"mpPops":0,"anchors":["plant did not reach: {\"skipped\":\"anchor not on screen: zero-box\"}"],"controls":{"planted":true,"phantom":{"latin":0,"cjk":0},"discriminates":true,"restored":true}},"worst":{"h":[],"v":[],"col":[]},"png":"/tmp/rsb-j2-click/menu.png"}
+## menu:start {"name":"menu:start","target":"#start-btn","after":"hidden | overlay hidden | false"}
+## hud:mission-panel {"name":"hud:mission-panel","reading":{"h":0,"v":0,"collisions":0,"enCollisions":0,"min":12,"under11":0,"tracked15":0,"wide":[],"below45":0,"contrastMin":5.39,"textPct":1.38,"panelPct":1.56,"panelBox":{"el":"#mission-panel","own":"#mission-panel","pct":1.29,"bg":true,"border":true,"blur":true,"radius":"10px"},"pinned":[],"density":{"bar":{"textPct":5,"panelPct":5,"cardedBoxPct":3},"judged":true,"textPct":1.38,"panelPct":1.56,"cardedBox":"#mission-panel 1.29 %","summonedUp":[],"control":{"bar":0.645,"tripped":3,"unexercisable":[]},"ownerSplit":[["#mission-panel",0.58,1.29],["#tele-fab",0.27,0.27],["#speedo",0.13,0],["#power-hud",0.04,0],["#topbar",0.18,0],["#lang-btn",0.06,0]],"fail":[]},"frame":{"laid":[1920,1080],"innerWidth":[889,967],"canvas":[889,967],"visualViewport":[1920,1080],"dpr":0.72},"mpOpenAt":[false,false],"mpWaited":0,"mpPops":0,"anchors":[],"controls":{"planted":true,"phantom":{"latin":0,"cjk":0},"discriminates":true,"restored":true}},"worst":{"h":[],"v":[],"col":[]},"png":"/tmp/rsb-j2-click/hud.png"}
+## hud:mission-hover-open {"name":"hud:mission-hover-open","before":{"open":false,"lines":4,"shown":1,"headShown":true,"label":"还有 3 条","hidden":false,"aria":"false","focused":false,"box":[284,94],"btnBox":[35,83,62,18]},"after":{"open":true,"lines":4,"shown":4,"headShown":true,"label":"收起任务","hidden":false,"aria":"true","focused":false,"box":[361,169],"btnBox":[35,83,51,18]},"reading":{"h":0,"v":0,"collisions":0,"enCollisions":0,"min":12,"under11":0,"tracked15":0,"wide":[],"below45":0,"contrastMin":5.5,"textPct":2.7,"panelPct":3.21,"panelBox":{"el":"#mission-panel","own":"#mission-panel","pct":2.94,"bg":true,"border":true,"blur":true,"radius":"10px"},"pinned":["mission-panel"],"density":{"bar":{"textPct":5,"panelPct":5,"cardedBoxPct":3},"judged":false,"textPct":2.7,"panelPct":3.21,"cardedBox":"#mission-panel 2.94 %","summonedUp":[],"control":null,"ownerSplit":[["#mission-panel",1.9,2.94],["#tele-fab",0.27,0.27],["#speedo",0.13,0],["#power-hud",0.04,0],["#topbar",0.18,0],["#lang-btn",0.06,0]],"fail":[]},"frame":{"laid":[1920,1080],"innerWidth":[889,967],"canvas":[889,967],"visualViewport":[1920,1080],"dpr":0.72},"mpOpenAt":[true,true],"mpWaited":0,"mpPops":0,"anchors":[],"controls":{"planted":true,"phantom":{"latin":0,"cjk":0},"discriminates":true,"restored":true}},"worst":{"h":[],"v":[],"col":[]}}
+## hud:mission-hover-close {"name":"hud:mission-hover-close","before":{"open":true,"lines":4,"shown":4,"headShown":true,"label":"收起任务","hidden":false,"aria":"true","focused":false,"box":[361,169],"btnBox":[35,83,51,18]},"after":{"open":false,"lines":4,"shown":1,"headShown":true,"label":"还有 3 条","hidden":false,"aria":"false","focused":false,"box":[284,94],"btnBox":[35,83,62,18]},"png":"/tmp/rsb-j2-click/hud-collapsed.png"}
+## hud:mission-click-collapse {"name":"hud:mission-click-collapse","target":"#mp-more","before":{"open":false,"lines":4,"shown":1,"headShown":true,"label":"还有 3 条","hidden":false,"aria":"false","focused":false,"box":[284,94],"btnBox":[35,83,62,18]},"after":{"open":false,"lines":4,"shown":1,"headShown":true,"label":"还有 3 条","hidden":false,"aria":"false","focused":true,"box":[284,94],"btnBox":[35,83,62,18]}}
+## hud:mission-click-open {"name":"hud:mission-click-open","target":"#mp-more","before":{"open":false,"lines":4,"shown":1,"headShown":true,"label":"还有 3 条","hidden":false,"aria":"false","focused":true,"box":[284,94],"btnBox":[35,83,62,18]},"after":{"open":true,"lines":4,"shown":4,"headShown":true,"label":"收起任务","hidden":false,"aria":"true","focused":true,"box":[361,169],"btnBox":[35,83,51,18]},"reading":{"h":0,"v":0,"collisions":0,"enCollisions":0,"min":12,"under11":0,"tracked15":0,"wide":[],"below45":0,"contrastMin":5.5,"textPct":2.7,"panelPct":3.21,"panelBox":{"el":"#mission-panel","own":"#mission-panel","pct":2.94,"bg":true,"border":true,"blur":true,"radius":"10px"},"pinned":["mission-panel"],"density":{"bar":{"textPct":5,"panelPct":5,"cardedBoxPct":3},"judged":false,"textPct":2.7,"panelPct":3.21,"cardedBox":"#mission-panel 2.94 %","summonedUp":[],"control":null,"ownerSplit":[["#mission-panel",1.9,2.94],["#tele-fab",0.27,0.27],["#speedo",0.13,0],["#power-hud",0.04,0],["#topbar",0.18,0],["#lang-btn",0.06,0]],"fail":[]},"frame":{"laid":[1920,1080],"innerWidth":[889,967],"canvas":[889,967],"visualViewport":[1920,1080],"dpr":0.72},"mpOpenAt":[true,true],"mpWaited":0,"mpPops":0,"anchors":[],"controls":{"planted":true,"phantom":{"latin":0,"cjk":0},"discriminates":true,"restored":true}},"worst":{"h":[],"v":[],"col":[]},"png":"/tmp/rsb-j2-click/hud-log-open.png"}
+## hud:mission-key-collapse {"name":"hud:mission-key-collapse","target":"Enter","before":{"open":true,"lines":4,"shown":4,"headShown":true,"label":"收起任务","hidden":false,"aria":"true","focused":true,"box":[361,169],"btnBox":[35,83,51,18]},"after":{"open":false,"lines":4,"shown":1,"headShown":true,"label":"还有 3 条","hidden":false,"aria":"false","focused":true,"box":[284,94],"btnBox":[35,83,62,18]}}
+## hud:mission-key-open {"name":"hud:mission-key-open","target":"Enter","before":{"open":false,"lines":4,"shown":1,"headShown":true,"label":"还有 3 条","hidden":false,"aria":"false","focused":true,"box":[284,94],"btnBox":[35,83,62,18]},"after":{"open":true,"lines":4,"shown":4,"headShown":true,"label":"收起任务","hidden":false,"aria":"true","focused":true,"box":[361,169],"btnBox":[35,83,51,18]}}
+## hud:mission-blur-close {"name":"hud:mission-blur-close","before":{"open":true,"lines":4,"shown":4,"headShown":true,"label":"收起任务","hidden":false,"aria":"true","focused":true,"box":[361,169],"btnBox":[35,83,51,18]},"after":{"open":false,"lines":4,"shown":1,"headShown":true,"label":"还有 3 条","hidden":false,"aria":"false","focused":false,"box":[284,94],"btnBox":[35,83,62,18]}}
+## hud:mission-state {"states":7,"opened":["收起任务","收起任务","收起任务"],"closed":["还有 3 条","还有 3 条","还有 3 条","还有 3 条"],"btnBoxes":["35,83,51,18","35,83,62,18"],"anchors":["35,83"],"bad":[]}
+## hud:motion-landing {"name":"hud:motion-landing","mode":"default","bezier":8,"of":8,"keepLinear":"3/3","entry":"2/2","durations":["0.42s","0.42s"],"tokens":[["--ease-pop","cubic-bezier(.34,1.56,.64,1)"],["--ease-glide","cubic-bezier(.22,1.28,.36,1)"],["--ease-lean","cubic-bezier(.62,-.34,.34,1.24)"],["--ease-exit","cubic-bezier(.6,-.28,.86,.5)"]]}
+## hud:motion-reduced {"name":"hud:motion-reduced","mode":"reduce","bezier":0,"of":8,"keepLinear":"3/3","entry":"0/2","durations":["1e-05s","1e-05s"],"tokens":[["--ease-pop","linear"],["--ease-glide","linear"],["--ease-lean","linear"],["--ease-exit","linear"]]}
+## hud:teleport-open {"name":"hud:teleport-open","target":"#tele-fab","after":" | 7 | block"}
+## hud:teleport-warp {"name":"hud:teleport-warp","target":".tp-item:not([disabled])","before":"0,1,-26","after":"{\"pos\":[-3,1,13],\"panelGone\":false,\"hint\":\"none\"}","reading":{"h":0,"v":0,"collisions":0,"enCollisions":0,"min":12,"under11":0,"tracked15":0,"wide":[],"below45":0,"contrastMin":5.39,"textPct":1.38,"panelPct":1.56,"panelBox":{"el":"#mission-panel","own":"#mission-panel","pct":1.29,"bg":true,"border":true,"blur":true,"radius":"10px"},"pinned":[],"density":{"bar":{"textPct":5,"panelPct":5,"cardedBoxPct":3},"judged":true,"textPct":1.38,"panelPct":1.56,"cardedBox":"#mission-panel 1.29 %","summonedUp":[],"control":{"bar":0.645,"tripped":3,"unexercisable":[]},"ownerSplit":[["#mission-panel",0.58,1.29],["#tele-fab",0.27,0.27],["#speedo",0.13,0],["#power-hud",0.04,0],["#topbar",0.18,0],["#lang-btn",0.06,0]],"fail":[]},"frame":{"laid":[1920,1080],"innerWidth":[889,967],"canvas":[889,967],"visualViewport":[1920,1080],"dpr":0.72},"mpOpenAt":[false,false],"mpWaited":0,"mpPops":0,"anchors":[],"controls":{"planted":true,"phantom":{"latin":0,"cjk":0},"discriminates":true,"restored":true}},"worst":{"h":[],"v":[],"col":[]},"png":"/tmp/rsb-j2-click/after-warp.png"}
+## hud:pad-leave {"name":"hud:pad-leave","target":"w","before":"{\"hidden\":false,\"fabHidden\":true,\"txt\":\"◈ 中央广场 光台已就绪 — 按 G 跃迁（M 全区地图）\",\"speed\":0,\"pos\":[-6.8,1.1,10],\"pad\":{\"d\":0,\"at\":\"pad:hub\",\"r\":3.9}}","after":"{\"hidden\":true,\"fabHidden\":false,\"txt\":\"◈ 中央广场 光台已就绪 — 按 G 跃迁（M 全区地图）\",\"speed\":4.9,\"pos\":[-4.8,1.1,5.3],\"pad\":{\"d\":5.03,\"at\":\"pad:hub\",\"r\":3.9}}","reading":{"h":0,"v":0,"collisions":0,"enCollisions":0,"min":12,"under11":0,"tracked15":0,"wide":[],"below45":0,"contrastMin":5.39,"textPct":1.38,"panelPct":1.56,"panelBox":{"el":"#mission-panel","own":"#mission-panel","pct":1.29,"bg":true,"border":true,"blur":true,"radius":"10px"},"pinned":[],"density":{"bar":{"textPct":5,"panelPct":5,"cardedBoxPct":3},"judged":true,"textPct":1.38,"panelPct":1.56,"cardedBox":"#mission-panel 1.29 %","summonedUp":[],"control":{"bar":0.645,"tripped":3,"unexercisable":[]},"ownerSplit":[["#mission-panel",0.58,1.29],["#tele-fab",0.27,0.27],["#speedo",0.13,0],["#power-hud",0.04,0],["#topbar",0.18,0],["#lang-btn",0.06,0]],"fail":[]},"frame":{"laid":[1920,1080],"innerWidth":[889,967],"canvas":[889,967],"visualViewport":[1920,1080],"dpr":0.72},"mpOpenAt":[false,false],"mpWaited":0,"mpPops":0,"anchors":[],"controls":{"planted":true,"phantom":{"latin":0,"cjk":0},"discriminates":true,"restored":true}},"worst":{"h":[],"v":[],"col":[]},"png":"/tmp/rsb-j2-click/after-leave.png"}
+## hud:mute-fab {"name":"hud:mute-fab","target":"#mute-fab","after":"音效 关 | ","reading":{"h":0,"v":0,"collisions":0,"enCollisions":0,"min":12,"under11":0,"tracked15":0,"wide":[],"below45":0,"contrastMin":5.39,"textPct":1.38,"panelPct":1.56,"panelBox":{"el":"#mission-panel","own":"#mission-panel","pct":1.29,"bg":true,"border":true,"blur":true,"radius":"10px"},"pinned":[],"density":{"bar":{"textPct":5,"panelPct":5,"cardedBoxPct":3},"judged":true,"textPct":1.38,"panelPct":1.56,"cardedBox":"#mission-panel 1.29 %","summonedUp":[],"control":{"bar":0.645,"tripped":3,"unexercisable":[]},"ownerSplit":[["#mission-panel",0.58,1.29],["#tele-fab",0.27,0.27],["#speedo",0.13,0],["#power-hud",0.04,0],["#topbar",0.18,0],["#lang-btn",0.06,0]],"fail":[]},"frame":{"laid":[1920,1080],"innerWidth":[889,967],"canvas":[889,967],"visualViewport":[1920,1080],"dpr":0.72},"mpOpenAt":[false,false],"mpWaited":0,"mpPops":0,"anchors":[],"controls":{"planted":true,"phantom":{"latin":0,"cjk":0},"discriminates":true,"restored":true}},"worst":{"h":[],"v":[],"col":[]}}
+## hud:photo-mode {"name":"hud:photo-mode","target":"p","after":" | "}
+## hud:photo-exit {"name":"hud:photo-exit","target":"p","after":"hidden","reading":{"h":0,"v":0,"collisions":0,"enCollisions":0,"min":12,"under11":0,"tracked15":0,"wide":[],"below45":0,"contrastMin":5.39,"textPct":1.33,"panelPct":1.29,"panelBox":{"el":"#mission-panel","own":"#mission-panel","pct":1.29,"bg":true,"border":true,"blur":true,"radius":"10px"},"pinned":[],"density":{"bar":{"textPct":5,"panelPct":5,"cardedBoxPct":3},"judged":true,"textPct":1.33,"panelPct":1.29,"cardedBox":"#mission-panel 1.29 %","summonedUp":[],"control":{"bar":0.645,"tripped":3,"unexercisable":[]},"ownerSplit":[["#mission-panel",0.58,1.29],["#speedo",0.13,0],["#power-hud",0.04,0],["#topbar",0.18,0],["#lang-btn",0.06,0],["#tele-fab",0.23,0]],"fail":[]},"frame":{"laid":[1920,1080],"innerWidth":[889,967],"canvas":[889,967],"visualViewport":[1920,1080],"dpr":0.72},"mpOpenAt":[false,false],"mpWaited":0,"mpPops":0,"anchors":[],"controls":{"planted":true,"phantom":{"latin":0,"cjk":0},"discriminates":true,"restored":true}},"worst":{"h":[],"v":[],"col":[]}}
+## hud:race-start {"name":"hud:race-start","target":"r","after":" | 检查点 0/6"}
+## hud:race-board {"name":"hud:race-board","target":"#race-board-btn","after":" | 1 | 00:01.2","reading":{"h":0,"v":0,"collisions":0,"enCollisions":0,"min":12,"under11":0,"tracked15":5.3,"wide":["h3:环基地计时赛 · 排行榜=18px/0.2em"],"below45":0,"contrastMin":5.39,"textPct":2.47,"panelPct":4.47,"panelBox":{"el":"#board-pop","own":"#board-pop","pct":2.01,"bg":true,"border":true,"blur":false,"radius":"12px"},"pinned":[],"density":{"bar":{"textPct":5,"panelPct":5,"cardedBoxPct":3},"judged":true,"textPct":1.38,"panelPct":1.56,"cardedBox":"#mission-panel 1.29 %","summonedUp":["#board-pop","#race-hud"],"control":{"bar":0.645,"tripped":3,"unexercisable":[]},"ownerSplit":[["#mission-panel",0.58,1.29],["#tele-fab",0.27,0.27],["#speedo",0.13,0],["#power-hud",0.04,0],["#topbar",0.18,0],["#lang-btn",0.06,0]],"fail":[]},"frame":{"laid":[1920,1080],"innerWidth":[889,967],"canvas":[889,967],"visualViewport":[1920,1080],"dpr":0.72},"mpOpenAt":[false,false],"mpWaited":0,"mpPops":0,"anchors":[],"controls":{"planted":true,"phantom":{"latin":0,"cjk":0},"discriminates":true,"restored":true}},"worst":{"h":[],"v":[],"col":[]},"png":"/tmp/rsb-j2-click/race-board.png"}
+## hud:board-close {"name":"hud:board-close","target":"#board-close","after":"hidden","reading":{"h":0,"v":0,"collisions":0,"enCollisions":0,"min":12,"under11":0,"tracked15":0,"wide":[],"below45":0,"contrastMin":5.39,"textPct":1.65,"panelPct":2.11,"panelBox":{"el":"#mission-panel","own":"#mission-panel","pct":1.29,"bg":true,"border":true,"blur":true,"radius":"10px"},"pinned":[],"density":{"bar":{"textPct":5,"panelPct":5,"cardedBoxPct":3},"judged":true,"textPct":1.38,"panelPct":1.56,"cardedBox":"#mission-panel 1.29 %","summonedUp":["#race-hud"],"control":{"bar":0.645,"tripped":3,"unexercisable":[]},"ownerSplit":[["#mission-panel",0.58,1.29],["#tele-fab",0.27,0.27],["#speedo",0.13,0],["#power-hud",0.04,0],["#topbar",0.18,0],["#lang-btn",0.06,0]],"fail":[]},"frame":{"laid":[1920,1080],"innerWidth":[889,967],"canvas":[889,967],"visualViewport":[1920,1080],"dpr":0.72},"mpOpenAt":[false,false],"mpWaited":0,"mpPops":0,"anchors":[],"controls":{"planted":true,"phantom":{"latin":0,"cjk":0},"discriminates":true,"restored":true}},"worst":{"h":[],"v":[],"col":[]}}
+SUMMARY [
+ {
+  "n": "menu:quality-hi"
+ },
+ {
+  "n": "menu:quality-std"
+ },
+ {
+  "n": "menu:lang-toggle",
+  "read": {
+   "min": 12,
+   "col": 0,
+   "h": 0,
+   "v": 0,
+   "wide": [
+    ".menu-title:Choose render =20px/0.5em",
+    "b:Standard=22px/0.2em",
+    "b:High quality=22px/0.2em",
+    "#start-btn:S T A R T  R O=18px/0.4em"
+   ]
+  }
+ },
+ {
+  "n": "menu:lang-back",
+  "read": {
+   "min": 12,
+   "col": 0,
+   "h": 0,
+   "v": 0,
+   "wide": [
+    ".menu-title:选择渲染画质=20px/0.5em",
+    "b:标准=22px/0.2em",
+    "b:高质量=22px/0.2em",
+    "#start-btn:启 动 漫 游 车=18px/0.4em"
+   ]
+  },
+  "png": "/tmp/rsb-j2-click/menu.png"
+ },
+ {
+  "n": "menu:start"
+ },
+ {
+  "n": "hud:mission-panel",
+  "read": {
+   "min": 12,
+   "col": 0,
+   "h": 0,
+   "v": 0
+  },
+  "png": "/tmp/rsb-j2-click/hud.png"
+ },
+ {
+  "n": "hud:mission-hover-open",
+  "read": {
+   "min": 12,
+   "col": 0,
+   "h": 0,
+   "v": 0
+  }
+ },
+ {
+  "n": "hud:mission-hover-close",
+  "png": "/tmp/rsb-j2-click/hud-collapsed.png"
+ },
+ {
+  "n": "hud:mission-click-collapse"
+ },
+ {
+  "n": "hud:mission-click-open",
+  "read": {
+   "min": 12,
+   "col": 0,
+   "h": 0,
+   "v": 0
+  },
+  "png": "/tmp/rsb-j2-click/hud-log-open.png"
+ },
+ {
+  "n": "hud:mission-key-collapse"
+ },
+ {
+  "n": "hud:mission-key-open"
+ },
+ {
+  "n": "hud:mission-blur-close"
+ },
+ {
+  "n": "hud:mission-state"
+ },
+ {
+  "n": "hud:motion-landing",
+  "bezier": 8,
+  "of": 8,
+  "mode": "default"
+ },
+ {
+  "n": "hud:motion-reduced",
+  "bezier": 0,
+  "of": 8,
+  "mode": "reduce"
+ },
+ {
+  "n": "hud:teleport-open"
+ },
+ {
+  "n": "hud:teleport-warp",
+  "read": {
+   "min": 12,
+   "col": 0,
+   "h": 0,
+   "v": 0
+  },
+  "png": "/tmp/rsb-j2-click/after-warp.png"
+ },
+ {
+  "n": "hud:pad-leave",
+  "read": {
+   "min": 12,
+   "col": 0,
+   "h": 0,
+   "v": 0
+  },
+  "png": "/tmp/rsb-j2-click/after-leave.png"
+ },
+ {
+  "n": "hud:mute-fab",
+  "read": {
+   "min": 12,
+   "col": 0,
+   "h": 0,
+   "v": 0
+  }
+ },
+ {
+  "n": "hud:photo-mode"
+ },
+ {
+  "n": "hud:photo-exit",
+  "read": {
+   "min": 12,
+   "col": 0,
+   "h": 0,
+   "v": 0
+  }
+ },
+ {
+  "n": "hud:race-start"
+ },
+ {
+  "n": "hud:race-board",
+  "read": {
+   "min": 12,
+   "col": 0,
+   "h": 0,
+   "v": 0,
+   "wide": [
+    "h3:环基地计时赛 · 排行榜=18px/0.2em"
+   ]
+  },
+  "png": "/tmp/rsb-j2-click/race-board.png"
+ },
+ {
+  "n": "hud:board-close",
+  "read": {
+   "min": 12,
+   "col": 0,
+   "h": 0,
+   "v": 0
+  }
+ }
+]
+STEPS 25 FAILED 0
+CLICK_WALK_RC=0
+CLICK_RC=0
+2026-09-29T13:56:40+08:00

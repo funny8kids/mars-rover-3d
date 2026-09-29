@@ -1,0 +1,91 @@
+[
+ {
+  "prop": "hub:ring-gantry-180#0",
+  "discs": 5,
+  "cx": -17.71,
+  "cz": 3.81,
+  "maxR": 1.15,
+  "top": null
+ },
+ {
+  "prop": "hub:ring-gantry-180#1",
+  "discs": 5,
+  "cx": -18.61,
+  "cz": -3.81,
+  "maxR": 1.15,
+  "top": null
+ },
+ {
+  "prop": "hub:ring-gantry-180#2",
+  "discs": 1,
+  "cx": -19.81,
+  "cz": 4.53,
+  "maxR": 0.08,
+  "top": null
+ },
+ {
+  "prop": "hub:ring-gantry-180#3",
+  "discs": 1,
+  "cx": -16.36,
+  "cz": 4.45,
+  "maxR": 0.38,
+  "top": null
+ },
+ {
+  "prop": "industry:fab-substation#0",
+  "discs": 5,
+  "cx": 63.79,
+  "cz": 73.25,
+  "maxR": 0.99,
+  "top": null
+ },
+ {
+  "prop": "industry:fab-substation#1",
+  "discs": 5,
+  "cx": 59.53,
+  "cz": 80.18,
+  "maxR": 0.99,
+  "top": null
+ },
+ {
+  "prop": "industry:fab-substation#2",
+  "discs": 1,
+  "cx": 65.35,
+  "cz": 73.26,
+  "maxR": 0.28,
+  "top": null
+ },
+ {
+  "prop": "industry:fab-substation#3",
+  "discs": 1,
+  "cx": 62.44,
+  "cz": 71.78,
+  "maxR": 0.28,
+  "top": null
+ },
+ {
+  "prop": "industry:genset-a",
+  "discs": 2,
+  "cx": 55.8,
+  "cz": 49.5,
+  "maxR": 2.5,
+  "top": null
+ },
+ {
+  "prop": "industry:genset-b",
+  "discs": 2,
+  "cx": 72,
+  "cz": 67,
+  "maxR": 1.55,
+  "top": null
+ },
+ {
+  "prop": "industry:portable-genset",
+  "discs": 1,
+  "cx": 45,
+  "cz": 54,
+  "maxR": 0.5,
+  "top": null
+ }
+]
+TOTAL matching discs 29 · props 11

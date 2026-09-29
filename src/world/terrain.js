@@ -1030,6 +1030,11 @@ export function stoneMeasurement(o, groundAt = surfaceAt) {
 // `coverPointDiscs` lives in src/world/plan.js beside `coverDiscs`, the rectangle rule it is the
 // point-cloud form of, so the two cannot drift; it is imported above.
 
+// A boulder may stand at most this many times taller than the width of the band the rover's hull
+// actually meets. Exported because tools/boulder-spire-probe.mjs imports this exact number — the
+// ruler and the shape law have one host, so raising the law cannot silently orphan the ruler.
+export const BOULDER_MAX_SLENDER = 3;
+
 export async function createRocks(scene, avoid = []) {
   const kit = await loadModel('rim_rock');   // already fetched by buildBase's hero list
   // A weighted bag rather than a uniform pick. Six archetypes also means six silhouettes — with the
@@ -1049,7 +1054,15 @@ export async function createRocks(scene, avoid = []) {
   const rand = mulberry32(777);
   const group = new THREE.Group();
   group.name = 'rock-scatter';
-  const placed = [], solids = [];
+  const placed = [], solids = [], records = [], slumped = [];
+  // How far the drawn silhouette reaches from the stone's own centre, inside the rover's collision band
+  // and nothing above it: `stoneMeasurement` already filters the faces by RIDE/ROOF, so this is the
+  // width of the thing the hull actually meets.
+  const bandReachOf = (m, cx, cz) => {
+    let b = 0;
+    for (let k = 0; k + 1 < m.pts.length; k += 2) b = Math.max(b, Math.hypot(m.pts[k] - cx, m.pts[k + 1] - cz));
+    return b;
+  };
   const n = new THREE.Vector3();
   const UP = new THREE.Vector3(0, 1, 0);
   const qTilt = new THREE.Quaternion(), qYaw = new THREE.Quaternion();
@@ -1149,14 +1162,52 @@ export async function createRocks(scene, avoid = []) {
     const bb = new THREE.Box3().setFromObject(o);
     o.position.y += (surfaceAt(x, z) - 0.045 * spec.h * sy) - bb.min.y;
     o.updateMatrixWorld(true);
+    let meas = stoneMeasurement(o);
+    let bandReach = bandReachOf(meas, x, z);
+    let heightM = new THREE.Box3().setFromObject(o).max.y - surfaceAt(x, z);
+    // A stone standing more than BOULDER_MAX_SLENDER times taller than the width of its own collision
+    // band is not a boulder but an obelisk — which is what the chase camera of task #118 read as "a
+    // black tower with nothing to stand on". The collider is not the bug there (the probe's PHANTOM_BAND
+    // column is the test of that claim), so the *shape* is slumped to the limit, and it is slumped
+    // before the discs are tiled, so the collision follows the picture instead of licensing it.
+    //
+    // The clamp is a loop, not a division, because squashing the stone also flattens its side faces out
+    // of the rover's own band filter: one pass measured on rock#5 landed 4.92 m over a band that had
+    // shrunk to 1.55 m — 3.17, still over the limit it was slumped to satisfy. Each pass re-measures
+    // the band it just moved, and the cap is there so a shard whose band collapses to nothing under the
+    // squash cannot spin; whatever the last pass left is what the probe judges.
+    //
+    // The loop decides on the two-decimal figures it publishes, not on the float under them, because
+    // that is the reading the ruler takes: on rock#5 the float ratio had reached 2.998 while the record
+    // still printed 4.63 over 1.54, i.e. 3.01. A law enforced against a number nobody can read is a law
+    // the shipped measurement can break.
+    const h0 = heightM, br0 = bandReach;
+    for (let pass = 0; pass < 4; pass++) {
+      const hRead = +heightM.toFixed(2), bRead = +bandReach.toFixed(2);
+      if (!(bRead > 0.05 && hRead > BOULDER_MAX_SLENDER * bRead)) break;
+      o.scale.y *= (BOULDER_MAX_SLENDER * bRead) / hRead;
+      o.position.set(x, surfaceAt(x, z), z);
+      const bbS = new THREE.Box3().setFromObject(o);
+      o.position.y += (surfaceAt(x, z) - 0.045 * spec.h * sy) - bbS.min.y;
+      o.updateMatrixWorld(true);
+      meas = stoneMeasurement(o);
+      bandReach = bandReachOf(meas, x, z);
+      heightM = new THREE.Box3().setFromObject(o).max.y - surfaceAt(x, z);
+    }
+    if (Math.abs(h0 - heightM) > 0.005) {
+      slumped.push({ name, x: +x.toFixed(2), z: +z.toFixed(2),
+        from: `${h0.toFixed(2)} m over ${br0.toFixed(2)} m band`,
+        to: `${heightM.toFixed(2)} m over ${bandReach.toFixed(2)} m band` });
+    }
     group.add(o);
     placed.push([x, z, rad]);
+    const discs = coverPointDiscs(meas.pts);
     // Stronger than the rampart's discipline, which transformed authored offsets: these discs *are*
     // the clone's transformed geometry, filtered by the rover's own band and covered by
     // `coverPointDiscs`. Whatever stands up into the hull's path is what stops the hull; what does
     // not — the squashed-flat cobbles the ruler counted as 21 phantoms — stops nothing. They share
     // one `prop` name per stone, so grouping colliders by prop groups them by boulder.
-    for (const d of coverPointDiscs(stoneMeasurement(o).pts)) {
+    for (const d of discs) {
       solids.push({ x: +d.x.toFixed(2), z: +d.z.toFixed(2), zone: 'scatter',
         prop: `scatter:rock#${placed.length - 1}`, r: +d.r.toFixed(2),
         // The disc's own measured box, so the audit can tell "the tiling had to bulge here" from
@@ -1166,8 +1217,19 @@ export async function createRocks(scene, avoid = []) {
                hd: +d.hd.toFixed(2), ry: d.ry },
         share: { hw: +d.hw.toFixed(2), hd: +d.hd.toFixed(2) } });
     }
+    // `mergeInto(group)` below collapses all thirty stones into one mesh, after which nothing — live
+    // page or offline build — can cut a boulder back out of the island to ask how tall it stands or
+    // how far its silhouette reaches *inside the rover's own collision band*. Both numbers exist only
+    // here, off the transform that drew this stone, so they are published rather than left to be
+    // re-derived: the discs are what the solver reads, and height ÷ band reach is what a player judges
+    // a boulder by. If those two disagree the collider is right and the picture is lying.
+    records.push({ prop: `scatter:rock#${placed.length - 1}`, name, x: +x.toFixed(2), z: +z.toFixed(2),
+      heightM: +heightM.toFixed(2), reachM: +meas.reach.toFixed(2), bandReachM: +bandReach.toFixed(2),
+      discRs: discs.map(d => +d.r.toFixed(2)) });
   }
   scene.add(group);
+  group.userData.stones = records;
+  group.userData.slumped = slumped;
   // Every stone would be its own mesh in both the main and the shadow pass, and the measured cost of
   // the scatter was almost entirely that submission, not its triangles. The rocks never move, so they
   // go through the same collapsing as the rest of the static base. Reproduce with: hide and show

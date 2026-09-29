@@ -1,0 +1,46 @@
+{
+ "colliders": 697,
+ "censusLines": 695,
+ "discs": 697,
+ "censusDiscs": 695,
+ "distinct": 695,
+ "onlyLive": 21,
+ "onlyMine": 23,
+ "onlyLiveSample": [
+  "hub:barrel@7.0,-5.0#0|7.020|-4.900|0.290 ×1",
+  "hub:barrel@7.0,-5.0#1|6.980|-5.100|0.290 ×1",
+  "scatter:rock#26|-101.430|-11.760|0.620 ×1",
+  "scatter:rock#26|-101.440|-11.780|0.390 ×1",
+  "scatter:rock#26|-101.610|-11.410|0.690 ×1",
+  "scatter:rock#26|-101.610|-11.960|0.630 ×1",
+  "scatter:rock#26|-101.700|-11.860|0.680 ×1",
+  "scatter:rock#27|-85.150|10.010|0.560 ×1",
+  "scatter:rock#27|-85.360|10.580|0.530 ×1",
+  "scatter:rock#27|-86.330|10.920|0.660 ×1",
+  "scatter:rock#27|-86.450|9.690|0.920 ×1",
+  "scatter:rock#27|-86.580|10.440|0.730 ×1"
+ ],
+ "onlyMineSample": [
+  "hub:barrel-east|7.000|-5.000|0.463 ×1",
+  "industry:portable-genset|45.000|54.000|0.497 ×1",
+  "scatter:rock#5|11.240|-87.370|0.640 ×1",
+  "scatter:rock#5|11.720|-87.580|0.800 ×1",
+  "scatter:rock#5|12.180|-87.280|0.730 ×1",
+  "scatter:rock#5|12.250|-87.360|0.660 ×1",
+  "scatter:rock#5|12.040|-86.420|0.750 ×1",
+  "scatter:rock#5|11.010|-86.520|0.790 ×1",
+  "scatter:rock#5|10.830|-86.210|0.590 ×1",
+  "scatter:rock#5|11.000|-87.120|0.560 ×1",
+  "scatter:rock#26|-101.440|-11.720|0.760 ×1",
+  "scatter:rock#26|-101.540|-11.740|0.590 ×1"
+ ],
+ "stats": {
+  "canvasCreated": 14,
+  "ctxCalls": 8543,
+  "pixelsWritten": 2,
+  "glbReads": 64,
+  "imageLoads": 222,
+  "lodTiles": 68,
+  "lodLevelsHidden": 68
+ }
+}

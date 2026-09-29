@@ -473,8 +473,15 @@ await step('hud:pad-leave', {
     // 归因见 tools/logs/pad-exit-2026-09-29.log：从盘心出发 16 个航向里 13 个在 9 m 内撞实体，9 条
     // 在 1.5–2 m，挡住的是这台盘自己的三枚发射柱 `hub:pad0#0/#1/#2`（props.js:1548 量过：
     // 3.00/3.03/3.15 m）。那是产品侧的台缘净空问题（#116），不归本尺掩盖。
+    //
+    // #116 的第一格已在产品侧修掉：站在台面上的姿态**从来没人给它挑朝向**（`teleportTo` 的 atPad
+    // 分支只在落点离圆心 >1 m 时才设 yaw，而 atPad 的落点就在圆心）⇒ 出生/拖回光台那一帧的朝向是
+    // 上一姿态留下的，而台缘三枚发射柱把 16 条航向堵掉 13 条。现在 atPad 姿态由产品自己的
+    // `outwardBearing` 挑"净空最直的那条"，`warp` 的 face 传 `'out'` 走同一把规则。
+    // 所以这一格的前提改成问产品：**位置还是尺子钉的（search=0，仍在盘心），朝向交给产品的规则**。
+    // 判据一字未改。
     await evaluate(`(() => { const R = window.__RSB, p = R.pois().filter(x => x.kind === 'pad')[0];
-      R.warp(p.x, p.z, undefined, 0); return p.name; })()`);
+      R.warp(p.x, p.z, 'out', 0); return p.name; })()`);
     await frames(120);
     return evaluate(padState);
   },

@@ -127,6 +127,14 @@ Since A4 and F2-deploy require human interaction outside automation capabilities
 
 **作废本轮先前写下的「盘心朝 yaw 0」**：`__RSB.warp(x, z, face, search)` 的第 4 个参数是 **search**（尺子传 0 ⇒ 关掉产品自己的合法位姿搜索），第 3 个 `face` 是 `undefined` ⇒ **朝向继承上一步**，不是 0。所以这一步的几何前提比原先记录的更脆：位置是人摆的、朝向是继承的、搜索是关的。**判据不放宽**（离台这一步要测的就是"按着 W 真能开走"）。待决的是产品侧的两格（见上一条 #116）：台缘三枚发射柱把 16 个航向堵掉 13 个 —— 要给这台盘的盘缘硬件环开一个 mouth（对照 #97 全图 MOUTH_GAP 的做法），或把 keep-out 的 3.9 m 基准与盘缘硬件的 3.00–3.15 m 之间的距离差讲清楚；另一格是产品自己的 `warpTo` 合法落位搜索在光台附近滑到 11.3 m 外，"到达光台"这句话到底承诺落在哪儿，还没有一把读数。
 
+**第一格已在产品侧修掉，走查第一次 25 步全绿**（锚：`ANCHOR HEAD c315aba` + `SRC_MD5 7b48281325ed`，见下一段，不写钟点）：根因不是"盘缘把路堵死了"，而是**站在台面上的姿态从来没人给它挑朝向**。`src/main.js` 的 `teleportTo` 只在落点离圆心 **>1 m** 时才写 `phys.yaw`，而 `atPad` 的落点就在圆心 —— 于是出生拖回（`main.js:556` `teleportTo(hub,{silent,atPad:true})`）与电池救回的那一帧继承的是上一姿态的朝向，而台缘三枚发射柱把 16 条航向堵掉 13 条（`pad-exit` 那份读数）。现在 `atPad` 姿态由新的 `outwardBearing(solids,x,z)` 挑"直线净空最长的那条"（16 个航向、0.5 m 步进走到 12 m、`gapFrom` 已经按 `BODY_R` 垫过，所以一条航向只有车身中心真走得通才算净空）；`__RSB.warp` 的 `face` 多认一个 `'out'`，走同一把规则。**尺子的前提因此改成问产品**：位置仍是尺子钉的（`search=0`，仍在盘心），朝向交给产品的规则，判据一字未改（按 W 必须真开出 ≥3 m 且末读在半径外）。
+
+`tools/logs/click-walk-2026-09-29h.log`（`ANCHOR HEAD c315aba` · `SRC_DIRTY_LINES 1` · `SRC_MD5 7b48281325ed`（这三行由外层 shell 现取，那一跑读的就是这份未提交的字节，随后的提交把它们变成 HEAD）· `FRAME_PINNED laid=1920x1080 want=1920x1080`）⇒ 文件尾行 **`STEPS 25 FAILED 0`**。这一跑没有 `CLICK_WALK_RC` 那一行：harness 跑完不关 WebSocket，外层 shell 被 Bash 的 10 min 上限掐到后台，所以退出码没打出来 —— 全绿的证据只有尾行那一条具名读数，不许把"没写 RC"读成"没跑完"（25 行 `## <name>` 逐步读数与 PNG 落盘都在同一文件里）。红行那一格（第 24 行 `## hud:pad-leave`）的末读从 `d=0 / speed 0 / pos [-6.8,1.1,10]` 变成 `d=5.03 / speed 4.9 / pos [-4.8,1.1,5.3]`（`pad` 两次都是 `at:"pad:hub", r:3.9`），同帧密度读数 `textPct 1.38 / panelPct 1.56 / fail []`、`control {"bar":1,"tripped":3}`，抓帧 `/tmp/rsb-j2-click/after-leave.png`。
+
+**因此作废的两句话**：①「光台被自己的盘缘硬件围住了 ⇒ 要给盘缘环开一个 mouth」—— 不用开：`outwardBearing` 从 16 条航向里挑到的正是那 3 条干净缝，13/16 被堵是**姿态没被朝上过**而不是缺口不存在；`pad-exit` 那份 READ_ONLY 读数仍然有效，它对"哪一件在哪条航向"的回答没有变。②「#116 剩产品侧两格」—— 第一格关掉；**第二格仍然开着**（`warpTo` 的 search 格会把落位滑到台面外 11.3 m、而非 atPad 的普通传送落点在圆心外 4.83 m —— "到达光台"承诺落在哪儿还没有一把读数）。
+
+**这一改动作废了什么**：`main.js` 字节变了 ⇒ 绑在 `c315aba` 上的 A4 巡航尺（`tour-a4-2026-09-29-newshader.log`）与 F1 抓帧尺（`clip-sweep-2026-09-29-014446.log`）按纪律都要在新字节上重量；`src/world/props.js` 与 `src/world/storm.js` 未动，所以图元普查、碰撞盘对账、E 项七把沙暴尺的几何前提不变。
+
 （注：`-g` 那跑的 `SRC_MD5 a35477e11b30` 与 `-e` 的 `85561bf715ea` 不是同一把算法 —— 外层拼文件的 glob 不同，不是字节变了；`src/` 自 `59c4329` 起 `SRC_DIRTY_LINES 0`。）
 
 ---

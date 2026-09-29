@@ -195,7 +195,16 @@ function teleportTo(tp, opt = {}) {
   const [x, z] = freeLanding(aim[0], aim[1], opt.atPad ? 3.4 : 6);
   phys.x = x; phys.z = z; phys.y = platformAt(base.colliders, x, z) + 0.9;
   phys.vx = phys.vy = phys.vz = 0; phys.speed = 0; phys.trauma = 0.3;
-  if (Math.hypot(tp.x - x, tp.z - z) > 1) phys.yaw = Math.atan2(tp.x - x, tp.z - z);
+  // Standing on the deck is the one arrival with nothing to look at, so the old branch left the
+  // heading exactly where the previous stance had it — and the hub deck is ringed by its own three
+  // emitter posts. Measured (tools/logs/pad-exit-2026-09-29.log): from the deck centre 13 of 16
+  // straight bearings run into an entity within 9 m, 9 of them within 1.5-2 m, and the blockers are
+  // `hub:pad0#0/#1/#2`. The spawn and the recovery tow both land there, so "you were delivered"
+  // arrived with "you cannot leave". An atPad pose is aimed at the lane with the most daylight.
+  if (opt.atPad) {
+    const solids = (base?.colliders || []).filter(c => c.floor === undefined);
+    phys.yaw = outwardBearing(solids, x, z).a;
+  } else if (Math.hypot(tp.x - x, tp.z - z) > 1) phys.yaw = Math.atan2(tp.x - x, tp.z - z);
   demoPin = null;
   closeTeleport();
   const fl = document.createElement('div'); fl.className = 'tp-flash';
@@ -1565,9 +1574,12 @@ function warpTo(wx, wz, facePad = false, search = 8) {
   [bx, bz] = freeLanding(bx, bz);
   phys.x = bx; phys.z = bz; phys.y = platformAt(base.colliders, bx, bz) + 0.8;
   phys.vx = phys.vz = phys.vy = 0;
-  // facePad: true → look at the launch pad, [x,z] → look at that landmark
+  // facePad: true → look at the launch pad, [x,z] → look at that landmark,
+  // 'out' → aim down the bearing with the most straight daylight (the atPad arrival's rule)
+  const out = facePad === 'out' ? outwardBearing(solids, bx, bz) : null;
   const ft = facePad === true ? ZONES.launch.pos : Array.isArray(facePad) ? facePad : null;
-  if (ft) phys.yaw = Math.atan2(ft[0] - bx, ft[1] - bz);
+  if (out) phys.yaw = out.a;
+  else if (ft) phys.yaw = Math.atan2(ft[0] - bx, ft[1] - bz);
   demoPin = { x: bx, z: bz, yaw: phys.yaw };
 }
 
@@ -1701,6 +1713,21 @@ function gapFrom(list, x, z, ignore) {
     if (d < gap) gap = d;
   }
   return gap;
+}
+
+// The bearing with the most straight daylight from a stance, and how much of it there is. `gapFrom`
+// already pads by BODY_R, so a lane counts only if the hull's centre can actually walk it. This is
+// the same first-contact march `rescuePlans` uses once the rover is stuck; running it before the
+// player touches a key is what turns "delivered" into "still drivable".
+function outwardBearing(list, x, z, reach = 12) {
+  let best = null;
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2;
+    let d = 0;
+    while (d < reach && gapFrom(list, x + Math.sin(a) * (d + 0.5), z + Math.cos(a) * (d + 0.5)) >= 0) d += 0.5;
+    if (!best || d > best.d) best = { a, d };
+  }
+  return best;
 }
 
 // The discs holding the hull right now: the body ring overlaps them, with the same 0.35 m of slack

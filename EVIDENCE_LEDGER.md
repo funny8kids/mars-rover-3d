@@ -117,7 +117,13 @@ Since A4 and F2-deploy require human interaction outside automation capabilities
 
 **两跑之差已归因到尺子，不是产品回归**：`tools/logs/frame-attribution-2026-09-29.log`（单变量，同一份 `src/`）量出这台共享 headless chrome 的**布局视口默认是 390×844**（`mqMobile=true`，而 `Browser.getWindowBounds` 仍报 1920×1080 ⇒ 窗口杠杆动不了布局视口）。同一格 HUD：`laid=390x844` ⇒ 文本 8.75 % / 盒子 10.92 % / `#mission-panel` 8.11 %（三条红）；`laid=1920x1080` ⇒ 1.39 % / 1.56 % / 1.29 %（`fail []`）。§7 的判据分母是 `document.body` 矩形，所以**没有具名视口的密度读数不可比较** —— `-b` 跑（2.14/2.34）与 `-d` 跑（8.69/10.92）之间 `src/` 零改动，差的只是视口。处置＝尺子自己 `Emulation.setDeviceMetricsOverride` 钉 1920×1080 并在读数里落 `frame`；钉不上就 `FRAME_REFUSED` 退出而不是判红。
 
-**仍未闭合的一格（产品侧，不是尺子）**：`hud:pad-leave` 两次独立复现同一处 —— 用产品自己的 `R.warp(p.x, p.z, undefined, 0)` 落到盘心后按住 W 120 帧，末读 `d=1.34 of r=3.9 at -7.8,1.1,9.1`（归因跑 `tools/logs/pad-leave-attribution-2026-09-29.log`：`hold-60 speed=8.56` → `hold-70 speed=1.26`，0.16 s 内位移 0.1 m）。要问的是「盘心朝 yaw 0 的方向，keep-out 半径内是什么挡住了」。**判据不放宽**（离台这一步要测的就是离开）。
+**仍未闭合的一格（产品侧，不是尺子）**：`hud:pad-leave` 两次独立复现同一处 —— 用产品自己的 `R.warp(p.x, p.z, undefined, 0)` 落到盘心后按住 W 120 帧，末读 `d=1.34 of r=3.9 at -7.8,1.1,9.1`（归因跑 `tools/logs/pad-leave-attribution-2026-09-29.log`：`hold-60 speed=8.56` → `hold-70 speed=1.26`，0.16 s 内位移 0.1 m）。这一红不随视口变：同一姿态在两格视口下复现同一条红，所以它不属于上一条那种尺子问题。
+
+**归因读数**：`tools/logs/pad-exit-2026-09-29.log`（`tools/pad-exit-probe.mjs`，16 航向 × 0.5 m 步进推到 9 m，`__RSB.place()` 逐点问"这里碰不碰实体"；结尾 `VERDICT READ_ONLY — 这一跑不判红也不放行，只回答"挡住的是哪一件、在多远的朝向"`）。两条产品侧事实：
+1. **光台被自己的盘缘硬件围住了**：`PAD pad:hub at -6.77,9.98 r=3.9 centreTouching=[]` ⇒ `LANES clear 3/16 · blocked beyond r 4/16`，剩下 9 条在 **1.5–2 m** 就撞，挡路的是这台盘自己的三枚发射柱圆盘：`0° first contact 1.5 m · hub:pad0#2@-6.8,13.0r0.1`、`90° … hub:pad0#0@-3.9,8.7r0.4`、`270° first contact 2 m · hub:pad0#1@-9.4,8.4r0.1`。这三枚不是新发现：`src/world/props.js:1548` 已写明它们在 1.25 缩放下站在圆心 **3.00 / 3.03 / 3.15 m**（`PAD_POST_RING · s`），其中 `#0` 的 r 读成 0.43 而非 0.11，是量测那一枚时吞进了第二件盘缘硬件（task #94）。而 keep-out 的 `r=3.9` 从**圆心**起算 —— 盘缘硬件到圆心 3.15 m，加车身半宽 1.6 m 后，`#0` 那个方向上"合法的中心位"已经在 5.18 m 外：**圆心那一点本身就不在这台盘的许可证里**，所以从盘心朝多数方向一挂挡就停。干净航向只有 `158° / 202° / 293° free to 9 m`。全图同病：`pad:comms` `clear 0/16`，`habitat / industry / motor` 各 `2/16`，`launch / science / hub` 各 `3/16`。
+2. **产品的传送落点本来就在 keep-out 外**：同一次走查的上一步（真实点击传送面板）读数是 `## hud:teleport-warp … "after":"{\"pos\":[-3,1,13] …}"` —— 落点距 `pad:hub` 圆心 4.83 m，已经大于 `r=3.9`。也就是说"已到达光台"这句话和盘半径两把尺对不上；离台这一步测的"从盘心开出去"是尺子自己 `warp` 到圆心造出来的姿态，不是产品给的姿态。
+
+**作废本轮先前写下的「盘心朝 yaw 0」**：`__RSB.warp(x, z, face, search)` 的第 4 个参数是 **search**（尺子传 0 ⇒ 关掉产品自己的合法位姿搜索），第 3 个 `face` 是 `undefined` ⇒ **朝向继承上一步**，不是 0。所以这一步的几何前提比原先记录的更脆：位置是人摆的、朝向是继承的、搜索是关的。**判据不放宽**（离台这一步要测的就是离开）。待决的是产品侧二选一：给盘的缘石环开一个 mouth（对照 #97 全图 MOUTH_GAP 的做法），或让传送落位带一个朝干净航向（`158°/202°/293°`）的显式 `face`。
 
 ---
 

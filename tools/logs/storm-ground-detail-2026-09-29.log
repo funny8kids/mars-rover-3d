@@ -1,0 +1,6 @@
+GROUND_DETAIL 指标 = 相对电平的局部对比度（grad_rel 一阶 / hp_rel 高通）
+  CONTROL smear(calm σ=2)            near:0.0046/0.0074 mid:0.0266/0.0679 far:0.0101/0.0305   band near:0.0104 mid:0.0912 far:0.0420
+  near-band grad_rel 比值（对晴空）：storm 2.284 · tint 对照 1.218 · smear 对照 0.315
+  CONTROL flat（均匀色） band_rel = 0.000000（必须为 0）
+  CONTROL noise（粒子混淆对照）near band 比值 2.485（必须≈1，否则这把尺还是在量粒子）
+GROUND_DETAIL_RC=3 尺子本身不可信（tint 1.218 需>0.9 · smear 0.315 需<0.8 · noise 2.485 需≈1）

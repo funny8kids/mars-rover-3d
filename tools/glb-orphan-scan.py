@@ -78,6 +78,9 @@ def shipped_glbs():
 
 def main(argv):
     show_all = '--all' in argv
+    global ASSETS
+    if '--assets' in argv:                      # verify a built artifact, not the source library
+        ASSETS = os.path.join(ROOT, argv[argv.index('--assets') + 1])
     tokens = app_text()
     rows, skipped = shipped_glbs()
     if not rows:
@@ -99,6 +102,15 @@ def main(argv):
     print('ENUMERATED %d · REFERENCED %d · UNREFERENCED %d · dead bytes %.1f MiB · skipped web/ %d'
           % (len(rows), len(rows) - len(dead), len(dead),
              sum(s for _, s in dead) / 1048576.0, skipped))
+    if '--emit-exclude' in argv:
+        # The exclude file is the reading itself handed to the writer: a hand-copied list of dead
+        # assets would go stale the day one is wired up or a new one lands, and stale means either a
+        # shipped file nobody requests or a dropped file somebody does.
+        out = argv[argv.index('--emit-exclude') + 1]
+        with open(out, 'w', encoding='utf8') as fh:
+            for rel, _ in dead:
+                fh.write(rel + '\n')
+        print('EXCLUDE_EMITTED %d -> %s' % (len(dead), out))
     if dead:
         print('GLB_ORPHANS')
         return 4

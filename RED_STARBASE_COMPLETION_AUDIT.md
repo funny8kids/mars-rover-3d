@@ -411,5 +411,9 @@ git ls-remote origin main && git rev-parse HEAD
 | 自家旧产出（`arch`／`comm_dish`／`solar_array`／`rock_cluster`） | 4 | 1.6 MiB | 由 `build_assets.py`／`build_heroes.py` 造，已被 `#107` 收编过口径，现役替代品在场景里 |
 | `corridor*.glb` 7 件（含在上表 Kenney 档内） | — | — | 查过是真红：`props.js` 的 `corridorBreak` 用的是 `plan.js:16` 的 `CORRIDOR = 3.2`（净宽常数，不是资产名），走廊走 `hab_link` |
 
-**这一格为什么还没关**：把 crane／generator 落进 INDUSTRY 要改 `src/world/props.js`，而改 `src/**.js` 会作废当前字节（`SRC_MD5 7b48281325ed`）上的三份绿读数 —— A4 巡航 300 s、F1 抓帧 66 帧、真实点击走查 25 步，必须全部重量过才能提交。落位一半、验收另一半＝出货一个未验收的构建，所以这一格连同重跑链一起留作下一轮的第一件事，而不是先提交再补尺。
+**这一格为什么还没关**：把 crane／generator 落进 INDUSTRY 要改 `src/world/props.js`，而改 `src/**.js` 会作废当前字节（`SRC_MD5 7b48281325ed`）上的三份绿读数 —— A4 巡航 300 s、F1 抓帧 66 帧、真实点击走查 25 步，必须全部重量过才能提交。
+**这次落位上秤的读数，以及为什么把它撤回去**：`CC0` 加一条 + `putSolid('portable_generator', ix + 11, iz - 13, 1.0, -0.55, 'portable-genset')` 这两处改动落在 `SRC_MD5 018e4f2a34c9` 上，A4 300 s 独立跑了两趟，两趟给出**逐字相同**的一条失败：`rescues 1 · t 237.8 · pos (48.3,-70.8) · pocket comms:pad4#2 · out "drove out" · gotOut 1.9 s`，而同两趟的 `stuckPockets 0 · stuckFrames 0 · bodyClipFrames 0 · sinkFrames 0 · FPS min 63 med 63 below55 0` 全绿。被加的盘在 INDUSTRY (71,47)（`meshes 1733→1735` 是唯一可见的场景差），口袋在 COMMS (60,-60)，相距 107 m —— 所以机制不是"新道具插进路面"，而是**多一个碰撞盘改写了巡航的动线（`coverage.driven` 从 9 掉到 5），把车送进了那处本来就骑在临界上的夹缝**。这条读数说明 A4 的判据比"零卡死"更脆：它对全图任何一次落位改动都敏感，而敏感的方向不一定是被改的那一区。字节是逐字可重现的（`python3 tools/logs/genset-76-repro.py`，hunk 从会话记录的 Edit 参数里取，不是重新手打的 diff），所以撤回之后不必重跑就能确认回到 `7b48281325ed`。
+
+**顺带把两把尺子的口径差钉住**：`tools/collider-overlap-scanner.mjs` 这一趟写出的 JSON 里既查不到 `comms:pad4` 这个 id，也不含 (48.3,-70.8) 周围 7 m 内的任何盘，而它自己的汇总是 `3871 issues（767 tight + 3102 pockets + 2 slope traps）/ ❌ TRAPS DETECTED`、`rc` 却是 0。静态扫描器与运行时审计的 id 面和退出码契约都不一致（第 #71 条那次是反方向的不一致），所以**A4 只认 `cdp-tour-audit.mjs` 的 `TOUR VERDICT`**，静态那份只能当"哪里值得看一眼"的线索，不能当清零证据。
+落位一半、验收另一半＝出货一个未验收的构建，所以这一格连同重跑链一起留作下一轮的第一件事，而不是先提交再补尺。
 

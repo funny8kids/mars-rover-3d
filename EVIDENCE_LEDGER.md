@@ -186,3 +186,11 @@ See **[MANUAL_VERIFICATION_INSTRUCTIONS.md](MANUAL_VERIFICATION_INSTRUCTIONS.md)
 2. **F2-deploy**: Visit Vercel Dashboard project `01a0be6f-ebf7-7af5-bcef-3cce5b5d09f6`, click "Redeploy", confirm dist folder deploy
 
 Upon completion: **Use `/goal resume` to finalize.**
+
+
+## 【F】2 发布：今天这副字节又被同一个码挡下（2026-09-29 16:47 本机钟）
+
+- 现量输入：`bash tools/sync_dist.sh` 后 `dist` 共 **101,196,820 B**（96.5 MiB，`du -sb`），`dist/assets/web` 已不在产物里（上一轮暂存在 `/tmp/rsb_dist_stash/public`），单件最大 `assets/starship_stack.glb` **9,297,192 B**，其次 `overhead_crane.glb` 7,328,244 B —— 也就是说这次上传里**没有任何一件**接近旧日志里那把 `artifact_size` 尺量过的 82 MiB 那类巨件。
+- `prepare_site`（`actionId 7f3c9a12-4d6e-4b8a-9c15-2e7d8b4a6f31`，`projectRoot` 仓库根，`webDirectory dist`，`projectId 01a0be6f-ebf7-7af5-bcef-3cce5b5d09f6`）⇒ **`sites_request_failed`**，没有返回 action 状态可查。这是同一站点第 14 次失败记录，与 09-28 那批同码。
+- 线上现量（`list_sites`）：站点 `01a0be6f-ebf8-7caa-beef-b1a1909bd4d6` 仍 `lifecycle:active`、`access_mode:public`、`active_release_id 01a0e2b9-e5f0-786e-82f5-dc6a6bf39f45`（cover 时间 09-27），host `red-starbase-wgmag3xoh66.qoder.website`。**所以 F2 的"重新发布"这一格至今没有拿到过一次可发布状态**，与仓库里的字节无关：09-27 那次成功后，通道就没再开过。
+- 按既有纪律停手：`prepare_site` 会创建云资源，同码不重试（见记忆 `red-starbase-publish-attempt-codes`）。要推进这一格需要的是账号侧的存储/配额或一次人工在 Sites 面板里的重试，二选一都需要你点头，我不擅自换站点、不新建站点。

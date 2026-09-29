@@ -1,0 +1,30 @@
+ANCHOR head=08752ab srcmd5=d15961deb015 probe_fixed=43dc5b189037
+--- clean (pre-mutation control)
+clean-pre WANT=GREEN RC=0 probe_md5=43dc5b189037
+STEPS 25 FAILED 0
+--- M1: text clause wired to nothing
+M1 WANT=RED RC=1 probe_md5=72f2a0606aa6
+!! hud:mission-panel FAIL density bar is decoration: control tripped 2/3 at bar 0.645 % | text=1.38 box=1.56 carded=#mission-panel 1.29 %
+!! hud:teleport-warp FAIL density bar is decoration: control tripped 2/3 at bar 0.645 % | text=1.38 box=1.56 carded=#mission-panel 1.29 %
+!! hud:pad-leave FAIL density bar is decoration: control tripped 2/3 at bar 0.645 % | text=1.38 box=1.56 carded=#mission-panel 1.29 %
+!! hud:mute-fab FAIL density bar is decoration: control tripped 2/3 at bar 0.645 % | text=1.39 box=1.56 carded=#mission-panel 1.29 %
+!! hud:photo-exit FAIL density bar is decoration: control tripped 2/3 at bar 0.645 % | text=1.39 box=1.56 carded=#mission-panel 1.29 %
+!! hud:race-board FAIL density bar is decoration: control tripped 2/3 at bar 0.645 % | text=1.38 box=1.56 carded=#mission-panel 1.29 %
+!! hud:board-close FAIL density bar is decoration: control tripped 2/3 at bar 0.645 % | text=1.38 box=1.56 carded=#mission-panel 1.29 %
+STEPS 25 FAILED 7
+RESTORE OK 43dc5b189037
+--- M2: carded clause comparison inverted
+M2 WANT=RED RC=1 probe_md5=9bd08cd316e0
+!! hud:mission-panel FAIL density bar is decoration: control tripped 2/3 at bar 0.645 % | text=1.38 box=1.56 carded=#mission-panel 1.29 %
+!! hud:teleport-warp FAIL density bar is decoration: control tripped 2/3 at bar 0.645 % | text=1.38 box=1.56 carded=#mission-panel 1.29 %
+!! hud:pad-leave FAIL density bar is decoration: control tripped 2/3 at bar 0.645 % | text=1.38 box=1.56 carded=#mission-panel 1.29 %
+!! hud:mute-fab FAIL density bar is decoration: control tripped 2/3 at bar 0.645 % | text=1.39 box=1.56 carded=#mission-panel 1.29 %
+!! hud:photo-exit FAIL density bar is decoration: control tripped 2/3 at bar 0.645 % | text=1.38 box=1.56 carded=#mission-panel 1.29 %
+!! hud:race-board FAIL density bar is decoration: control tripped 2/3 at bar 0.645 % | text=1.38 box=1.56 carded=#mission-panel 1.29 %
+!! hud:board-close FAIL density bar is decoration: control tripped 2/3 at bar 0.645 % | text=1.38 box=1.56 carded=#mission-panel 1.29 %
+STEPS 25 FAILED 7
+RESTORE OK 43dc5b189037
+--- clean (post-restore control)
+clean-post WANT=GREEN RC=0 probe_md5=43dc5b189037
+STEPS 25 FAILED 0
+MATRIX_DONE

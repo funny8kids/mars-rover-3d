@@ -903,13 +903,26 @@
       out.push(`${biggestCarded.own} 是 ${biggestCarded.pct} % 的「底色+描边+模糊」盒 > ${b.cardedBoxPct}`);
     return out;
   };
+  // The control's bar is DERIVED from this frame's own readings (half of the smallest live quantity),
+  // not hand-typed. Measured 2026-09-29: on byte-identical work, `dText` straddles the fixed 1 % bar
+  // (0.99 in the red run of a 5-run census) — so a control sitting inside the noise band of the thing
+  // it measures cannot accuse a clause of being wired to nothing. Detection survives the change: a
+  // clause missing from `trip()`, or comparing the wrong way, still cannot reach a bar built from the
+  // value it is supposed to read. A quantity that is exactly 0 is named in `unexercisable`.
+  const measures = { textPct: dText, panelPct: dBox, cardedBoxPct: biggestCarded ? biggestCarded.pct : 0 };
+  const unexercisable = Object.entries(measures).filter(([, v]) => !(v > 0)).map(([k]) => k);
+  const ctrlBar = unexercisable.length ? null : +(Math.min(...Object.values(measures)) * 0.5).toFixed(3);
+  const densityControl = !judged ? null : {
+    bar: ctrlBar,
+    tripped: ctrlBar == null ? null
+      : trip({ textPct: ctrlBar, panelPct: ctrlBar, cardedBoxPct: ctrlBar }).length,
+    unexercisable,
+  };
   const density = {
     bar: BAR, judged, textPct: +dText.toFixed(2), panelPct: +dBox.toFixed(2),
     cardedBox: biggestCarded ? `${biggestCarded.own} ${biggestCarded.pct} %` : 'none',
     summonedUp: [...new Set(boxes.filter(x => MODE.has(x.own)).map(x => x.own))],
-    // Three clauses that can all go red, proven against the live numbers: the same computation at a 1 %
-    // bar must trip all three. If it does not, one clause is decoration and this run says so.
-    control: judged ? { bar: 1, tripped: trip({ textPct: 1, panelPct: 1, cardedBoxPct: 1 }).length } : null,
+    control: densityControl,
     ownerSplit: Object.entries(byOwner)
       .map(([k, v]) => [k, +v.text.toFixed(2), +v.box.toFixed(2)])
       .sort((a, b) => b[2] - a[2]).slice(0, 6),

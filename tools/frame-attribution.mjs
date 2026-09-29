@@ -103,7 +103,7 @@ const readOnce = async tag => {
   console.log(`READ ${tag} laid=${p.frame.laid.join('x')} inner=${p.frame.innerWidth.join('x')}`
     + ` vv=${p.frame.visualViewport.join('x')} dpr=${p.frame.dpr} canvas=${p.frame.canvas.join('x')}`
     + ` | textPct=${d.textPct} panelPct=${d.panelPct} cardedBox=${d.cardedBox}`
-    + ` judged=${d.judged} control=${d.control && d.control.tripped}/3 fail=${JSON.stringify(d.fail)}`);
+    + ` judged=${d.judged} control=${d.control && d.control.tripped}/3@${d.control && d.control.bar}% fail=${JSON.stringify(d.fail)}`);
   console.log(`  OWNERS ${tag} ` + JSON.stringify(d.ownerSplit));
   return { d, laid: p.frame.laid.join('x') };
 };

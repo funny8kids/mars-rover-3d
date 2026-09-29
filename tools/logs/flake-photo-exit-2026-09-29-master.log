@@ -1,0 +1,14 @@
+ANCHOR start 08752ab d15961deb015
+run1 RC=0 STEPS 25 FAILED 0
+run1 END
+run2 RC=1 STEPS 25 FAILED 1
+!! hud:photo-exit FAIL density bar is decoration: control tripped 2/3 at 1 % | text=0.99 box=1.29 carded=#mission-panel 1.29 %
+run2 END
+run3 RC=0 STEPS 25 FAILED 0
+run3 END
+run4 RC=0 STEPS 25 FAILED 0
+run4 END
+run5 RC=0 STEPS 25 FAILED 0
+run5 END
+ANCHOR end 08752ab d15961deb015
+FLAKE_DONE

@@ -261,16 +261,26 @@ async function step(name, fn, opts = {}) {
     }
     // §7's density bar, judged by the probe and read here. Two ways this can be a lie rather than a
     // measurement, so both are checked: a `fail` that trips (the HUD got too crowded), and a bar that
-    // can never trip (the probe's own 1 % control does not turn all three clauses red — a clause wired
-    // to nothing reads identical to a clause satisfied).
+    // can never trip (the probe's derived control bar does not turn all three clauses red — a clause
+    // wired to nothing reads identical to a clause satisfied).
     const d = out.reading.density;
     if (!d && (opts.phase || 'hud') === 'hud') {
       out.fail = 'probe returned no density block — §7 would be unjudged, not passed';
     } else if (d && d.judged) {
-      if (d.control?.tripped !== 3) {
-        out.fail = `density bar is decoration: control tripped ${d.control?.tripped}/3 at 1 %`;
+      // 红了要把三条 clause 的取值一起打出来。2026-09-29 那次 `control tripped 2/3` 只能证明"哪一格没响"
+      // 选不出证据：FAIL 行里只有计数，读数在 `##` 那行才打印，而失败的那一步根本不走 `##`。
+      const clauses = `text=${d.textPct} box=${d.panelPct} carded=${d.cardedBox}`;
+      const c = d.control;
+      if (c?.tripped !== 3) {
+        // A frame whose reading is 0 somewhere cannot host a positive control at all, so it is named
+        // as no-data instead of being called decoration — the two need different follow-ups, and the
+        // 5-run census showed this line firing for the wrong reason once already.
+        out.fail = (c?.unexercisable?.length
+          ? `density control has no data on this frame (${c.unexercisable.join(', ')})`
+          : 'density bar is decoration')
+          + `: control tripped ${c?.tripped}/3 at bar ${c?.bar} % | ${clauses}`;
       } else if (d.fail.length) {
-        out.fail = '§7 density: ' + d.fail.join('; ') + ' | 各层 ' + d.ownerSplit.join(' , ');
+        out.fail = `§7 density: ${d.fail.join('; ')} | ${clauses} | 各层 ${d.ownerSplit.join(' , ')}`;
       }
     }
     if (out.fail) {

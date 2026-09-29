@@ -173,6 +173,8 @@ Since A4 and F2-deploy require human interaction outside automation capabilities
 
 **剩的半边**：`overhead_crane.glb` 的 7156.5 KiB 仍是 `UNREFERENCED`；它不能照抄这条落位法——文件原点悬在滑橇上方 3.35 m，得先从脚掌推出 datum 再谈选址。
 
+**锚的口径（同一份字节，两个值）**：本表的 `SRC_MD5` 沿用三份尺 harness 自己那把 glob —— `find src -name '*.js' | sort | xargs cat | md5sum | cut -c1-12`，`sort` 吃本机 locale（`zh_CN.UTF-8`）。提交后另起一条按 `LC_ALL=C sort` 重量同一批字节，得到的是 `dd1e7d077138`。两个值说的是同一份字节，差别只在排序口径；引锚时要连命令一起引，否则下一次会把它读成"字节又变了"。提交后 `git status --porcelain src` 为 0 行，即三份尺量过的字节就是进 HEAD 的字节。
+
 ---
 
 ## 📝 Manual Execution Procedures

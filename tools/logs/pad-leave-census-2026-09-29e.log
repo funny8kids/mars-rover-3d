@@ -1,0 +1,38 @@
+# per-pad drivability census — both polarities on FINAL census bytes
+RUN_DATE 2026-09-29
+ANCHOR_HEAD 60844a4
+SRC_DIRTY_LINES 0
+SRC_MD5 7b48281325ed
+CENSUS_MD5 c274e430e4a1
+
+=========== POLARITY A: W held (delivery) — expect RC=0 ===========
+TARGET http://127.0.0.1:8080/qa_boot.html
+PADS 7  pad:hub,pad:launch,pad:habitat,pad:industry,pad:comms,pad:science,pad:motor
+## PAD pad:hub r=3.9 yaw=2.749 moved 13.03 m  d 0→13.03 speed 0→3.23
+## PAD pad:launch r=3.9 yaw=0.785 moved 19.12 m  d 0.43→19.56 speed 0→12.48
+## PAD pad:habitat r=3.9 yaw=0.785 moved 19.04 m  d 0.42→19.47 speed 0→12.38
+## PAD pad:industry r=3.9 yaw=5.105 moved 19.16 m  d 0.23→19.39 speed 0→12.46
+## PAD pad:comms r=3.9 yaw=1.178 moved 15.83 m  d 0.44→16.27 speed 0→10.34
+## PAD pad:science r=3.9 yaw=1.178 moved 17.85 m  d 0.23→18.08 speed 0→7.48
+## PAD pad:motor r=3.9 yaw=0.785 moved 19.13 m  d 0.42→19.56 speed 0→12.49
+SUMMARY [{"pad":"pad:hub","moved":13.03},{"pad":"pad:launch","moved":19.12},{"pad":"pad:habitat","moved":19.04},{"pad":"pad:industry","moved":19.16},{"pad":"pad:comms","moved":15.83},{"pad":"pad:science","moved":17.85},{"pad":"pad:motor","moved":19.13}]
+PADS 7 FAILED 0
+VERDICT ALL_PADS_DRIVABLE — 每台盘按 W 都能开走并越过自身半径
+PAD_CENSUS_RC=0
+POLARITY_A_RC=0
+
+=========== POLARITY B: no key (control) — expect RC=1 ===========
+TARGET http://127.0.0.1:8080/qa_boot.html
+PADS 7  pad:hub,pad:launch,pad:habitat,pad:industry,pad:comms,pad:science,pad:motor
+!! PAD pad:hub r=3.9 yaw=2.749 moved 0.00 m  d 0.15→0.15 speed 0→0  FAIL no key pressed (polarity control) for 150 frames, travelled only 0.00 m (-6.71,1.06,9.85→-6.71,1.06,9.85), speed@read=0
+!! PAD pad:launch r=3.9 yaw=0.785 moved 0.00 m  d 0→0 speed 0→0  FAIL no key pressed (polarity control) for 150 frames, travelled only 0.00 m (-56,1.06,-43→-56,1.06,-43), speed@read=0
+!! PAD pad:habitat r=3.9 yaw=0.785 moved 0.00 m  d 0→0 speed 0→0  FAIL no key pressed (polarity control) for 150 frames, travelled only 0.00 m (-42.55,0.96,61.61→-42.55,0.96,61.61), speed@read=0
+!! PAD pad:industry r=3.9 yaw=5.105 moved 0.00 m  d 0→0 speed 0→0  FAIL no key pressed (polarity control) for 150 frames, travelled only 0.00 m (54.1,0.99,79.22→54.1,0.99,79.22), speed@read=0
+!! PAD pad:comms r=3.9 yaw=1.178 moved 0.00 m  d 0→0 speed 0→0  FAIL no key pressed (polarity control) for 150 frames, travelled only 0.00 m (51,0.96,-68→51,0.96,-68), speed@read=0
+!! PAD pad:science r=3.9 yaw=1.178 moved 0.00 m  d 0.01→0.01 speed 0→0  FAIL no key pressed (polarity control) for 150 frames, travelled only 0.00 m (4.65,0.86,72.41→4.65,0.86,72.41), speed@read=0
+!! PAD pad:motor r=3.9 yaw=0.785 moved 0.00 m  d 0→0 speed 0→0  FAIL no key pressed (polarity control) for 150 frames, travelled only 0.00 m (1.5,0.96,-51.5→1.5,0.96,-51.5), speed@read=0
+SUMMARY [{"pad":"pad:hub","moved":0,"fail":"no key pressed (polarity control) for 150 frames, travelled only 0.00 m (-6.71,1.06,9.85→-6.71,1.06,9.85), speed@read=0"},{"pad":"pad:launch","moved":0,"fail":"no key pressed (polarity control) for 150 frames, travelled only 0.00 m (-56,1.06,-43→-56,1.06,-43), speed@read=0"},{"pad":"pad:habitat","moved":0,"fail":"no key pressed (polarity control) for 150 frames, travelled only 0.00 m (-42.55,0.96,61.61→-42.55,0.96,61.61), speed@read=0"},{"pad":"pad:industry","moved":0,"fail":"no key pressed (polarity control) for 150 frames, travelled only 0.00 m (54.1,0.99,79.22→54.1,0.99,79.22), speed@read=0"},{"pad":"pad:comms","moved":0,"fail":"no key pressed (polarity control) for 150 frames, travelled only 0.00 m (51,0.96,-68→51,0.96,-68), speed@read=0"},{"pad":"pad:science","moved":0,"fail":"no key pressed (polarity control) for 150 frames, travelled only 0.00 m (4.65,0.86,72.41→4.65,0.86,72.41), speed@read=0"},{"pad":"pad:motor","moved":0,"fail":"no key pressed (polarity control) for 150 frames, travelled only 0.00 m (1.5,0.96,-51.5→1.5,0.96,-51.5), speed@read=0"}]
+PADS 7 FAILED 7
+VERDICT PAD_EXIT_RED — 开不走的台：pad:hub,pad:launch,pad:habitat,pad:industry,pad:comms,pad:science,pad:motor
+PAD_CENSUS_RC=1
+POLARITY_B_RC=1

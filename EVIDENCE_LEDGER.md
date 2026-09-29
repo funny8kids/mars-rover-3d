@@ -143,6 +143,11 @@ Since A4 and F2-deploy require human interaction outside automation capabilities
 - 正跑（出货尺子，未变异）`tools/logs/click-walk-2026-09-29i.log`：锚 `ANCHOR HEAD 67152a7bb3b5f4ea76e733bcaecc716a0d959da8` · `SRC_DIRTY_LINES 0` · `SRC_MD5 7b48281325ed`（与 `-h` 同一把 glob 同一个值）· `FRAME_PINNED laid=1920x1080 want=1920x1080` ⇒ 25 行 `## <name>`、`STEPS 25 FAILED 0`、**`CLICK_WALK_RC=0`**，外层 shell 另记 `WRAPPER_SAW_EXIT=0`。`hud:pad-leave` 这一格在新字节上复现绿（末读 `speed 4.9 / d 5.03`），`SUMMARY` 里 25 步的 `fail` 字段逐条为 `undefined`（不是"字段缺失"，是判据没亮）。
 - 变异控制跑（副本 `tools/.mut-click-rc.mjs`，跑完即删，读数 `/tmp/mut-rc.log`）：唯一锚 `sel: '#mute-fab'` → `'#mute-fab-MUT'`（替换前先 `count!==1` 就中止），只跑过滤步 ⇒ `STEPS 3 FAILED 2` · **`CLICK_WALK_RC=1`** · 进程退出码 1。两条红各自归因：`hud:mute-fab FAIL never got a box (still hidden?): #mute-fab-MUT` 是注入的变异本身；**`hud:mission-state` 那条红是"过滤跑"造成的尺子伪影**（它是汇总步，过滤掉开合日志的那几步后它从来没有输入过 open 态 ⇒ `no open state was ever judged`），不是产品红 —— 以后单步过滤要预期这一条，或把输入步一起选进过滤。
 
+- #116 第二格（逐台盘的可开走性）：走查里 `hud:pad-leave` 只钉第一台盘（`pois().filter(kind==='pad')[0]`＝hub），"按 W 能开走"这条判据从没在其余六台盘上量过。旧的静态归因把 comms 报成 `0/16 净空`（`pad-exit` 尺把"净空"定成 9 m 直道），但那把尺与产品自己的 `outwardBearing`（只取净空最长那条，comms 是 68° 的 ~7.5 m，远超 3.9 m 盘半径）不等价 —— 是否等价只能逐台真按 W 开车。新尺 `tools/pad-leave-census.mjs` 把走查那条判据一字不动搬到每台盘（位置仍 `search=0` 钉盘心、朝向交产品 `'out'`、warp 后先坐 120 帧再读起点），判据＝moved ≥ 3 m 且 d > r 且末速 ≥ 2.5。
+  - 出货跑（W 按住）`tools/logs/pad-leave-census-2026-09-29e.log`：锚 `ANCHOR_HEAD 60844a4` · `SRC_DIRTY_LINES 0` · `SRC_MD5 7b48281325ed` · `CENSUS_MD5 c274e430e4a1` ⇒ **`PADS 7 FAILED 0` · `VERDICT ALL_PADS_DRIVABLE` · `PAD_CENSUS_RC=0`**，逐台 moved `hub 13.03 / launch 19.12 / habitat 19.04 / industry 19.16 / comms 15.83 / science 17.85 / motor 19.13` m，全部越过自身 3.9 m 半径。comms 那条"开不出去"的静态恐惧被实测证伪。
+  - 极性对照（`PAD_CENSUS_NOKEY=1`，同一份 census 字节，只让车坐到帧预算用尽不按任何键）：`POLARITY_B_RC=1` · 七台 `moved 0.00 m` 全红 —— 这把尺会因"没开车"报红，所以绿跑不是装饰。两趟都在最终字节上（改过 `DRIVE_FRAMES` 常量后重量的一次）。
+- 结论：#116 的两格里，第二格（逐台可开走性）用实测关掉；第一格（合法落位搜索 `search=8` 在光台附近滑到 11.3 m 外，产品侧落位基准）仍是产品侧未读数的一格，不许用尺子关掉。
+
 （注：`-g` 那跑的 `SRC_MD5 a35477e11b30` 与 `-e` 的 `85561bf715ea` 不是同一把算法 —— 外层拼文件的 glob 不同，不是字节变了；`src/` 自 `59c4329` 起 `SRC_DIRTY_LINES 0`。）
 
 ---

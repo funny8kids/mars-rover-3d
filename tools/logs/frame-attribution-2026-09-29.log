@@ -1,0 +1,27 @@
+TARGET http://127.0.0.1:8080/qa_boot.html [RED STARBASE · 火星星舰基地 — 漫游车交互艺术体验]
+CLICK_START attempt=0 got={"cx":194.9921875,"cy":528.5,"covered":false,"top":"start-btn"}
+CLICK_START attempt=1 got=null
+STARTED true after 2 click(s)
+WINDOW_BOUNDS {"bounds":{"left":10,"top":10,"width":1920,"height":1080,"windowState":"normal"}}
+READ A-as-is laid=390x844 inner=889x967 vv=390x844 dpr=0.72 canvas=889x967 | textPct=8.75 panelPct=10.92 cardedBox=#mission-panel 8.11 % judged=true control=3/3 fail=["文本 8.75 % > 5","盒子 10.92 % > 5","#mission-panel 是 8.11 % 的「底色+描边+模糊」盒 > 3"]
+  OWNERS A-as-is [["#mission-panel",3.65,8.11],["#tele-fab",1.69,1.69],["#mute-fab",0.76,0.76],["#lang-btn",0.36,0.36],["#speedo",0.83,0],["#power-hud",0.25,0]]
+WINDOW_BOUNDS_AFTER {"left":10,"top":10,"width":1920,"height":1080,"windowState":"normal"}
+READ B-bounds-1920x1080 laid=390x844 inner=889x967 vv=390x844 dpr=0.72 canvas=889x967 | textPct=8.75 panelPct=10.92 cardedBox=#mission-panel 8.11 % judged=true control=3/3 fail=["文本 8.75 % > 5","盒子 10.92 % > 5","#mission-panel 是 8.11 % 的「底色+描边+模糊」盒 > 3"]
+  OWNERS B-bounds-1920x1080 [["#mission-panel",3.65,8.11],["#tele-fab",1.69,1.69],["#mute-fab",0.76,0.76],["#lang-btn",0.36,0.36],["#speedo",0.83,0],["#power-hud",0.25,0]]
+READ C-as-is-repeat laid=390x844 inner=889x967 vv=390x844 dpr=0.72 canvas=889x967 | textPct=8.75 panelPct=10.92 cardedBox=#mission-panel 8.11 % judged=true control=3/3 fail=["文本 8.75 % > 5","盒子 10.92 % > 5","#mission-panel 是 8.11 % 的「底色+描边+模糊」盒 > 3"]
+  OWNERS C-as-is-repeat [["#mission-panel",3.65,8.11],["#tele-fab",1.69,1.69],["#mute-fab",0.76,0.76],["#lang-btn",0.36,0.36],["#speedo",0.83,0],["#power-hud",0.25,0]]
+GEOM before-clear {"body":[390,844],"client":[889,967],"screen":[1920,1080,1920,1080],"vvScale":1,"vv":[390,844],"dpr":0.72,"mqMobile":true,"metaViewport":"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"}
+canEmulate {"result":true}
+CLEAR_OK
+GEOM after-clear {"body":[390,844],"client":[889,967],"screen":[1920,1080,1920,1080],"vvScale":1,"vv":[390,844],"dpr":0.72,"mqMobile":true,"metaViewport":"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"}
+READ D-after-clear laid=390x844 inner=889x967 vv=390x844 dpr=0.72 canvas=889x967 | textPct=8.75 panelPct=10.92 cardedBox=#mission-panel 8.11 % judged=true control=3/3 fail=["文本 8.75 % > 5","盒子 10.92 % > 5","#mission-panel 是 8.11 % 的「底色+描边+模糊」盒 > 3"]
+  OWNERS D-after-clear [["#mission-panel",3.65,8.11],["#tele-fab",1.69,1.69],["#mute-fab",0.76,0.76],["#lang-btn",0.36,0.36],["#speedo",0.83,0],["#power-hud",0.25,0]]
+SET_DESKTOP_OVERRIDE_OK
+GEOM after-desktop-override {"body":[1920,1080],"client":[889,967],"screen":[1920,1080,1920,1080],"vvScale":1,"vv":[1920,1080],"dpr":0.72,"mqMobile":false,"metaViewport":"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"}
+READ E-override-1920x1080 laid=1920x1080 inner=889x967 vv=1920x1080 dpr=0.72 canvas=889x967 | textPct=1.39 panelPct=1.56 cardedBox=#mission-panel 1.29 % judged=true control=3/3 fail=[]
+  OWNERS E-override-1920x1080 [["#mission-panel",0.58,1.29],["#tele-fab",0.27,0.27],["#speedo",0.13,0],["#power-hud",0.04,0],["#topbar",0.19,0],["#lang-btn",0.06,0]]
+GEOM final {"body":[1920,937],"client":[889,967],"screen":[1920,1080,1920,1080],"vvScale":1,"vv":[1920,937],"dpr":0.72,"mqMobile":false,"metaViewport":"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"}
+REPEAT_CONTROL A==C text 8.75/8.75 panel 10.92/10.92 => STABLE
+FRAME_LADDER A=390x844 B=390x844 C=390x844 D=390x844 E=1920x1080
+TEXT_LADDER A=8.75 D=8.75 E=1.39
+VERDICT FRAME_DEPENDENT — 密度随布局视口变；换到具名桌面视口后读数不同，两跑之差可由视口解释

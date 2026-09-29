@@ -108,6 +108,19 @@ Since A4 and F2-deploy require human interaction outside automation capabilities
 
 ---
 
+## 【F】1 · 真实点击走查：尺子在具名视口上有入库读数（2026-09-29）
+
+尺子 `tools/cdp-type-click.mjs`（25 步，每步 `Input.dispatchMouseEvent` 打在元素自己矩形中心 + `elementFromPoint` 命中测试，步后重跑同一把 `tools/hud-audit-probe.js`）。
+
+**入库读数**：`tools/logs/click-walk-2026-09-29e.log` @ `59c4329`（`SRC_DIRTY_LINES 0`、`SRC_MD5 85561bf715ea`）
+⇒ `FRAME_PINNED laid=1920x1080 want=1920x1080` · **`STEPS 25 FAILED 1`** · 唯一红行 `hud:pad-leave`。
+
+**两跑之差已归因到尺子，不是产品回归**：`tools/logs/frame-attribution-2026-09-29.log`（单变量，同一份 `src/`）量出这台共享 headless chrome 的**布局视口默认是 390×844**（`mqMobile=true`，而 `Browser.getWindowBounds` 仍报 1920×1080 ⇒ 窗口杠杆动不了布局视口）。同一格 HUD：`laid=390x844` ⇒ 文本 8.75 % / 盒子 10.92 % / `#mission-panel` 8.11 %（三条红）；`laid=1920x1080` ⇒ 1.39 % / 1.56 % / 1.29 %（`fail []`）。§7 的判据分母是 `document.body` 矩形，所以**没有具名视口的密度读数不可比较** —— `-b` 跑（2.14/2.34）与 `-d` 跑（8.69/10.92）之间 `src/` 零改动，差的只是视口。处置＝尺子自己 `Emulation.setDeviceMetricsOverride` 钉 1920×1080 并在读数里落 `frame`；钉不上就 `FRAME_REFUSED` 退出而不是判红。
+
+**仍未闭合的一格（产品侧，不是尺子）**：`hud:pad-leave` 两次独立复现同一处 —— 用产品自己的 `R.warp(p.x, p.z, undefined, 0)` 落到盘心后按住 W 120 帧，末读 `d=1.34 of r=3.9 at -7.8,1.1,9.1`（归因跑 `tools/logs/pad-leave-attribution-2026-09-29.log`：`hold-60 speed=8.56` → `hold-70 speed=1.26`，0.16 s 内位移 0.1 m）。要问的是「盘心朝 yaw 0 的方向，keep-out 半径内是什么挡住了」。**判据不放宽**（离台这一步要测的就是离开）。
+
+---
+
 ## 📝 Manual Execution Procedures
 
 See **[MANUAL_VERIFICATION_INSTRUCTIONS.md](MANUAL_VERIFICATION_INSTRUCTIONS.md)** for detailed step-by-step guides.

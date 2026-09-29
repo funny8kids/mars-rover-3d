@@ -59,6 +59,14 @@ await send('Runtime.enable');
 await send('Page.enable');
 await send('Network.enable');
 await send('Network.setCacheDisabled', { cacheDisabled: true });
+// §7's bar is a share of the *layout* frame, and this shared headless chrome sits at a mobile layout
+// (body 390x844) while Browser.getWindowBounds still reports 1920x1080. Measured 2026-09-29 in
+// tools/logs/frame-attribution-2026-09-29.log on one src/ build, one variable: laid 390x844 ⇒
+// text 8.75 % / panel 10.92 % / #mission-panel 8.11 % (three reds), laid 1920x1080 ⇒ 1.39 / 1.56 /
+// 1.29 (fail []). So the walk pins the frame it judges at rather than inheriting whatever the window
+// was left in, and refuses to judge anywhere else.
+const PINNED_FRAME = { width: 1920, height: 1080 };
+await send('Emulation.setDeviceMetricsOverride', { ...PINNED_FRAME, deviceScaleFactor: 1, mobile: false });
 await send('Page.navigate', { url });
 {
   const deadline = Date.now() + 240000;
@@ -70,6 +78,17 @@ await send('Page.navigate', { url });
     if (Date.now() > deadline) { console.log('BOOT_TIMEOUT'); process.exit(1); }
     await sleep(2000);
   }
+}
+
+// A pinned override that the build refused would otherwise judge §7 at an unnamed frame, which is how
+// the two archived runs came to disagree by a factor of eight on identical bytes.
+const laidOf = () => evaluate(`(() => { const b = document.body.getBoundingClientRect();
+  return [Math.round(b.width), Math.round(b.height)].join('x'); })()`);
+const laid0 = await laidOf();
+console.log(`FRAME_PINNED laid=${laid0} want=${PINNED_FRAME.width}x${PINNED_FRAME.height}`);
+if (laid0 !== `${PINNED_FRAME.width}x${PINNED_FRAME.height}`) {
+  console.log('FRAME_REFUSED — §7 的判据绑视口，这一跑不判');
+  process.exit(1);
 }
 
 const rectOf = sel => evaluate(`(() => {
@@ -141,6 +160,7 @@ const fitOf = p => ({
   textPct: p.type?.textCoveragePct, panelPct: p.panels?.coveragePct,
   panelBox: p.panels?.top?.[0], pinned: p.phase?.pinned,
   density: p.density,
+  frame: p.frame,
   mpOpenAt: [p.phase?.missionPanel?.openAtStart, p.phase?.missionPanel?.openAtReading],
   mpWaited: p.phase?.missionPanel?.waitedMs, mpPops: p.phase?.missionPanel?.popsDuringRun,
   anchors: (sc => {

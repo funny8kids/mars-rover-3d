@@ -1,0 +1,27 @@
+CRANE_MATS 2 · HOST_MESHES 65 · HOST_MATS 13
+CRANE_RGB_BODY [0.26,0.255,0.25]
+CRANE_RGB_TRIM [0.468,0.144,0.032]
+HOST_RGB hull_white [0.455,0.435,0.4]
+HOST_RGB panel_grey [0.4399999976158142,0.44999998807907104,0.4699999988079071]
+HOST_RGB struct [0.5199999809265137,0.5,0.4699999988079071]
+HOST_RGB dark [0.20000000298023224,0.19499999284744263,0.1850000023841858]
+HOST_RGB orange [0.5,0.155,0.038]
+HOST_RGB yellow [0.21,0.152,0.078]
+HOST_RGB concrete [0.36000001430511475,0.3449999988079071,0.3199999928474426]
+HOST_RGB alu_bright [0.335,0.34,0.355]
+HOST_RGB rust [0.25999999046325684,0.10999999940395355,0.05999999865889549]
+HOST_RGB porcelain [0.5,0.47999998927116394,0.4399999976158142]
+HOST_RGB copper [0.47999998927116394,0.23999999463558197,0.11999999731779099]
+HOST_RGB light_amber [0.3,0.16500000357627867,0.04200000017881393]
+HOST_RGB glass [0.14000000059604645,0.25999999046325684,0.30000001192092896]
+GATE G1_internal_separation ok {"id":"G1_internal_separation","pass":true,"brightDelta":0.0509,"hueDelta":0.426}
+GATE G2_trim_is_safety_hue ok {"id":"G2_trim_is_safety_hue","pass":true,"trimWarm":0.436}
+GATE G2b_body_is_neutral ok {"id":"G2b_body_is_neutral","pass":true,"bodyWarm":0.01}
+GATE G3_not_camouflage ok {"id":"G3_not_camouflage","pass":true,"against":"struct Δluma 0.2973 Δwarm -0.386"}
+CONTROL G1_internal_separation FAIL {"id":"G1_internal_separation","pass":false,"brightDelta":0,"hueDelta":0}
+CONTROL G2_trim_is_safety_hue FAIL {"id":"G2_trim_is_safety_hue","pass":false,"trimWarm":0.055}
+CONTROL G2b_body_is_neutral ok {"id":"G2b_body_is_neutral","pass":true,"bodyWarm":0.055}
+CONTROL G3_not_camouflage FAIL {"id":"G3_not_camouflage","pass":false,"against":"struct Δluma 0.2239 Δwarm -0.005"}
+FAILED 0 []
+CONTROL_CAUGHT true ["G1_internal_separation","G2_trim_is_safety_hue","G3_not_camouflage"]
+CRANE_PALETTE_PASS

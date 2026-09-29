@@ -277,6 +277,25 @@ export async function buildBase(scene, quality) {
       }
     });
   }
+  // The bridge crane arrived as *one* albedo for both of its materials — 0.30/0.275/0.245 on the
+  // truss and the identical value on the trim (`CRANE_LUMA_SPAN 0`, tools/logs/crane-palette-2026-
+  // 09-29.log) — and that value is the portal it rides on's own painted steel to within 0.03
+  // luminance (`steel` 0.305). So the machine had no internal tone separation and matched its host:
+  // from the avenue the crane beam and the gantry beam read as one thicker beam. Real gantry cranes
+  // are painted structure with a safety-coloured hoist, and the base already owns that safety hue —
+  // it is the rover's vermilion — so the trim takes it and the truss goes a neutral, faintly cooler
+  // dark with a metal sheen the matte-painted portal does not have. No new hue, no `dy`-style
+  // guessed constant: both numbers are the base's own bands, and the separation is gated by the
+  // probe that names these two facts.
+  {
+    const c = models.overhead_crane;
+    c?.traverse(o => {
+      for (const mt of (Array.isArray(o.material) ? o.material : o.material ? [o.material] : [])) {
+        if (mt.name === 'overhead_crane') { mt.color.setRGB(0.26, 0.255, 0.25); mt.roughness = 0.62; mt.metalness = 0.45; }
+        else if (mt.name === 'overhead_crane_trim') { mt.color.setRGB(0.468, 0.144, 0.032); mt.roughness = 0.62; mt.metalness = 0.12; }
+      }
+    });
+  }
   // A pack's parts are separate objects only because a modelling tool made them so. Baking each
   // template down to one mesh per material fixes every clone placed from it afterwards, and the
   // merged buffers stay shared instead of being duplicated per instance.

@@ -1,0 +1,9 @@
+COLLECTOR_OUT /tmp/rsb_shots-uvG2kY
+TARGET http://127.0.0.1:8080/qa_boot.html
+SKY day dayT=0.3 settled in 2 frames · {"pumped":2,"nightF":0,"dayF":0.9969369718177339,"duskF":0.03402291870487639,"clock":"07:11","sun":3.39}
+CRANE_BOX {"meshes":2,"lo":[58.44,7.35,71.01],"hi":[65.56,11.31,80.99]}
+SUBJ_UNVERIFIED crane-pal-1-avenue-day {"ok":false,"ctrl":[0,0],"misses":8,"centreNdc":null,"hFrac":null,"wFrac":null} — the hFrac/wFrac column is not usable for this frame
+SHOT crane-pal-1-avenue-day {"at":[62,3.48,104],"look":[62,9.3,76],"clip":0,"burn":0,"bins":[0,49,258,114,483,96,0,0],"key":{"forced":true,"pos":[-150,120,95],"tgt":[0,0,0],"i":3.39},"status":200} subj={"ok":false,"ctrl":[0,0],"misses":8,"centreNdc":null,"hFrac":null,"wFrac":null} -> tools/logs/shots-crane-palette-2026-09-29/crane-pal-1-avenue-day.png
+SUBJ_UNVERIFIED crane-pal-2-under-hook {"ok":false,"ctrl":[0,0],"misses":8,"centreNdc":null,"hFrac":null,"wFrac":null} — the hFrac/wFrac column is not usable for this frame
+SHOT crane-pal-2-under-hook {"at":[62,2.21,88],"look":[62,10.5,76],"clip":0,"burn":0,"bins":[0,19,135,213,458,162,14,0],"key":{"forced":true,"pos":[-150,120,95],"tgt":[0,0,0],"i":3.39},"status":200} subj={"ok":false,"ctrl":[0,0],"misses":8,"centreNdc":null,"hFrac":null,"wFrac":null} -> tools/logs/shots-crane-palette-2026-09-29/crane-pal-2-under-hook.png
+FRAMES_DONE 2 failed=0 -> tools/logs/shots-crane-palette-2026-09-29

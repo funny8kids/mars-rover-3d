@@ -441,3 +441,7 @@ git ls-remote origin main && git rev-parse HEAD
 
 **死重边界再动一格**（同一张工作树面上重量 `python3 tools/glb-orphan-scan.py` → `tools/logs/glb-orphan-scan-2026-09-29-crane76.log`）：`ENUMERATED 131 · REFERENCED 67 · UNREFERENCED 64 · dead bytes 2.2 MiB · skipped web/ 267` ⇒ `ORPHAN_RC=4`。9.2 → 2.2 MiB 差的 7.0 MiB 正是 `overhead_crane`（7156.5 KiB）；同一件从这份日志的 UNREFERENCED 名单里消失（`grep -c crane` = 0），这条负读数由上一份日志里它在名单上、这一份不在来背书。`ORPHAN_RC` 仍是 4：还剩 64 件旧孤儿，那是另一件事。
 
+**交付面（#76 crane 落位这一轮）**：dist 由**唯一被授权的写手** `bash tools/sync_dist.sh` 在最终字节上重写 ⇒ `CENSUS_RC=0 DS_RC=0 SYNC_RC=0`，写完当场对账 `cmp dist/src/world/props.js src/world/props.js` 无输出（同一字节）且 `find dist/src -name '*.js' | sort | xargs cat | md5sum | cut -c1-12` = `f7d0e3c3270d`，与三把尺锚定的那副一致；`dist/assets/overhead_crane.glb` 在位、`dist/assets/web` 不存在（按设计不发布）。推送 `9767d9a..81e3b5d`，`git ls-remote git@github.com:funny8kids/mars-rover-3d.git main` = 本地 HEAD = `81e3b5dfb80190936aa494772dd023b95effc8f9`。**发布这一步仍未做，也不是没试**：本轮只读取 `get_publish_status(9d3cea2a-…)` ⇒ 仍 `sites_action_unavailable`（只读调用不产生动作，判据依旧是"同码重复不构成排查"，解开要账号侧决定）。
+
+两条别遮的账：**①** 在读到 `sync_dist.sh` 之前我手跑过一次 `rsync -a --delete --exclude web public/ dist/public/`：它写的目录 `dist/public/assets`（82 MiB）不是 `sync_dist.sh` 的产出面（脚本把 `public/assets` 写成 `dist/assets`），也就是说那 82 MiB 是发布件里的**重复副本**（`dist/public` 本身 09-21 就在，我没造它，但今天的刷新是我做的）。我没删它：删除不是我造的目录属不可逆动作，且发布仍被堵住、削体积已被证明解不开第二道闸。**如果**写通道恢复后仍卡在总量，这一格（82 MiB，约占 dist 的 45 %）是第一个该问用户的削减项。**②** 上一节那句「让它更像另一台机器（配色或朝向错开）」仍然有效 —— 落位与判据做完了，观感上吊车梁与门架梁还是读成"一根更粗的梁"。
+

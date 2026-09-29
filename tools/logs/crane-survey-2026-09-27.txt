@@ -1,0 +1,45 @@
+
+=== overhead_crane ===
+NODE "Scene" type=Group pos=(0.000,0.000,0.000)
+MESH "overhead_crane_rails" parent="Scene" pos=(0.000,-0.404,-0.955) rot=(0.00,0.00,0.00) scale=(1.000,1.000,1.000) tris=56 mats=overhead_crane_trim worldbox=[-6.25,-0.77,-0.96 .. 6.25,-0.04,3.04]
+NODE "overhead_crane_winch" type=Group pos=(-0.066,-0.566,0.029)
+MESH "Cylinder009" parent="overhead_crane_winch" pos=(0.000,0.000,0.000) rot=(0.00,0.00,0.00) scale=(1.000,1.000,1.000) tris=13373 mats=overhead_crane_trim worldbox=[-2.24,-3.18,-0.63 .. 2.34,0.47,0.59]
+MESH "Cylinder009_1" parent="overhead_crane_winch" pos=(0.000,0.000,0.000) rot=(0.00,0.00,0.00) scale=(1.000,1.000,1.000) tris=26911 mats=overhead_crane worldbox=[-2.20,-3.91,-0.61 .. 2.34,0.63,0.59]
+NODE "overhead_crane" type=Group pos=(0.000,0.000,0.000)
+MESH "Cube014" parent="overhead_crane" pos=(0.000,0.000,0.000) rot=(0.00,0.00,0.00) scale=(1.000,1.000,1.000) tris=18468 mats=overhead_crane_trim worldbox=[-6.11,-2.00,-0.28 .. 6.11,1.20,1.48]
+MESH "Cube014_1" parent="overhead_crane" pos=(0.000,0.000,0.000) rot=(0.00,0.00,0.00) scale=(1.000,1.000,1.000) tris=31156 mats=overhead_crane worldbox=[-6.11,-2.03,-0.05 .. 6.11,1.22,1.51]
+FULL [-6.25,-3.91,-0.96 .. 6.25,1.22,3.04] size=(12.49,5.13,4.00)
+materials: [ 'overhead_crane_trim', 'overhead_crane' ]
+y-slice (centroid buckets of 0.25 m):
+ y -4.00..-3.75 n=    64 x[-0.70,-0.27] z[-0.06,0.06]
+ y -3.75..-3.50 n=   150 x[-0.73,-0.22] z[-0.06,0.06]
+ y -3.50..-3.25 n=    96 x[-0.67,-0.24] z[-0.06,0.05]
+ y -3.25..-3.00 n=   388 x[-0.78,-0.09] z[-0.18,0.18]
+ y -3.00..-2.75 n=   770 x[-0.82,-0.05] z[-0.31,0.31]
+ y -2.75..-2.50 n=  1046 x[-0.82,-0.05] z[-0.31,0.31]
+ y -2.50..-2.25 n=   376 x[-0.79,-0.08] z[-0.25,0.26]
+ y -2.25..-2.00 n=    26 x[-6.08,6.08] z[-0.31,0.87]
+ y -2.00..-1.75 n=   219 x[-6.11,6.11] z[-0.33,1.32]
+ y -1.75..-1.50 n=  1561 x[-6.11,6.11] z[-0.38,1.46]
+ y -1.50..-1.25 n=  8714 x[-6.11,6.11] z[-0.48,1.50]
+ y -1.25..-1.00 n= 13556 x[-6.11,6.11] z[-0.50,1.50]
+ y -1.00..-0.75 n= 12230 x[-6.23,6.23] z[-0.50,1.71]
+ y -0.75..-0.50 n=  6203 x[-6.25,6.25] z[-0.62,1.71]
+ y -0.50..-0.25 n= 15291 x[-6.16,6.16] z[-0.63,1.71]
+ y -0.25..0.00 n=  9426 x[-6.25,6.25] z[-0.45,1.71]
+ y 0.00..0.25 n=  6089 x[-6.11,6.11] z[-0.56,1.43]
+ y 0.25..0.50 n=  9817 x[-6.11,6.11] z[-0.57,1.50]
+ y 0.50..0.75 n=  3436 x[-6.11,6.11] z[-0.31,1.50]
+ y 0.75..1.00 n=   340 x[-6.11,6.11] z[-0.28,1.42]
+ y 1.00..1.25 n=   166 x[-6.11,6.11] z[0.29,1.25]
+
+=== portable_generator ===
+NODE "Scene" type=Group pos=(0.000,0.000,0.000)
+NODE "portable_generator" type=Group pos=(0.000,0.000,0.000)
+MESH "Cube023" parent="portable_generator" pos=(0.000,0.000,0.000) rot=(0.00,0.00,0.00) scale=(1.000,1.000,1.000) tris=26245 mats=portable_generator worldbox=[-0.41,0.00,-0.28 .. 0.40,0.58,0.28]
+MESH "Cube023_1" parent="portable_generator" pos=(0.000,0.000,0.000) rot=(0.00,0.00,0.00) scale=(1.000,1.000,1.000) tris=54 mats=portable_generator_glass worldbox=[0.07,0.40,0.23 .. 0.12,0.46,0.25]
+MESH "portable_generator_dial" parent="Scene" pos=(0.092,0.416,0.240) rot=(-0.21,0.00,0.00) scale=(1.000,1.000,1.000) tris=38 mats=portable_generator worldbox=[0.09,0.41,0.23 .. 0.10,0.44,0.24]
+MESH "portable_generator_switch" parent="Scene" pos=(-0.260,0.438,0.238) rot=(0.00,0.00,0.00) scale=(1.000,1.000,1.000) tris=32 mats=portable_generator worldbox=[-0.27,0.43,0.22 .. -0.25,0.45,0.26]
+MESH "portable_generator_toggle" parent="Scene" pos=(0.012,0.429,0.234) rot=(-0.21,0.00,0.00) scale=(1.000,1.000,1.000) tris=50 mats=portable_generator worldbox=[0.01,0.42,0.23 .. 0.02,0.44,0.25]
+FULL [-0.41,0.00,-0.28 .. 0.40,0.58,0.28] size=(0.82,0.58,0.56)
+materials: [ 'portable_generator', 'portable_generator_glass' ]

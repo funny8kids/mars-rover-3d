@@ -1,0 +1,224 @@
+{
+ "crane_meshes": 2,
+ "crane_world_box": {
+  "lo": [
+   58.44,
+   7.35,
+   71.01
+  ],
+  "hi": [
+   65.56,
+   11.31,
+   80.99
+  ]
+ },
+ "subject_centre": [
+  62,
+  9.3,
+  76
+ ],
+ "fov": 60,
+ "aspect": 0.919,
+ "frames": [
+  {
+   "name": "crane-1-avenue-day",
+   "vantage_ground": {
+    "drawn": 1.88,
+    "surface": 1.88,
+    "stand": 1.88
+   },
+   "at": [
+    62,
+    3.48,
+    104
+   ],
+   "look": [
+    62,
+    9.3,
+    76
+   ],
+   "clip": 0,
+   "burn": 0,
+   "bins": [
+    0,
+    39,
+    273,
+    53,
+    458,
+    177,
+    0,
+    0
+   ],
+   "key": {
+    "forced": true,
+    "pos": [
+     -150,
+     120,
+     95
+    ],
+    "tgt": [
+     0,
+     0,
+     0
+    ],
+    "i": 3.4
+   },
+   "status": 200,
+   "subj": {
+    "hFrac": -1000000000,
+    "wFrac": -1000000000,
+    "behind": 8
+   }
+  },
+  {
+   "name": "crane-2-close-day",
+   "vantage_ground": {
+    "drawn": -1.25,
+    "surface": -1.25,
+    "stand": -1.25
+   },
+   "at": [
+    44,
+    0.35,
+    96
+   ],
+   "look": [
+    62,
+    9.3,
+    76
+   ],
+   "clip": 0,
+   "burn": 0,
+   "bins": [
+    0,
+    93,
+    210,
+    68,
+    405,
+    218,
+    6,
+    0
+   ],
+   "key": {
+    "forced": true,
+    "pos": [
+     -150,
+     120,
+     95
+    ],
+    "tgt": [
+     0,
+     0,
+     0
+    ],
+    "i": 3.4
+   },
+   "status": 200,
+   "subj": {
+    "hFrac": -1000000000,
+    "wFrac": -1000000000,
+    "behind": 8
+   }
+  },
+  {
+   "name": "crane-3-under-hook",
+   "vantage_ground": {
+    "drawn": 0.61,
+    "surface": 0.61,
+    "stand": 0.61
+   },
+   "at": [
+    62,
+    2.21,
+    88
+   ],
+   "look": [
+    62,
+    10.5,
+    76
+   ],
+   "clip": 0,
+   "burn": 0,
+   "bins": [
+    0,
+    14,
+    121,
+    275,
+    457,
+    114,
+    19,
+    0
+   ],
+   "key": {
+    "forced": true,
+    "pos": [
+     -150,
+     120,
+     95
+    ],
+    "tgt": [
+     0,
+     0,
+     0
+    ],
+    "i": 3.4
+   },
+   "status": 200,
+   "subj": {
+    "hFrac": -1000000000,
+    "wFrac": -1000000000,
+    "behind": 8
+   }
+  },
+  {
+   "name": "crane-4-avenue-skyreal",
+   "vantage_ground": {
+    "drawn": 1.88,
+    "surface": 1.88,
+    "stand": 1.88
+   },
+   "at": [
+    62,
+    3.48,
+    104
+   ],
+   "look": [
+    62,
+    9.3,
+    76
+   ],
+   "clip": 0,
+   "burn": 0,
+   "bins": [
+    0,
+    37,
+    282,
+    60,
+    453,
+    167,
+    0,
+    0
+   ],
+   "key": {
+    "forced": false,
+    "pos": [
+     169,
+     196,
+     149
+    ],
+    "tgt": [
+     -2,
+     1,
+     -1
+    ],
+    "i": 3.4
+   },
+   "status": 200,
+   "subj": {
+    "hFrac": -1000000000,
+    "wFrac": -1000000000,
+    "behind": 8
+   }
+  }
+ ]
+}

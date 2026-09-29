@@ -112,7 +112,7 @@ export async function buildBase(scene, quality) {
   // Authored elsewhere and licensed CC0, so it is listed apart from our own heroes: every entry here
   // has to be checked against the base palette before it ships (tools/retint_modular_industrial_pipes_01.py
   // is that check for `pipe_kit`, and tools/cc0-conform.mjs is the grid that says whether it fits).
-  const CC0 = ['pipe_kit', 'portable_generator'];
+  const CC0 = ['pipe_kit', 'portable_generator', 'overhead_crane'];
   const KENNEY = ['hangar_roundA', 'hangar_largeA', 'hangar_smallA',
     'platform_high', 'platform_low', 'platform_large', 'machine_generator',
     'machine_generatorLarge', 'machine_wireless', 'structure', 'structure_detailed', 'pipe_straight',
@@ -987,6 +987,23 @@ export async function buildBase(scene, quality) {
     beginProp(id);
     put('gantry_service', x, z, s, ry, 0);
     endProp({ legs: GANTRY_ENDS.map(([a, b, w, d]) => [a * s, b * s, w * s, d * s]), at: [x, z], ry });
+  };
+  // A carried prop stands on another prop's measured box instead of on the island. Both numbers the
+  // bridge crane needs come out of the two files: the scale puts the bridge ends on the portal's own
+  // column line, and the elevation brings the bridge crown level with the portal crown. A typed `dy`
+  // would be a 12 m span hung on a guess — the same failure the footing work removed for buildings.
+  const carryOnPortal = (id, name, hostName, x, z, s, ry) => {
+    const host = new THREE.Box3().setFromObject(models[hostName]);
+    const cr = new THREE.Box3().setFromObject(models[name]);
+    const columnLine = Math.max(...GANTRY_FEET.map(([fx]) => Math.abs(fx)));
+    const cs = (columnLine * s) / ((cr.max.x - cr.min.x) / 2);
+    const top = heightAt(x, z) + host.max.y * s;
+    beginProp(id);
+    put(name, x, z, cs, ry, 0, top - cr.max.y * cs);
+    // No ground discs: the hook block is the crane's lowest geometry and it stays above the rover's
+    // own roof, while the host portal already owns the feet. `legs: []` closes the scope without
+    // inventing a collider — a disc under a bridge you drive through is a wall, not a collision.
+    endProp({ legs: [], at: [x, z], ry });
   };
   const beginProp = id => { CUR = new THREE.Group(); CUR.name = id; G.add(CUR); return CUR; };
   // opts: w/d/ry override the measurement; legs [[dx,dz,w,d],...] replaces it entirely (a prop you
@@ -2187,6 +2204,13 @@ export async function buildBase(scene, quality) {
     putSolid('portable_generator', ix - 15, iz - 6, 1.0, -1.57, 'portable-genset');
     kSolid('machine_wireless', ix - 14, iz + 14, 0.9, 1.1, 'yard-mast');
     portal('fab-substation', ix + 2, iz + 16, 0.86, 1.1);   // fab substation gantry, an open portal
+    // The bridge crane: 7.2 MB of authored steel that no site loaded. It cannot be seated on the
+    // ground — `tools/logs/scratch-crane-survey.mjs` measures the file at 12.49 × 4.00 m with its
+    // lowest geometry at y −3.91, and that bottom is the hoist and hook block, not a foot.
+    // An overhead crane rides a runway, so this one rides the portal it belongs to (measured in
+    // `tools/logs/scratch-crane-runway.mjs`) and its hook hangs over the fab apron lane, which is
+    // what the crane is for.
+    carryOnPortal('fab-crane', 'overhead_crane', 'gantry_service', ix + 2, iz + 16, 0.86, 1.1);
     // cryo row: three Blender tanks with hazard stripes, stringed along the yard's north edge on
     // their own skid pads so a rover can walk between the drums and the fab wall. One facility, one
     // collision id — a row of drums 0.9 m apart is one long wall to a 3.2 m rover, not a field of

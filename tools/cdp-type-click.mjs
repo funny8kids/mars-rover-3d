@@ -18,8 +18,13 @@ const shotDir = '/tmp/rsb-j2-click';
 fs.mkdirSync(shotDir, { recursive: true });
 
 const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-const page = list.find(t => t.type === 'page' && /5173/.test(t.url)) || list.find(t => t.type === 'page');
+// 这一行原来写死 `/5173/`（Vite 时代的端口，早已不存在），于是走查靠 fallback 取"列表里的第一个 page"。
+// 2026-09-29 的重跑因此 attach 到 127.0.0.1:8612 的另一个 app 页面，240 s 后报 BOOT_TIMEOUT ——
+// 与 clip-sweep 那次同源：过滤条件是陈的，而陈旧过滤会把"驱动错了页面"伪装成"产品起不来"。
+const page = list.find(t => t.type === 'page' && /qa_boot|8080/.test(t.url)) || list.find(t => t.type === 'page');
 if (!page) { console.log('NO_PAGE_TARGET'); process.exit(1); }
+// 起不来时先要能回答"我连的是哪一个页面"，否则 BOOT_TIMEOUT 说不出自己连错了对象。
+console.log('TARGET ' + page.url + ' [' + page.title + ']');
 
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 let id = 0;
@@ -404,26 +409,58 @@ await step('hud:teleport-warp', {
     panelGone: !document.getElementById('teleport-ui'), hint: document.getElementById('tele-hint')?.textContent || 'none' })`)
 }, { sel: '.tp-item:not([disabled])', settleFrames: 90, measure: true, shot: 'after-warp' });
 
-// ── 停在光台上：提示条接管，传送胶囊让位 ──
+// ── 停在光台上 → 开出去：提示条退场，传送胶囊回来 ──
 // A control that steps back for a contextual one is only half designed: the other half is that it
 // comes back. `hud:teleport-warp` leaves the rover parked on the pad, which is exactly the frame
-// where the pill is hidden (`main.js`: hint up + keyboard ⇒ `tele-fab` hidden), so this step holds W
-// until the rover is off the pad and asserts both halves — the hint retires, the pill returns. The
-// pill being *clickable* is already proven by `hud:teleport-open` at the spawn pad, so what would
-// break here is a one-way door, and that is what the check refuses.
+// where the pill is hidden (`main.js`: hint up + keyboard ⇒ `tele-fab` hidden), so this step drives
+// off the pad and asserts both halves. The pill being *clickable* is already proven by
+// `hud:teleport-open` at the spawn pad, so what would break here is a one-way door, and that is what
+// the check refuses.
 // This step also measures the frame §7's bar is actually about: the driving HUD, hint retired.
-const padState = `JSON.stringify({ hint: document.getElementById('tele-hint').classList.contains('hidden'),
-  fab: document.getElementById('tele-fab').classList.contains('hidden'),
-  speed: Math.round(window.__RSB.state.speed * 10) / 10,
-  pos: window.__RSB.state.pos.map(v => Math.round(v)).join(',') })`;
+//
+// 存档的第一跑（tools/logs/click-walk-2026-09-29b.log）红在这一格且未归因。归因跑见
+// tools/logs/pad-leave-attribution-2026-09-29.log，两条量具事实把红解释干净了，产品侧一条没改：
+// ① 判据绑的是"提示"这一个东西，而 `#tele-hint` 在产品里有两个主人（main.js:2380 光台 /
+//    main.js:2388 并网，后者要求停着才出现），所以只读 `hidden` 位读不到"哪一个主人"；
+// ② 上一格的落点离盘心 4.5 m，落在 pad 自己的 3.9 m 触发半径**外**（归因跑 on-pad 那行
+//    hidden=true、txt=""），这一步的前提"车在台面上"从第一帧就不成立；而 120 帧的行程在
+//    hold-60 之后拐回了圈内（d=0.43 → 2.21），末速 1.26~1.6 m/s 又低于 2.5 的"算停着"门槛，
+//    于是提示条按设计重新亮起 —— 尺子读到的是正确行为的反面。
+// 所以：前提自己造（钉到盘心，半径从 `__RSB.pois()` 拿，不手抄），读数改在**离开那一瞬间**
+// （settleFrames 0，keyUp 立刻读），并把"离没离开半径""过没过 2.5"写成会拒绝放行的判据。
+const padState = `(() => {
+  const R = window.__RSB, s = R.state;
+  let best = null;
+  for (const p of R.pois().filter(x => x.kind === 'pad')) {
+    const d = Math.hypot(s.pos[0] - p.x, s.pos[2] - p.z);
+    if (!best || d < best.d) best = { d: +d.toFixed(2), at: p.name, r: p.r };
+  }
+  const h = document.getElementById('tele-hint'), f = document.getElementById('tele-fab');
+  return JSON.stringify({ hidden: h.classList.contains('hidden'), fabHidden: f.classList.contains('hidden'),
+    txt: (h.textContent || '').trim().slice(0, 48), speed: +(s.speed || 0).toFixed(2),
+    pos: s.pos.map(v => +v.toFixed(1)), pad: best });
+})()`;
 await step('hud:pad-leave', {
-  before: () => evaluate(padState),
+  before: async () => {
+    // 上一格把车放在盘边 4.5 m 外（那是"到不到台"的构图，不是本格的构图），这里用产品自己的
+    // warp 把它钉到盘心：离台这一步要测的是离开，落点前提必须自己造，且造在读数上看得见。
+    await evaluate(`(() => { const R = window.__RSB, p = R.pois().filter(x => x.kind === 'pad')[0];
+      R.warp(p.x, p.z, undefined, 0); return p.name; })()`);
+    await frames(120);
+    return evaluate(padState);
+  },
   after: () => evaluate(padState)
-}, { holdKey: 'w', holdFrames: 120, settleFrames: 45, measure: true, shot: 'after-leave',
+}, { holdKey: 'w', holdFrames: 45, settleFrames: 0, measure: true, shot: 'after-leave',
   check: (a, b) => {
-    const s = JSON.parse(a);
-    if (!s.hint) return `pad hint did not retire after driving off the pad (still up at ${s.pos}, ${s.speed} m/s) — was ${b}`;
-    if (s.fab) return `the teleport pill did not come back once the hint retired: ${a}`;
+    const s = JSON.parse(a), p0 = JSON.parse(b);
+    if (p0.hidden) return `precondition: parked on the pad but the pad hint never came up — ` +
+      `nearest ${p0.pad.at} d=${p0.pad.d}/r=${p0.pad.r}, speed=${p0.speed}, txt="${p0.txt}"`;
+    if (!s.pad || !(s.pad.d > s.pad.r)) return `not off the pad at read time: d=${s.pad && s.pad.d} of ` +
+      `r=${s.pad && s.pad.r} at ${s.pos} — the hold never crossed the keep-out, so nothing was proven`;
+    if (!(s.speed >= 2.5)) return `speed ${s.speed} m/s at read time is under the 2.5 "parked" bar, ` +
+      `so a lit hint here would not distinguish the two owners of #tele-hint`;
+    if (!s.hidden) return `pad hint stayed up after leaving the pad: txt="${s.txt}" (off ${s.pad.at} at d=${s.pad.d})`;
+    if (s.fabHidden) return `the teleport pill did not come back once the hint retired: ${a}`;
     return null;
   } });
 

@@ -1,0 +1,19 @@
+BOOT ok
+TELE_FAB clicked=true
+TP_ITEM clicked=true
+READ on-pad pos=-3,1.1,12.5 speed=0 grounded=true hidden=true fabHidden=false nearest=pad:hub d=4.51/r3.9 txt="" batt=0.992
+READ hold-10 pos=-3.1,1.1,12.5 speed=0.95 grounded=true hidden=true fabHidden=false nearest=pad:hub d=4.43/r3.9 txt="" batt=0.991
+READ hold-20 pos=-3.4,1.1,12.2 speed=2.89 grounded=true hidden=true fabHidden=false nearest=pad:hub d=4.01/r3.9 txt="" batt=0.99
+READ hold-30 pos=-4.2,1.1,11.7 speed=4.73 grounded=true hidden=true fabHidden=false nearest=pad:hub d=3.11/r3.9 txt="" batt=0.988
+READ hold-40 pos=-5.2,1.1,11.1 speed=6.2 grounded=true hidden=true fabHidden=false nearest=pad:hub d=1.91/r3.9 txt="" batt=0.986
+READ hold-50 pos=-6.4,1.1,10.2 speed=7.47 grounded=true hidden=true fabHidden=false nearest=pad:hub d=0.43/r3.9 txt="" batt=0.985
+READ hold-60 pos=-7.9,1.1,9.2 speed=8.56 grounded=true hidden=true fabHidden=false nearest=pad:hub d=1.31/r3.9 txt="" batt=0.983
+READ hold-70 pos=-7.8,1.1,9.1 speed=1.26 grounded=true hidden=false fabHidden=true nearest=pad:hub d=1.33/r3.9 txt="◈ 中央广场 光台已就绪 — 按 G 跃迁（M 全区地图）" batt=1
+READ hold-80 pos=-7.7,1.1,9 speed=0.63 grounded=true hidden=false fabHidden=true nearest=pad:hub d=1.4/r3.9 txt="◈ 中央广场 光台已就绪 — 按 G 跃迁（M 全区地图）" batt=1
+READ hold-90 pos=-7.7,1.1,8.8 speed=0.78 grounded=true hidden=false fabHidden=true nearest=pad:hub d=1.49/r3.9 txt="◈ 中央广场 光台已就绪 — 按 G 跃迁（M 全区地图）" batt=1
+READ hold-100 pos=-7.7,1.1,8.6 speed=1.02 grounded=true hidden=false fabHidden=true nearest=pad:hub d=1.64/r3.9 txt="◈ 中央广场 光台已就绪 — 按 G 跃迁（M 全区地图）" batt=1
+READ hold-110 pos=-7.7,1.1,8.4 speed=1.38 grounded=true hidden=false fabHidden=true nearest=pad:hub d=1.85/r3.9 txt="◈ 中央广场 光台已就绪 — 按 G 跃迁（M 全区地图）" batt=1
+READ hold-120 pos=-7.7,1.1,8 speed=1.98 grounded=true hidden=false fabHidden=true nearest=pad:hub d=2.21/r3.9 txt="◈ 中央广场 光台已就绪 — 按 G 跃迁（M 全区地图）" batt=0.998
+READ after-45 pos=-8.7,1.1,6.8 speed=1.6 grounded=true hidden=false fabHidden=true nearest=pad:hub d=3.75/r3.9 txt="◈ 中央广场 光台已就绪 — 按 G 跃迁（M 全区地图）" batt=0.996
+MAX_SPEED 8.56 m/s (阈值 2.5) · 末速 1.6 · 离最近光台 3.75 m (r=3.9)
+VERDICT STEP_PREMISE — 车仍在光台 3.9 m 半径内（d=3.75），这一步的 5 m 行程够不上判据

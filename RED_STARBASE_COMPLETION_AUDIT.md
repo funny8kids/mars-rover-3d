@@ -381,18 +381,35 @@ git ls-remote origin main && git rev-parse HEAD
 
 **给用户的决定项因此收窄成一条**：要放开写通道，只有删旧 release / 升配 / 等周期三类账号侧动作，全部是共享状态且不可逆，我不代做；删的话，`list_deployments` 第一页那 20 条里除了线上在用的 `01a0e2b9…`（`active_release_id`）以外，最早 19 条（2026-09-20T21:26Z 起，单件 8.4 MB 那一批）都是可谈的候选，但**候选清单不等于授权**。
 
-### 顺带量出来的一处完整性缺口：站点依赖 64.6 MB 未入库的资产
+### 完整性缺口：已收口（2026-09-29 本轮重量），但下面紧接着量出一处新的
 
-
-
-同一轮排查里把资产面也过了一遍，读数：
+上一节写这一格时，`public/assets` 里有 **316 件 / 64.6 MB 未跟踪且未被 exclude** 的二进 —— 也就是「线上站点依赖只存在于这台机器的资产」。两个提交把这件事办完了（`flag_cloth` 等一批 + `1277ac2` 收下 `overhead_crane.glb`/`portable_generator.glb` 及其 `LICENSE-*.txt`）。本轮在同一张工作树面上重量：
 
 | 口径 | 文件数 | 字节 |
 | --- | --- | --- |
-| `public/assets` 已跟踪 | — | 70.5 MB |
-| `public/assets` **未跟踪且未被 exclude** | **316** | **64.6 MB** |
-| 工作树 `public/assets` 合计 | — | 135.0 MB |
-| 同步进 `dist` 的总量 | 525 | 98 MB |
+| `public/assets` 已跟踪 | **153** | **85.4 MB** |
+| `public/assets` 未跟踪且未被 exclude | **0** | **0.0 MB** |
+| `public/assets` 被 exclude（只有 `public/assets/web/`，设计上不发布） | 312 | — |
+| 工作树 `public/assets` 合计 | 465 | 141.6 MB |
+| 同步进 `dist` 的总量 | 525 | 101 179 469 B |
 
-`dist` 是从工作树构建的，所以**当前线上站点有一部分 GLB 只存在于这台机器上**：从 GitHub 克隆下来跑 `tools/sync_dist.sh` 复现不出这个站点。（"dist 不提交"是既定约束，这条不与之冲突 —— 说的是 `public/assets`，不是 `dist`。）这些未跟踪件里包括最近入库的 `overhead_crane.glb`、`portable_generator.glb`、`flag_cloth.glb` 等。把 64.6 MB 二进提交进仓库是要用户点头的方向性决定（仓库从此永久背着这些字节），所以这里只报缺口和口径，不擅自动手。
+取法（本轮就是这条出的数，别引上表的旧口径）：`git ls-files public/assets` 数跟踪面；未跟踪且未被 exclude 用 `git ls-files -i -c --others --exclude-standard -- public/assets`（本轮它打印 312 行，逐行都在 `public/assets/web/` 下，`grep -v` 之后空 —— 所以「0 件缺口」不是因为 exclude 名单里藏着该入库的件）；`.git/info/exclude` 在 `public/assets` 上只有一条规则，就是第 7 行的 `public/assets/web/`。
+**这条缺口从此不再是「要不要把 64.6 MB 提交进仓库」的用户决定项 —— 它已经交了。**
+
+### 但是：入库 ≠ 加载。新尺量出 131 件出厂资产里 66 件没人加载
+
+`tools/glb-owner-census.py` 的 `OWNERSHIP_SINGLE` 绿灯只覆盖「被某把正则点过名的 28 件」；一个 `.glb` 若没有任何 builder／src 正则提到它，它**不出行、不影响退出码**。所以「归属唯一」和「出厂了却从来没被请求过」可以同时成立 —— 而它们确实同时成立了。补尺 `tools/glb-orphan-scan.py`（`bf383f8`）把分母换成磁盘：
+
+- 判据：`assets.js` 的请求路径是 `'./assets/<名>.glb'` 字面量 ⇒ 名字必须以词的形式出现在应用代码里。先剥 `//` 与块注释（注释是"打算用"），再整段丢掉 `SHEET_MATERIALS`（那是 `audit_double_sided.mjs --emit` 的材质组名单，不是请求名单）。
+- 权威读数 `tools/logs/glb-orphan-scan-2026-09-29a.log`：`ENUMERATED 131 · REFERENCED 65 · UNREFERENCED 66 · 死重 13.2 MiB` ⇒ `GLB_ORPHANS` / `ORPHAN_RC=4`。极性对照：塞一件假 `.glb` ⇒ 132/67/17.2 MiB 且被点名；`rover`/`teleport_pad`/`pipe_kit`/`hab_link`/`starship_stack`/`barrier_kit` 六个真加载的名字各 0 行。
+- 66 件按来源分档（本轮由那份日志逐行分派，`kenney/` 前缀＝原始转换库、`overhead_crane`+`portable_generator`＝已入库未落位的 CC0、其余＝自家旧产出）：
+
+| 档 | 件数 | 字节 | 判决 |
+| --- | --- | --- | --- |
+| CC0 主角已入库、未进 `props.js` 的 `CC0` 落位名单 | 2 | 11.0 MiB | **#76 未完的那一段**：落位后这 11.0 MiB 从死重变成内容（7156.5 + 4087.5 KiB，按尺子的 KiB 口径相加＝10.98 MiB；此前文档与提交信息里写的「11.2 MiB」是单位错，这里按读数改正） |
+| Kenney 原始转换库（`kenney/space`、`kenney/nature`） | 60 | 0.6 MiB | 保留作来源件；本仓只发 `KENNEY` 名单里被点名的那些 |
+| 自家旧产出（`arch`／`comm_dish`／`solar_array`／`rock_cluster`） | 4 | 1.6 MiB | 由 `build_assets.py`／`build_heroes.py` 造，已被 `#107` 收编过口径，现役替代品在场景里 |
+| `corridor*.glb` 7 件（含在上表 Kenney 档内） | — | — | 查过是真红：`props.js` 的 `corridorBreak` 用的是 `plan.js:16` 的 `CORRIDOR = 3.2`（净宽常数，不是资产名），走廊走 `hab_link` |
+
+**这一格为什么还没关**：把 crane／generator 落进 INDUSTRY 要改 `src/world/props.js`，而改 `src/**.js` 会作废当前字节（`SRC_MD5 7b48281325ed`）上的三份绿读数 —— A4 巡航 300 s、F1 抓帧 66 帧、真实点击走查 25 步，必须全部重量过才能提交。落位一半、验收另一半＝出货一个未验收的构建，所以这一格连同重跑链一起留作下一轮的第一件事，而不是先提交再补尺。
 

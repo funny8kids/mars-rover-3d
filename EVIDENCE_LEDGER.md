@@ -23,7 +23,8 @@
 | # | Requirement | Result | Verification Command | Status |
 |---|-------------|--------|---------------------|--------|
 | B1 | Primitive census: every runtime primitive call must have RETAINED comment or exemption ticket | 26 marked + 5 exempt (#101/#104) | `node tools/primitive_census.mjs --check` | ✅ VERDICT PASS, CHECK_RC=0 |
-| B2 | Asset ownership single-writer discipline | glb-owner-census scans WRITE/READ patterns | `python3 tools/glb-owner-census.py` | ✅ OWNERSHIP_SINGLE ✅ |
+| B2 | Asset ownership single-writer discipline | glb-owner-census scans WRITE/READ patterns | `python3 tools/glb-owner-census.py` | ✅ OWNERSHIP_SINGLE ✅（分母只有被正则点名的 28 件，磁盘面见 B3） |
+| B3 | Shipped-but-never-loaded GLB census (disk-denominated) | every `.glb` under `public/assets` (excl. `web/`) must have its name appear as a word in app code, comments and the `SHEET_MATERIALS` list stripped | `python3 tools/glb-orphan-scan.py` | 🔴 `GLB_ORPHANS` / `ORPHAN_RC=4`：`ENUMERATED 131 · UNREFERENCED 66 · 死重 13.2 MiB`（`tools/logs/glb-orphan-scan-2026-09-29a.log`）。分档＝2 件 CC0 未落位 11.0 MiB（#76 未完段）／60 件 Kenney 来源库 0.6 MiB／4 件自家旧产出 1.6 MiB |
 
 ### C · 修正所有不合理
 
